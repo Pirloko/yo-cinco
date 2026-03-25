@@ -60,6 +60,13 @@ export interface Team {
   createdAt: Date
 }
 
+/** Solo lectura para miembros vía tabla `team_private_settings` (RLS). */
+export interface TeamPrivateSettings {
+  teamId: string
+  whatsappInviteUrl: string | null
+  rulesText: string | null
+}
+
 export interface TeamInvite {
   id: string
   teamId: string

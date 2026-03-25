@@ -31,8 +31,18 @@ import {
   Share2,
   Link2,
   Handshake,
+  MessageCircle,
+  ScrollText,
+  ExternalLink,
 } from 'lucide-react'
-import { Team, Level, Position, type TeamJoinRequest } from '@/lib/types'
+import {
+  Team,
+  Level,
+  Position,
+  type TeamJoinRequest,
+  type TeamPrivateSettings,
+} from '@/lib/types'
+import { fetchTeamPrivateSettings } from '@/lib/supabase/team-queries'
 import { teamInviteAbsoluteUrl } from '@/lib/team-invite-url'
 
 type TeamsView = 'list' | 'create' | 'detail' | 'invite'
@@ -59,6 +69,7 @@ export function TeamsScreen() {
     getFilteredTeams,
     createTeam,
     updateTeam,
+    updateTeamPrivateSettings,
     inviteToTeam,
     teamInvites,
     rivalChallenges,
@@ -88,6 +99,13 @@ export function TeamsScreen() {
   const [teamDetailEditing, setTeamDetailEditing] = useState(false)
   const [logoCacheBust, setLogoCacheBust] = useState(0)
   const [savingTeam, setSavingTeam] = useState(false)
+  const [memberPrivateSettings, setMemberPrivateSettings] =
+    useState<TeamPrivateSettings | null>(null)
+  const [loadingPrivateSettings, setLoadingPrivateSettings] = useState(false)
+  const [editingCoordinacion, setEditingCoordinacion] = useState(false)
+  const [draftWhatsapp, setDraftWhatsapp] = useState('')
+  const [draftRules, setDraftRules] = useState('')
+  const [savingCoordinacion, setSavingCoordinacion] = useState(false)
   const logoFileInputRef = useRef<HTMLInputElement>(null)
 
   const userTeams = getUserTeams()
@@ -161,6 +179,45 @@ export function TeamsScreen() {
     toast.error('No encontramos ese equipo.')
     setTeamsDetailFocusTeamId(null)
   }, [teamsDetailFocusTeamId, teams, currentUser, setTeamsDetailFocusTeamId])
+
+  useEffect(() => {
+    if (view !== 'detail') {
+      setEditingCoordinacion(false)
+    }
+  }, [view])
+
+  useEffect(() => {
+    if (
+      view !== 'detail' ||
+      !detailTeam ||
+      !currentUser ||
+      !isMemberOfTeam(detailTeam) ||
+      !isSupabaseConfigured()
+    ) {
+      setMemberPrivateSettings(null)
+      setLoadingPrivateSettings(false)
+      return
+    }
+    let cancelled = false
+    setLoadingPrivateSettings(true)
+    ;(async () => {
+      const supabase = createClient()
+      const s = await fetchTeamPrivateSettings(supabase, detailTeam.id)
+      if (!cancelled) {
+        setMemberPrivateSettings(s)
+        setLoadingPrivateSettings(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [view, detailTeam?.id, currentUser?.id, teams])
+
+  const openCoordinacionEditor = () => {
+    setDraftWhatsapp(memberPrivateSettings?.whatsappInviteUrl ?? '')
+    setDraftRules(memberPrivateSettings?.rulesText ?? '')
+    setEditingCoordinacion(true)
+  }
 
   const handleCreateTeam = async () => {
     if (!currentUser || !teamName.trim()) return
@@ -951,6 +1008,161 @@ export function TeamsScreen() {
                 )}
               </div>
             )}
+
+          {isMember && (
+            <div className="mb-6 space-y-4">
+              {loadingPrivateSettings ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : editingCoordinacion && isCaptain ? (
+                <Card className="border-primary/30 bg-card">
+                  <CardContent className="space-y-4 p-4">
+                    <h3 className="font-semibold text-foreground">
+                      Coordinación del equipo
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Solo los miembros del equipo ven el enlace de WhatsApp y las reglas.
+                    </p>
+                    <div>
+                      <label className="text-xs text-muted-foreground">
+                        Enlace de invitación a WhatsApp
+                      </label>
+                      <Input
+                        value={draftWhatsapp}
+                        onChange={(e) => setDraftWhatsapp(e.target.value)}
+                        placeholder="https://chat.whatsapp.com/..."
+                        className="mt-1 border-border bg-secondary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground">
+                        Reglas del equipo
+                      </label>
+                      <Textarea
+                        value={draftRules}
+                        onChange={(e) => setDraftRules(e.target.value)}
+                        placeholder="Puntualidad, cancha, cuotas, fair play…"
+                        className="mt-1 min-h-[120px] resize-none border-border bg-secondary"
+                        maxLength={4000}
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={savingCoordinacion}
+                        onClick={() => {
+                          setDraftWhatsapp(
+                            memberPrivateSettings?.whatsappInviteUrl ?? ''
+                          )
+                          setDraftRules(memberPrivateSettings?.rulesText ?? '')
+                          setEditingCoordinacion(false)
+                        }}
+                      >
+                        Cancelar
+                      </Button>
+                      <Button
+                        type="button"
+                        className="bg-primary hover:bg-primary/90"
+                        disabled={savingCoordinacion}
+                        onClick={async () => {
+                          setSavingCoordinacion(true)
+                          try {
+                            const res = await updateTeamPrivateSettings(team.id, {
+                              whatsappInviteUrl: draftWhatsapp,
+                              rulesText: draftRules,
+                            })
+                            if (res) setMemberPrivateSettings(res)
+                            setEditingCoordinacion(false)
+                          } finally {
+                            setSavingCoordinacion(false)
+                          }
+                        }}
+                      >
+                        {savingCoordinacion ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          'Guardar'
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <>
+                  <div className="relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-600/25 via-emerald-950/30 to-background p-5 shadow-lg shadow-emerald-950/30">
+                    <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-emerald-500/15 blur-2xl" />
+                    <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#25D366]/25 text-[#25D366] ring-1 ring-[#25D366]/40">
+                          <MessageCircle className="h-7 w-7" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-400">
+                            Grupo de WhatsApp
+                          </p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            Coordinación y avisos entre jugadores
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+                        {memberPrivateSettings?.whatsappInviteUrl ? (
+                          <Button
+                            asChild
+                            className="bg-[#25D366] font-semibold text-white shadow-md hover:bg-[#20bd5a]"
+                          >
+                            <a
+                              href={memberPrivateSettings.whatsappInviteUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <ExternalLink className="mr-2 h-4 w-4" />
+                              Unirse al grupo
+                            </a>
+                          </Button>
+                        ) : (
+                          <p className="text-sm italic text-muted-foreground">
+                            {isCaptain
+                              ? 'Añade el enlace de invitación del grupo.'
+                              : 'El capitán aún no ha compartido el enlace.'}
+                          </p>
+                        )}
+                        {isCaptain && (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="w-full sm:w-auto"
+                            onClick={openCoordinacionEditor}
+                          >
+                            Editar enlace y reglas
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {memberPrivateSettings?.rulesText ? (
+                    <Card className="border-border bg-card/90">
+                      <CardContent className="p-4">
+                        <div className="mb-3 flex items-center gap-2">
+                          <ScrollText className="h-5 w-5 text-primary" />
+                          <h3 className="font-semibold text-foreground">
+                            Reglas del equipo
+                          </h3>
+                        </div>
+                        <div className="max-h-52 overflow-y-auto rounded-lg bg-muted/40 px-3 py-2 text-sm leading-relaxed text-foreground whitespace-pre-wrap">
+                          {memberPrivateSettings.rulesText}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : null}
+                </>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4 mb-6">
             <Card className="bg-card border-border">

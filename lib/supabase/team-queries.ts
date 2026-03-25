@@ -7,6 +7,7 @@ import type {
   TeamInvite,
   TeamJoinRequest,
   TeamMember,
+  TeamPrivateSettings,
 } from '@/lib/types'
 import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
 
@@ -177,4 +178,22 @@ export async function fetchTeamJoinRequestsForUser(
       createdAt: new Date(r.created_at as string),
     }
   })
+}
+
+export async function fetchTeamPrivateSettings(
+  supabase: SupabaseClient,
+  teamId: string
+): Promise<TeamPrivateSettings | null> {
+  const { data, error } = await supabase
+    .from('team_private_settings')
+    .select('team_id, whatsapp_invite_url, rules_text')
+    .eq('team_id', teamId)
+    .maybeSingle()
+
+  if (error || !data) return null
+  return {
+    teamId: data.team_id as string,
+    whatsappInviteUrl: (data.whatsapp_invite_url as string | null)?.trim() || null,
+    rulesText: (data.rules_text as string | null)?.trim() || null,
+  }
 }

@@ -21,6 +21,7 @@ import {
   Team,
   TeamInvite,
   TeamJoinRequest,
+  TeamPrivateSettings,
   User,
 } from './types'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
@@ -38,6 +39,7 @@ import {
 import {
   fetchTeamInvitesForUser,
   fetchTeamJoinRequestsForUser,
+  fetchTeamPrivateSettings,
   fetchTeamsWithMembers,
 } from '@/lib/supabase/team-queries'
 import { fetchParticipatingOpportunityIds } from '@/lib/supabase/message-queries'
@@ -158,6 +160,11 @@ interface AppContextType {
       logo?: string | null
     }
   ) => Promise<void>
+  /** Capitán: enlace WhatsApp y reglas internas (tabla privada; solo miembros leen). */
+  updateTeamPrivateSettings: (
+    teamId: string,
+    payload: { whatsappInviteUrl?: string | null; rulesText?: string | null }
+  ) => Promise<TeamPrivateSettings | null>
   createRivalChallenge: (payload: {
     challengerTeam: Team
     mode: 'direct' | 'open'
@@ -932,6 +939,53 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast.success('Equipo actualizado')
   }
 
+  const updateTeamPrivateSettings = async (
+    teamId: string,
+    payload: { whatsappInviteUrl?: string | null; rulesText?: string | null }
+  ): Promise<TeamPrivateSettings | null> => {
+    if (!currentUser || !isSupabaseConfigured()) return null
+    const supabase = createClient()
+    const team = teams.find((t) => t.id === teamId)
+    if (!team || team.captainId !== currentUser.id) return null
+
+    const { data: cur } = await supabase
+      .from('team_private_settings')
+      .select('whatsapp_invite_url, rules_text')
+      .eq('team_id', teamId)
+      .maybeSingle()
+
+    const nextWhatsapp =
+      payload.whatsappInviteUrl !== undefined
+        ? (payload.whatsappInviteUrl?.trim() || null)
+        : ((cur?.whatsapp_invite_url as string | null) ?? null)
+    const nextRules =
+      payload.rulesText !== undefined
+        ? (payload.rulesText?.trim() || null)
+        : ((cur?.rules_text as string | null) ?? null)
+
+    const { error } = await supabase.from('team_private_settings').upsert(
+      {
+        team_id: teamId,
+        whatsapp_invite_url: nextWhatsapp,
+        rules_text: nextRules,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'team_id' }
+    )
+
+    if (error) {
+      toast.error(error.message)
+      return null
+    }
+
+    toast.success('Coordinación del equipo guardada')
+    return {
+      teamId,
+      whatsappInviteUrl: nextWhatsapp,
+      rulesText: nextRules,
+    }
+  }
+
   const createRivalChallenge = async (payload: {
     challengerTeam: Team
     mode: 'direct' | 'open'
@@ -1581,6 +1635,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         { event: '*', schema: 'public', table: 'teams' },
         scheduleRefresh
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'team_private_settings' },
+        scheduleRefresh
+      )
       .subscribe()
 
     return () => {
@@ -1624,6 +1683,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         rivalChallenges,
         createTeam,
         updateTeam,
+        updateTeamPrivateSettings,
         createRivalChallenge,
         respondToRivalChallenge,
         acceptRivalOpportunityWithTeam,
