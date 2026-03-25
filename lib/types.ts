@@ -71,6 +71,18 @@ export interface TeamInvite {
   createdAt: Date
 }
 
+/** Jugador solicita unirse; el capitán acepta o rechaza. */
+export interface TeamJoinRequest {
+  id: string
+  teamId: string
+  teamName: string
+  requesterId: string
+  requesterName: string
+  requesterPhoto: string
+  status: 'pending' | 'accepted' | 'declined'
+  createdAt: Date
+}
+
 export type RivalChallengeMode = 'direct' | 'open'
 export type RivalChallengeStatus = 'pending' | 'accepted' | 'declined' | 'cancelled'
 

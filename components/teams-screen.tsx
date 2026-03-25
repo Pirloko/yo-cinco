@@ -30,8 +30,9 @@ import {
   Loader2,
   Share2,
   Link2,
+  Handshake,
 } from 'lucide-react'
-import { Team, Level, Position } from '@/lib/types'
+import { Team, Level, Position, type TeamJoinRequest } from '@/lib/types'
 import { teamInviteAbsoluteUrl } from '@/lib/team-invite-url'
 
 type TeamsView = 'list' | 'create' | 'detail' | 'invite'
@@ -63,6 +64,10 @@ export function TeamsScreen() {
     rivalChallenges,
     respondToRivalChallenge,
     respondToInvite,
+    teamJoinRequests,
+    requestToJoinTeam,
+    respondToJoinRequest,
+    cancelJoinRequest,
     getFilteredUsers,
     teamsDetailFocusTeamId,
     setTeamsDetailFocusTeamId,
@@ -91,6 +96,27 @@ export function TeamsScreen() {
   const pendingInvites = teamInvites.filter(
     inv => inv.inviteeId === currentUser?.id && inv.status === 'pending'
   )
+  const pendingJoinRequestsForMe = teamJoinRequests.filter(
+    (r) =>
+      r.status === 'pending' &&
+      teams.some((t) => t.id === r.teamId && t.captainId === currentUser?.id)
+  )
+
+  const pendingJoinForTeam = (teamId: string) =>
+    teamJoinRequests.filter(
+      (r) => r.teamId === teamId && r.status === 'pending'
+    )
+
+  const myPendingJoinForTeam = (teamId: string) =>
+    teamJoinRequests.find(
+      (r) =>
+        r.teamId === teamId &&
+        r.requesterId === currentUser?.id &&
+        r.status === 'pending'
+    )
+
+  const isMemberOfTeam = (team: Team) =>
+    team.members.some((m) => m.id === currentUser?.id)
   const incomingRivalChallenges = rivalChallenges.filter((c) => {
     if (c.status !== 'pending') return false
     if (c.mode === 'direct') return c.challengedCaptainId === currentUser?.id
@@ -378,6 +404,42 @@ export function TeamsScreen() {
     </Card>
   )
 
+  const renderJoinRequestCard = (r: TeamJoinRequest) => (
+    <Card key={r.id} className="bg-card border-primary/40">
+      <CardContent className="p-4">
+        <div className="flex gap-3 items-start">
+          <img
+            src={r.requesterPhoto}
+            alt=""
+            className="w-12 h-12 rounded-full object-cover shrink-0"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-muted-foreground">Solicitud de ingreso</p>
+            <p className="font-semibold text-foreground truncate">{r.teamName}</p>
+            <p className="text-sm text-foreground">{r.requesterName}</p>
+          </div>
+        </div>
+        <div className="flex gap-2 mt-3">
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1"
+            onClick={() => void respondToJoinRequest(r.id, false)}
+          >
+            Rechazar
+          </Button>
+          <Button
+            size="sm"
+            className="flex-1 bg-primary hover:bg-primary/90"
+            onClick={() => void respondToJoinRequest(r.id, true)}
+          >
+            Aceptar
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+
   const renderRivalChallengeCard = (challenge: typeof incomingRivalChallenges[0]) => {
     const selectedAcceptTeamId =
       selectedAcceptTeamByChallenge[challenge.id] ??
@@ -492,6 +554,18 @@ export function TeamsScreen() {
             </h2>
             <div className="space-y-3">
               {pendingInvites.map(renderInviteCard)}
+            </div>
+          </div>
+        )}
+
+        {pendingJoinRequestsForMe.length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Handshake className="w-5 h-5 text-primary" />
+              Solicitudes de ingreso a tus equipos
+            </h2>
+            <div className="space-y-3">
+              {pendingJoinRequestsForMe.map(renderJoinRequestCard)}
             </div>
           </div>
         )}
@@ -635,6 +709,9 @@ export function TeamsScreen() {
 
     const team = detailTeam
     const isCaptain = team.captainId === currentUser?.id
+    const isMember = isMemberOfTeam(team)
+    const myJoin = myPendingJoinForTeam(team.id)
+    const incomingJoin = pendingJoinForTeam(team.id)
     const slotsAvailable = 6 - team.members.length
     const logoSrc = team.logo
       ? `${team.logo}${team.logo.includes('?') ? '&' : '?'}cb=${logoCacheBust}`
@@ -794,6 +871,86 @@ export function TeamsScreen() {
               Sin descripción. Pulsa Editar para añadir una.
             </p>
           )}
+
+          {isCaptain && incomingJoin.length > 0 && !teamDetailEditing && (
+            <div className="mb-6 rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Handshake className="w-4 h-4 text-primary" />
+                Solicitudes de ingreso ({incomingJoin.length})
+              </h3>
+              {incomingJoin.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-border bg-background/80 p-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <img
+                      src={r.requesterPhoto}
+                      alt=""
+                      className="w-10 h-10 rounded-full object-cover shrink-0"
+                    />
+                    <span className="font-medium text-foreground truncate">
+                      {r.requesterName}
+                    </span>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void respondToJoinRequest(r.id, false)}
+                    >
+                      Rechazar
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="bg-primary hover:bg-primary/90"
+                      onClick={() => void respondToJoinRequest(r.id, true)}
+                    >
+                      Aceptar
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!isCaptain &&
+            !isMember &&
+            team.gender === currentUser?.gender && (
+              <div className="mb-6 rounded-xl border border-border bg-card/50 p-4">
+                {slotsAvailable === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Este equipo tiene la plantilla completa.
+                  </p>
+                ) : myJoin ? (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-foreground">
+                      Tu solicitud está pendiente de aprobación del capitán.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void cancelJoinRequest(myJoin.id)}
+                    >
+                      Cancelar solicitud
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      ¿Quieres formar parte de este equipo?
+                    </p>
+                    <Button
+                      className="bg-primary hover:bg-primary/90 shrink-0"
+                      onClick={() => void requestToJoinTeam(team.id)}
+                    >
+                      <Handshake className="w-4 h-4 mr-2" />
+                      Solicitar unirme
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
 
           <div className="grid grid-cols-2 gap-4 mb-6">
             <Card className="bg-card border-border">

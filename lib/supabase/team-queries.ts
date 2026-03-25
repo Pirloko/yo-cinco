@@ -1,5 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Gender, Level, Position, Team, TeamInvite, TeamMember } from '@/lib/types'
+import type {
+  Gender,
+  Level,
+  Position,
+  Team,
+  TeamInvite,
+  TeamJoinRequest,
+  TeamMember,
+} from '@/lib/types'
 import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
 
 export async function fetchTeamsWithMembers(
@@ -108,4 +116,65 @@ export async function fetchTeamInvitesForUser(
     status: i.status as TeamInvite['status'],
     createdAt: new Date(i.created_at as string),
   }))
+}
+
+export async function fetchTeamJoinRequestsForUser(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<TeamJoinRequest[]> {
+  const { data: captainTeams } = await supabase
+    .from('teams')
+    .select('id')
+    .eq('captain_id', userId)
+
+  const captainTeamIds = (captainTeams ?? []).map((t) => t.id as string)
+
+  let query = supabase
+    .from('team_join_requests')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (captainTeamIds.length > 0) {
+    query = query.or(
+      `requester_id.eq.${userId},team_id.in.(${captainTeamIds.join(',')})`
+    )
+  } else {
+    query = query.eq('requester_id', userId)
+  }
+
+  const { data: rows, error } = await query
+  if (error || !rows?.length) return []
+
+  const teamIds = [...new Set(rows.map((r) => r.team_id as string))]
+  const requesterIds = [...new Set(rows.map((r) => r.requester_id as string))]
+
+  const [{ data: teamRows }, { data: profs }] = await Promise.all([
+    supabase.from('teams').select('id, name').in('id', teamIds),
+    supabase.from('profiles').select('id, name, photo_url').in('id', requesterIds),
+  ])
+
+  const teamName = new Map(
+    (teamRows ?? []).map((t) => [t.id as string, t.name as string])
+  )
+  const requesterMeta = new Map(
+    (profs ?? []).map((p) => [
+      p.id as string,
+      { name: p.name as string, photo: (p.photo_url as string) || DEFAULT_AVATAR },
+    ])
+  )
+
+  return rows.map((r) => {
+    const rid = r.requester_id as string
+    const meta = requesterMeta.get(rid)
+    return {
+      id: r.id as string,
+      teamId: r.team_id as string,
+      teamName: teamName.get(r.team_id as string) ?? 'Equipo',
+      requesterId: rid,
+      requesterName: meta?.name ?? 'Jugador',
+      requesterPhoto: meta?.photo ?? DEFAULT_AVATAR,
+      status: r.status as TeamJoinRequest['status'],
+      createdAt: new Date(r.created_at as string),
+    }
+  })
 }

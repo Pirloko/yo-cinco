@@ -185,8 +185,8 @@ export function OnboardingScreen() {
               </h1>
               <p className="text-muted-foreground">
                 {isEditMode
-                  ? 'Actualiza tu nombre, edad y ciudad'
-                  : 'Cuéntanos sobre ti'}
+                  ? 'Actualiza tu nombre, edad, ciudad y nivel'
+                  : 'Cuéntanos sobre ti y tu nivel de juego'}
               </p>
             </div>
 
@@ -235,49 +235,11 @@ export function OnboardingScreen() {
                   className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
                 />
               </div>
-            </div>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="flex-1 flex flex-col">
-            <div className="space-y-2 mb-8">
-              <h1 className="text-2xl font-bold text-foreground">Tu perfil de juego</h1>
-              <p className="text-muted-foreground">Como te defines en la cancha?</p>
-            </div>
-
-            <div className="space-y-6 flex-1">
-              <div className="space-y-3">
-                <Label className="text-foreground flex items-center gap-2">
-                  <User className="w-4 h-4 text-primary" />
-                  Posicion
-                </Label>
-                <div className="grid grid-cols-2 gap-3">
-                  {POSITIONS.map((pos) => (
-                    <button
-                      key={pos.value}
-                      type="button"
-                      onClick={() => setData({ ...data, position: pos.value })}
-                      className={`p-4 rounded-xl border-2 transition-all text-center ${
-                        data.position === pos.value
-                          ? 'border-primary bg-primary/10'
-                          : 'border-border bg-secondary hover:border-muted-foreground'
-                      }`}
-                    >
-                      <span className={`font-medium ${
-                        data.position === pos.value ? 'text-primary' : 'text-foreground'
-                      }`}>
-                        {pos.label}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
 
               <div className="space-y-3">
                 <Label className="text-foreground flex items-center gap-2">
                   <Star className="w-4 h-4 text-primary" />
-                  Nivel
+                  Nivel de juego
                 </Label>
                 <div className="space-y-2">
                   {LEVELS.map((lvl) => (
@@ -298,6 +260,44 @@ export function OnboardingScreen() {
                       </span>
                       <span className="text-sm text-muted-foreground">
                         {lvl.description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="flex-1 flex flex-col">
+            <div className="space-y-2 mb-8">
+              <h1 className="text-2xl font-bold text-foreground">Tu posición</h1>
+              <p className="text-muted-foreground">¿Dónde te ubicas en la cancha?</p>
+            </div>
+
+            <div className="space-y-6 flex-1">
+              <div className="space-y-3">
+                <Label className="text-foreground flex items-center gap-2">
+                  <User className="w-4 h-4 text-primary" />
+                  Posición
+                </Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {POSITIONS.map((pos) => (
+                    <button
+                      key={pos.value}
+                      type="button"
+                      onClick={() => setData({ ...data, position: pos.value })}
+                      className={`p-4 rounded-xl border-2 transition-all text-center ${
+                        data.position === pos.value
+                          ? 'border-primary bg-primary/10'
+                          : 'border-border bg-secondary hover:border-muted-foreground'
+                      }`}
+                    >
+                      <span className={`font-medium ${
+                        data.position === pos.value ? 'text-primary' : 'text-foreground'
+                      }`}>
+                        {pos.label}
                       </span>
                     </button>
                   ))}

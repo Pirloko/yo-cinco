@@ -20,6 +20,7 @@ import {
   RivalResult,
   Team,
   TeamInvite,
+  TeamJoinRequest,
   User,
 } from './types'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
@@ -36,6 +37,7 @@ import {
 } from '@/lib/supabase/queries'
 import {
   fetchTeamInvitesForUser,
+  fetchTeamJoinRequestsForUser,
   fetchTeamsWithMembers,
 } from '@/lib/supabase/team-queries'
 import { fetchParticipatingOpportunityIds } from '@/lib/supabase/message-queries'
@@ -143,6 +145,8 @@ interface AppContextType {
   getFilteredUsers: (gender: Gender) => User[]
   teams: Team[]
   teamInvites: TeamInvite[]
+  /** Solicitudes de ingreso (como capitán o como solicitante). */
+  teamJoinRequests: TeamJoinRequest[]
   rivalChallenges: RivalChallenge[]
   createTeam: (team: Omit<Team, 'id' | 'createdAt'>) => Promise<void>
   /** Capitán: actualizar nombre, descripción y/o logo (logo_url en DB; archivo en Storage `team-logos`). */
@@ -175,6 +179,12 @@ interface AppContextType {
   ) => Promise<void>
   inviteToTeam: (teamId: string, userId: string) => Promise<void>
   respondToInvite: (inviteId: string, accept: boolean) => Promise<void>
+  /** Jugador: pedir unirse a un equipo (mismo género, no miembro). */
+  requestToJoinTeam: (teamId: string) => Promise<void>
+  /** Capitán: aceptar o rechazar solicitud. */
+  respondToJoinRequest: (requestId: string, accept: boolean) => Promise<void>
+  /** Jugador: retirar solicitud pendiente. */
+  cancelJoinRequest: (requestId: string) => Promise<void>
   getUserTeams: () => Team[]
   getFilteredTeams: (gender: Gender) => Team[]
   /** Oportunidades donde el usuario se apuntó como participante (no incluye ser creador). */
@@ -203,6 +213,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>([])
   const [teams, setTeams] = useState<Team[]>([])
   const [teamInvites, setTeamInvites] = useState<TeamInvite[]>([])
+  const [teamJoinRequests, setTeamJoinRequests] = useState<TeamJoinRequest[]>(
+    []
+  )
   const [rivalChallenges, setRivalChallenges] = useState<RivalChallenge[]>([])
   const [participatingOpportunityIds, setParticipatingOpportunityIds] = useState<
     string[]
@@ -361,6 +374,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setMatchOpportunities([])
     setTeams([])
     setTeamInvites([])
+    setTeamJoinRequests([])
     setRivalChallenges([])
     setParticipatingOpportunityIds([])
     setSelectedChatOpportunityId(null)
@@ -1173,6 +1187,115 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTeamInvites(freshInvites)
   }
 
+  const requestToJoinTeam = async (teamId: string) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const { error } = await supabase.from('team_join_requests').insert({
+      team_id: teamId,
+      requester_id: currentUser.id,
+      status: 'pending',
+    })
+    if (error) {
+      toast.error(
+        error.code === '23505'
+          ? 'Ya tienes una solicitud pendiente para este equipo.'
+          : error.message
+      )
+      return
+    }
+    const list = await fetchTeamJoinRequestsForUser(supabase, currentUser.id)
+    setTeamJoinRequests(list)
+    toast.success('Solicitud enviada al capitán')
+  }
+
+  const respondToJoinRequest = async (requestId: string, accept: boolean) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const req = teamJoinRequests.find((r) => r.id === requestId)
+    if (!req || req.status !== 'pending') return
+    const team = teams.find((t) => t.id === req.teamId)
+    if (!team || team.captainId !== currentUser.id) return
+
+    if (!accept) {
+      const { error } = await supabase
+        .from('team_join_requests')
+        .update({ status: 'declined', updated_at: new Date().toISOString() })
+        .eq('id', requestId)
+      if (error) {
+        toast.error(error.message)
+        return
+      }
+      const list = await fetchTeamJoinRequestsForUser(supabase, currentUser.id)
+      setTeamJoinRequests(list)
+      toast.success('Solicitud rechazada')
+      return
+    }
+
+    if (team.members.length >= 6) {
+      toast.error('La plantilla ya está completa (6 jugadores).')
+      return
+    }
+
+    const { data: prof, error: profErr } = await supabase
+      .from('profiles')
+      .select('position, photo_url')
+      .eq('id', req.requesterId)
+      .single()
+
+    if (profErr || !prof) {
+      toast.error('No se pudo cargar el perfil del jugador.')
+      return
+    }
+
+    const { error: memErr } = await supabase.from('team_members').insert({
+      team_id: req.teamId,
+      user_id: req.requesterId,
+      position: prof.position,
+      photo_url: (prof.photo_url as string) || DEFAULT_AVATAR,
+      status: 'confirmed',
+    })
+    if (memErr) {
+      toast.error(memErr.message)
+      return
+    }
+
+    const { error: updErr } = await supabase
+      .from('team_join_requests')
+      .update({ status: 'accepted', updated_at: new Date().toISOString() })
+      .eq('id', requestId)
+    if (updErr) {
+      toast.error(updErr.message)
+      return
+    }
+
+    const [freshTeams, list] = await Promise.all([
+      fetchTeamsWithMembers(supabase),
+      fetchTeamJoinRequestsForUser(supabase, currentUser.id),
+    ])
+    setTeams(freshTeams)
+    setTeamJoinRequests(list)
+    toast.success(`${req.requesterName} ya es parte del equipo`)
+  }
+
+  const cancelJoinRequest = async (requestId: string) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const req = teamJoinRequests.find((r) => r.id === requestId)
+    if (!req || req.requesterId !== currentUser.id || req.status !== 'pending')
+      return
+    const { error } = await supabase
+      .from('team_join_requests')
+      .delete()
+      .eq('id', requestId)
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    const list = await fetchTeamJoinRequestsForUser(supabase, currentUser.id)
+    setTeamJoinRequests(list)
+    toast.success('Solicitud cancelada')
+  }
+
   const getUserTeams = () => {
     if (!currentUser) return []
     return teams.filter(
@@ -1190,12 +1313,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!currentUser || !isSupabaseConfigured()) return
     try {
       const supabase = createClient()
-      const [matches, others, teamList, invites, partIds, challenges] =
+      const [matches, others, teamList, invites, joinReqs, partIds, challenges] =
         await Promise.all([
           fetchMatchOpportunities(supabase),
           fetchOtherProfiles(supabase, currentUser.id, currentUser.gender),
           fetchTeamsWithMembers(supabase),
           fetchTeamInvitesForUser(supabase, currentUser.id),
+          fetchTeamJoinRequestsForUser(supabase, currentUser.id),
           fetchParticipatingOpportunityIds(supabase, currentUser.id),
           fetchRivalChallengesForUser(supabase, currentUser.id),
         ])
@@ -1203,6 +1327,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setUsers(others)
       setTeams(teamList)
       setTeamInvites(invites)
+      setTeamJoinRequests(joinReqs)
       setParticipatingOpportunityIds(partIds)
       setRivalChallenges(challenges)
     } catch {
@@ -1223,6 +1348,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setMatchOpportunities([])
     setTeams([])
     setTeamInvites([])
+    setTeamJoinRequests([])
     setRivalChallenges([])
     setParticipatingOpportunityIds([])
     setSelectedChatOpportunityId(null)
@@ -1241,12 +1367,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const profile = await fetchProfileForUser(supabase, authUser.id, email)
       if (!profile) return
       setCurrentUser(profile)
-      const [matches, others, teamList, invites, partIds, challenges] =
+      const [matches, others, teamList, invites, joinReqs, partIds, challenges] =
         await Promise.all([
           fetchMatchOpportunities(supabase),
           fetchOtherProfiles(supabase, authUser.id, profile.gender),
           fetchTeamsWithMembers(supabase),
           fetchTeamInvitesForUser(supabase, authUser.id),
+          fetchTeamJoinRequestsForUser(supabase, authUser.id),
           fetchParticipatingOpportunityIds(supabase, authUser.id),
           fetchRivalChallengesForUser(supabase, authUser.id),
         ])
@@ -1254,6 +1381,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setUsers(others)
       setTeams(teamList)
       setTeamInvites(invites)
+      setTeamJoinRequests(joinReqs)
       setParticipatingOpportunityIds(partIds)
       setRivalChallenges(challenges)
     } catch {
@@ -1440,6 +1568,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       )
       .on(
         'postgres_changes',
+        { event: '*', schema: 'public', table: 'team_join_requests' },
+        scheduleRefresh
+      )
+      .on(
+        'postgres_changes',
         { event: '*', schema: 'public', table: 'team_members' },
         scheduleRefresh
       )
@@ -1487,6 +1620,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         getFilteredUsers,
         teams,
         teamInvites,
+        teamJoinRequests,
         rivalChallenges,
         createTeam,
         updateTeam,
@@ -1495,6 +1629,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         acceptRivalOpportunityWithTeam,
         inviteToTeam,
         respondToInvite,
+        requestToJoinTeam,
+        respondToJoinRequest,
+        cancelJoinRequest,
         getUserTeams,
         getFilteredTeams,
         participatingOpportunityIds,
