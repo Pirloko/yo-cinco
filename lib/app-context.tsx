@@ -1,0 +1,1522 @@
+'use client'
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
+import { toast } from 'sonner'
+import {
+  MatchOpportunity,
+  MatchesHubTab,
+  OnboardingData,
+  Gender,
+  Level,
+  RivalChallenge,
+  RivalResult,
+  Team,
+  TeamInvite,
+  User,
+} from './types'
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  mapMatchOpportunityFromDb,
+  DEFAULT_AVATAR,
+  type MatchOpportunityRow,
+} from '@/lib/supabase/mappers'
+import { formatAuthError } from '@/lib/supabase/auth-errors'
+import {
+  fetchMatchOpportunities,
+  fetchOtherProfiles,
+  fetchProfileForUser,
+} from '@/lib/supabase/queries'
+import {
+  fetchTeamInvitesForUser,
+  fetchTeamsWithMembers,
+} from '@/lib/supabase/team-queries'
+import { fetchParticipatingOpportunityIds } from '@/lib/supabase/message-queries'
+import { fetchRivalChallengesForUser } from '@/lib/supabase/rival-challenge-queries'
+import type { User as SupabaseAuthUser } from '@supabase/supabase-js'
+import {
+  isValidTeamInviteId,
+  JOIN_REGISTER_STORAGE_KEY,
+  JOIN_TEAM_STORAGE_KEY,
+} from '@/lib/team-invite-url'
+import {
+  JOIN_MATCH_STORAGE_KEY,
+} from '@/lib/match-invite-url'
+import { buildRandomRevueltaLineup } from '@/lib/revuelta-lineup'
+import { playersJoinRules } from '@/lib/players-seek-profile'
+import { uploadProfileAvatarFile } from '@/lib/supabase/profile-photo'
+
+function getAuthUserEmail(u: SupabaseAuthUser): string | undefined {
+  if (u.email) return u.email
+  const meta = u.user_metadata
+  if (meta && typeof meta.email === 'string') return meta.email
+  return undefined
+}
+
+type AppScreen =
+  | 'landing'
+  | 'auth'
+  | 'onboarding'
+  | 'home'
+  | 'create'
+  | 'explore'
+  | 'swipe'
+  | 'matches'
+  | 'chat'
+  | 'matchDetails'
+  | 'profile'
+  | 'teams'
+
+function needsOnboardingProfile(u: User): boolean {
+  return u.name.trim().length < 2 || u.age < 16
+}
+
+interface AppContextType {
+  authLoading: boolean
+  currentScreen: AppScreen
+  setCurrentScreen: (screen: AppScreen) => void
+  currentUser: User | null
+  setCurrentUser: (user: User | null) => void
+  isAuthenticated: boolean
+  login: (
+    email: string,
+    password: string,
+    gender: Gender,
+    isSignUp: boolean
+  ) => Promise<{ ok: boolean; error?: string; needsOnboarding?: boolean }>
+  logout: () => Promise<void>
+  completeOnboarding: (data: OnboardingData) => Promise<void>
+  /** Mismo flujo que el registro, pero precargado y vuelve a Perfil al terminar. */
+  openProfileEditor: () => void
+  onboardingSource: 'registration' | 'profile_edit'
+  setOnboardingSource: (source: 'registration' | 'profile_edit') => void
+  /** Sube imagen a Storage y actualiza `photo_url` del perfil. */
+  updateProfilePhoto: (file: File) => Promise<{ ok: boolean; error?: string }>
+  matchOpportunities: MatchOpportunity[]
+  addMatchOpportunity: (
+    match: Omit<MatchOpportunity, 'id' | 'createdAt'> & {
+      /** Revuelta (open): el organizador entra como participante con este rol. */
+      creatorIsGoalkeeper?: boolean
+    }
+  ) => Promise<void>
+  /** Apuntarse a un partido ajeno (participante confirmado + acceso al chat). Revuelta: opción arquero. */
+  joinMatchOpportunity: (
+    opportunityId: string,
+    options?: { isGoalkeeper?: boolean }
+  ) => Promise<void>
+  /** Organizador revuelta (cupos llenos): sorteo aleatorio A/B + colores camiseta. */
+  randomizeRevueltaTeams: (
+    opportunityId: string,
+    colorHexA: string,
+    colorHexB: string
+  ) => Promise<void>
+  /** Organizador: cerrar partido y registrar resultado (rival o casual). */
+  finalizeMatchOpportunity: (
+    opportunityId: string,
+    outcome:
+      | { kind: 'rival'; rivalResult: RivalResult }
+      | { kind: 'casual' }
+  ) => Promise<void>
+  suspendMatchOpportunity: (
+    opportunityId: string,
+    reason: string
+  ) => Promise<void>
+  /** Participante u organizador: una calificación por usuario (ventana 48 h). */
+  submitMatchRating: (
+    opportunityId: string,
+    payload: {
+      organizerRating: number | null
+      matchRating: number
+      levelRating: number
+      comment?: string
+    }
+  ) => Promise<void>
+  users: User[]
+  getFilteredMatches: (gender: Gender) => MatchOpportunity[]
+  getFilteredUsers: (gender: Gender) => User[]
+  teams: Team[]
+  teamInvites: TeamInvite[]
+  rivalChallenges: RivalChallenge[]
+  createTeam: (team: Omit<Team, 'id' | 'createdAt'>) => Promise<void>
+  /** Capitán: actualizar nombre, descripción y/o logo (logo_url en DB; archivo en Storage `team-logos`). */
+  updateTeam: (
+    teamId: string,
+    updates: {
+      name?: string
+      description?: string | null
+      logo?: string | null
+    }
+  ) => Promise<void>
+  createRivalChallenge: (payload: {
+    challengerTeam: Team
+    mode: 'direct' | 'open'
+    challengedTeam?: Team
+    message?: string
+    venue: string
+    location: string
+    dateTime: Date
+    level: Level
+  }) => Promise<void>
+  respondToRivalChallenge: (
+    challengeId: string,
+    accept: boolean,
+    myTeamId?: string
+  ) => Promise<void>
+  acceptRivalOpportunityWithTeam: (
+    opportunityId: string,
+    myTeamId: string
+  ) => Promise<void>
+  inviteToTeam: (teamId: string, userId: string) => Promise<void>
+  respondToInvite: (inviteId: string, accept: boolean) => Promise<void>
+  getUserTeams: () => Team[]
+  getFilteredTeams: (gender: Gender) => Team[]
+  /** Oportunidades donde el usuario se apuntó como participante (no incluye ser creador). */
+  participatingOpportunityIds: string[]
+  selectedChatOpportunityId: string | null
+  setSelectedChatOpportunityId: (id: string | null) => void
+  selectedMatchOpportunityId: string | null
+  setSelectedMatchOpportunityId: (id: string | null) => void
+  /** Al navegar a Partidos (ej. campana), abrir esta pestaña una vez. */
+  initialMatchesTab: MatchesHubTab | null
+  setInitialMatchesTab: (tab: MatchesHubTab | null) => void
+  /** Deep link: abrir detalle de equipo en Equipos (se consume al aplicar). */
+  teamsDetailFocusTeamId: string | null
+  setTeamsDetailFocusTeamId: (id: string | null) => void
+}
+
+const AppContext = createContext<AppContextType | undefined>(undefined)
+
+export function AppProvider({ children }: { children: ReactNode }) {
+  const [authLoading, setAuthLoading] = useState(true)
+  const [currentScreen, setCurrentScreen] = useState<AppScreen>('landing')
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [matchOpportunities, setMatchOpportunities] = useState<
+    MatchOpportunity[]
+  >([])
+  const [users, setUsers] = useState<User[]>([])
+  const [teams, setTeams] = useState<Team[]>([])
+  const [teamInvites, setTeamInvites] = useState<TeamInvite[]>([])
+  const [rivalChallenges, setRivalChallenges] = useState<RivalChallenge[]>([])
+  const [participatingOpportunityIds, setParticipatingOpportunityIds] = useState<
+    string[]
+  >([])
+  const [selectedChatOpportunityId, setSelectedChatOpportunityId] = useState<
+    string | null
+  >(null)
+  const [selectedMatchOpportunityId, setSelectedMatchOpportunityId] = useState<
+    string | null
+  >(null)
+  const [initialMatchesTab, setInitialMatchesTab] =
+    useState<MatchesHubTab | null>(null)
+  const [teamsDetailFocusTeamId, setTeamsDetailFocusTeamId] = useState<
+    string | null
+  >(null)
+  const [onboardingSource, setOnboardingSource] = useState<
+    'registration' | 'profile_edit'
+  >('registration')
+
+  const isAuthenticated = currentUser !== null
+
+  const openProfileEditor = useCallback(() => {
+    setOnboardingSource('profile_edit')
+    setCurrentScreen('onboarding')
+  }, [])
+
+  const updateProfilePhoto = useCallback(
+    async (file: File) => {
+      if (!currentUser || !isSupabaseConfigured()) {
+        return { ok: false, error: 'Sesión no disponible.' }
+      }
+      const supabase = createClient()
+      const up = await uploadProfileAvatarFile(supabase, currentUser.id, file)
+      if ('error' in up) {
+        toast.error(up.error)
+        return { ok: false, error: up.error }
+      }
+      const { error } = await supabase
+        .from('profiles')
+        .update({ photo_url: up.publicUrl })
+        .eq('id', currentUser.id)
+      if (error) {
+        toast.error(error.message)
+        return { ok: false, error: error.message }
+      }
+      setCurrentUser({
+        ...currentUser,
+        photo: up.publicUrl,
+      })
+      toast.success('Foto de perfil actualizada')
+      return { ok: true }
+    },
+    [currentUser]
+  )
+
+  const login = async (
+    email: string,
+    password: string,
+    gender: Gender,
+    isSignUp: boolean
+  ): Promise<{ ok: boolean; error?: string; needsOnboarding?: boolean }> => {
+    if (!isSupabaseConfigured()) {
+      return {
+        ok: false,
+        error:
+          'Configura NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en .env.local',
+      }
+    }
+    try {
+      const supabase = createClient()
+      const emailTrimmed = email.trim()
+      if (isSignUp) {
+        const { data, error } = await supabase.auth.signUp({
+          email: emailTrimmed,
+          password,
+          options: { data: { gender } },
+        })
+        if (error) return { ok: false, error: formatAuthError(error) }
+        if (data.user && !data.session) {
+          return {
+            ok: false,
+            error:
+              'Revisa tu correo para confirmar la cuenta antes de iniciar sesión.',
+          }
+        }
+        if (data.user) {
+          await supabase
+            .from('profiles')
+            .update({ gender })
+            .eq('id', data.user.id)
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: emailTrimmed,
+          password,
+        })
+        if (error) return { ok: false, error: formatAuthError(error) }
+      }
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user?.email) {
+        return { ok: false, error: 'No se pudo obtener la sesión.' }
+      }
+
+      const profile = await fetchProfileForUser(supabase, user.id, user.email)
+      if (!profile) {
+        return { ok: false, error: 'No se encontró el perfil.' }
+      }
+
+      setCurrentUser(profile)
+      const [matches, others, teamList, invites, partIds, challenges] = await Promise.all([
+        fetchMatchOpportunities(supabase),
+        fetchOtherProfiles(supabase, user.id, profile.gender),
+        fetchTeamsWithMembers(supabase),
+        fetchTeamInvitesForUser(supabase, user.id),
+        fetchParticipatingOpportunityIds(supabase, user.id),
+        fetchRivalChallengesForUser(supabase, user.id),
+      ])
+      setMatchOpportunities(matches)
+      setUsers(others)
+      setTeams(teamList)
+      setTeamInvites(invites)
+      setParticipatingOpportunityIds(partIds)
+      setRivalChallenges(challenges)
+
+      return {
+        ok: true,
+        needsOnboarding: needsOnboardingProfile(profile),
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Error de conexión'
+      return { ok: false, error: msg }
+    }
+  }
+
+  const logout = async () => {
+    try {
+      if (isSupabaseConfigured()) {
+        const supabase = createClient()
+        await supabase.auth.signOut()
+      }
+    } catch {
+      // ignorar
+    }
+    try {
+      sessionStorage.removeItem(JOIN_TEAM_STORAGE_KEY)
+      sessionStorage.removeItem(JOIN_MATCH_STORAGE_KEY)
+      sessionStorage.removeItem(JOIN_REGISTER_STORAGE_KEY)
+    } catch {
+      // ignore
+    }
+    setCurrentUser(null)
+    setUsers([])
+    setMatchOpportunities([])
+    setTeams([])
+    setTeamInvites([])
+    setRivalChallenges([])
+    setParticipatingOpportunityIds([])
+    setSelectedChatOpportunityId(null)
+    setTeamsDetailFocusTeamId(null)
+    setCurrentScreen('landing')
+  }
+
+  const completeOnboarding = async (data: OnboardingData) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const photo = data.photo || DEFAULT_AVATAR
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        name: data.name,
+        age: data.age,
+        gender: data.gender,
+        position: data.position,
+        level: data.level,
+        city: data.city,
+        availability: data.availability,
+        photo_url: photo,
+      })
+      .eq('id', currentUser.id)
+
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+
+    setCurrentUser({
+      ...currentUser,
+      ...data,
+      photo,
+      email: currentUser.email,
+      createdAt: currentUser.createdAt,
+    })
+    if (onboardingSource === 'profile_edit') {
+      setOnboardingSource('registration')
+      toast.success('Perfil actualizado')
+      setCurrentScreen('profile')
+    } else {
+      setCurrentScreen('home')
+    }
+  }
+
+  const addMatchOpportunity = async (
+    m: Omit<MatchOpportunity, 'id' | 'createdAt'> & {
+      creatorIsGoalkeeper?: boolean
+    }
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const insert = {
+      type: m.type,
+      title: m.title,
+      description: m.description ?? null,
+      location: m.location,
+      venue: m.venue,
+      date_time: m.dateTime.toISOString(),
+      level: m.level,
+      creator_id: m.creatorId,
+      team_name: m.teamName ?? null,
+      players_needed: m.playersNeeded ?? null,
+      players_joined: m.playersJoined ?? 0,
+      players_seek_profile:
+        m.type === 'players' && m.playersSeekProfile
+          ? m.playersSeekProfile
+          : null,
+      gender: m.gender,
+      status: m.status,
+    }
+    const { data, error } = await supabase
+      .from('match_opportunities')
+      .insert(insert)
+      .select('*')
+      .single()
+
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+
+    const row = data as MatchOpportunityRow
+    const oppId = row.id
+
+    if (m.type === 'open') {
+      const { error: partErr } = await supabase
+        .from('match_opportunity_participants')
+        .insert({
+          opportunity_id: oppId,
+          user_id: currentUser.id,
+          status: 'confirmed',
+          is_goalkeeper: m.creatorIsGoalkeeper === true,
+        })
+      if (partErr) {
+        toast.error(partErr.message)
+        await supabase.from('match_opportunities').delete().eq('id', oppId)
+        return
+      }
+    }
+
+    const [matches, partIds] = await Promise.all([
+      fetchMatchOpportunities(supabase),
+      fetchParticipatingOpportunityIds(supabase, currentUser.id),
+    ])
+    setMatchOpportunities(matches)
+    setParticipatingOpportunityIds(partIds)
+  }
+
+  const joinMatchOpportunity = async (
+    opportunityId: string,
+    options?: { isGoalkeeper?: boolean }
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const opp = matchOpportunities.find((m) => m.id === opportunityId)
+    if (opp?.creatorId === currentUser.id) {
+      toast.info('Eres el organizador de este partido.')
+      return
+    }
+    if (participatingOpportunityIds.includes(opportunityId)) {
+      toast.info('Ya estás en este partido.')
+      return
+    }
+    if (!opp) {
+      toast.error('No encontramos este partido.')
+      return
+    }
+    const cap = opp.playersNeeded ?? 0
+    const isGkRequest = options?.isGoalkeeper === true
+
+    let insertAsGk = false
+
+    if (opp.type === 'open') {
+      insertAsGk = isGkRequest
+      if (cap > 0 && (opp.playersJoined ?? 0) >= cap) {
+        toast.error('No quedan cupos en este partido.')
+        return
+      }
+      if (insertAsGk) {
+        const { count, error: cntErr } = await supabase
+          .from('match_opportunity_participants')
+          .select('*', { count: 'exact', head: true })
+          .eq('opportunity_id', opportunityId)
+          .eq('is_goalkeeper', true)
+        if (cntErr) {
+          toast.error(cntErr.message)
+          return
+        }
+        if ((count ?? 0) >= 2) {
+          toast.error('Ya no quedan cupos de arquero (máx. 2).')
+          return
+        }
+      }
+    } else if (opp.type === 'players') {
+      const { data: partRows, error: partQErr } = await supabase
+        .from('match_opportunity_participants')
+        .select('is_goalkeeper, status')
+        .eq('opportunity_id', opportunityId)
+      if (partQErr) {
+        toast.error(partQErr.message)
+        return
+      }
+      let gkCount = 0
+      let fieldCount = 0
+      let joinedDb = 0
+      for (const p of partRows ?? []) {
+        const st = p.status as string
+        if (st !== 'pending' && st !== 'confirmed') continue
+        joinedDb++
+        if (p.is_goalkeeper === true) gkCount++
+        else fieldCount++
+      }
+      if (cap > 0 && joinedDb >= cap) {
+        toast.error('No quedan cupos en este partido.')
+        return
+      }
+      const rules = playersJoinRules(opp)
+      if (rules.kind === 'legacy') {
+        insertAsGk = false
+      } else if (rules.kind === 'gk_only') {
+        if (!isGkRequest) {
+          toast.error('Esta búsqueda solo admite arqueros.')
+          return
+        }
+        if (gkCount >= rules.max) {
+          toast.error('Ya no quedan cupos de arquero.')
+          return
+        }
+        insertAsGk = true
+      } else if (rules.kind === 'field_only') {
+        if (isGkRequest) {
+          toast.error('Solo buscan jugadores de campo.')
+          return
+        }
+        if (fieldCount >= rules.max) {
+          toast.error('No quedan cupos de jugador de campo.')
+          return
+        }
+        insertAsGk = false
+      } else {
+        const maxField = rules.maxField
+        if (isGkRequest) {
+          if (gkCount >= 1) {
+            toast.error('Ya hay un arquero; en esta búsqueda solo cabe uno.')
+            return
+          }
+          insertAsGk = true
+        } else {
+          if (fieldCount >= maxField) {
+            toast.error('No quedan cupos de jugador de campo.')
+            return
+          }
+          insertAsGk = false
+        }
+      }
+    } else {
+      if (cap > 0 && (opp.playersJoined ?? 0) >= cap) {
+        toast.error('No quedan cupos en este partido.')
+        return
+      }
+    }
+
+    const { error } = await supabase.from('match_opportunity_participants').insert({
+      opportunity_id: opportunityId,
+      user_id: currentUser.id,
+      status: 'confirmed',
+      is_goalkeeper: insertAsGk,
+    })
+    if (error) {
+      if (error.code === '23505') {
+        toast.info('Ya estás registrado en este partido.')
+      } else {
+        toast.error(error.message)
+      }
+      return
+    }
+    const [partIds, matches] = await Promise.all([
+      fetchParticipatingOpportunityIds(supabase, currentUser.id),
+      fetchMatchOpportunities(supabase),
+    ])
+    setParticipatingOpportunityIds(partIds)
+    setMatchOpportunities(matches)
+    setSelectedChatOpportunityId(opportunityId)
+    setCurrentScreen('chat')
+    toast.success('¡Te uniste al partido! Coordina aquí con el grupo.')
+  }
+
+  const randomizeRevueltaTeams = async (
+    opportunityId: string,
+    colorHexA: string,
+    colorHexB: string
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const hexOk = (s: string) => /^#[0-9A-Fa-f]{6}$/.test(s.trim())
+    if (!hexOk(colorHexA) || !hexOk(colorHexB)) {
+      toast.error('Color de camiseta no válido.')
+      return
+    }
+    if (colorHexA.trim().toLowerCase() === colorHexB.trim().toLowerCase()) {
+      toast.error('Elige dos colores distintos para cada equipo.')
+      return
+    }
+    const opp = matchOpportunities.find((m) => m.id === opportunityId)
+    if (!opp || opp.type !== 'open' || opp.creatorId !== currentUser.id) {
+      toast.error('Solo el organizador puede sortear equipos en esta revuelta.')
+      return
+    }
+    const needed = opp.playersNeeded ?? 0
+    const joined = opp.playersJoined ?? 0
+    if (needed <= 0 || joined < needed) {
+      toast.error('Completa todos los cupos antes de sortear equipos.')
+      return
+    }
+    const supabase = createClient()
+    const { data: parts, error: pErr } = await supabase
+      .from('match_opportunity_participants')
+      .select('user_id, is_goalkeeper, status')
+      .eq('opportunity_id', opportunityId)
+    if (pErr) {
+      toast.error(pErr.message)
+      return
+    }
+    const byUser = new Map<string, boolean>()
+    for (const p of parts ?? []) {
+      const st = p.status as string
+      if (st !== 'confirmed' && st !== 'pending') continue
+      const uid = p.user_id as string
+      const gk = p.is_goalkeeper === true
+      byUser.set(uid, (byUser.get(uid) ?? false) || gk)
+    }
+    if (opp.creatorId && !byUser.has(opp.creatorId)) {
+      byUser.set(opp.creatorId, false)
+    }
+    const roster = [...byUser.entries()].map(([userId, isGoalkeeper]) => ({
+      userId,
+      isGoalkeeper,
+    }))
+    const lineup = buildRandomRevueltaLineup(
+      roster,
+      colorHexA.trim(),
+      colorHexB.trim()
+    )
+    const now = new Date().toISOString()
+    const { error } = await supabase
+      .from('match_opportunities')
+      .update({
+        revuelta_lineup: lineup,
+        updated_at: now,
+      })
+      .eq('id', opportunityId)
+      .eq('creator_id', currentUser.id)
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    const matches = await fetchMatchOpportunities(supabase)
+    setMatchOpportunities(matches)
+    toast.success('¡Equipos sorteados! Equipo A y Equipo B listos.')
+  }
+
+  const finalizeMatchOpportunity = async (
+    opportunityId: string,
+    outcome:
+      | { kind: 'rival'; rivalResult: RivalResult }
+      | { kind: 'casual' }
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const opp = matchOpportunities.find((m) => m.id === opportunityId)
+    if (!opp || opp.creatorId !== currentUser.id) {
+      toast.error('Solo el organizador puede finalizar el partido.')
+      return
+    }
+    if (opp.status === 'completed') {
+      toast.info('Este partido ya está finalizado.')
+      return
+    }
+    if (opp.type === 'rival' && outcome.kind !== 'rival') {
+      toast.error('Indica el resultado del partido.')
+      return
+    }
+    if (opp.type !== 'rival' && outcome.kind !== 'casual') {
+      toast.error('Tipo de partido no válido.')
+      return
+    }
+
+    const supabase = createClient()
+    const now = new Date().toISOString()
+    const update: Record<string, unknown> = {
+      status: 'completed',
+      finalized_at: now,
+      updated_at: now,
+    }
+    if (opp.type === 'rival' && outcome.kind === 'rival') {
+      update.rival_result = outcome.rivalResult
+      update.casual_completed = null
+    } else {
+      update.rival_result = null
+      update.casual_completed = true
+    }
+
+    const { error } = await supabase
+      .from('match_opportunities')
+      .update(update)
+      .eq('id', opportunityId)
+      .eq('creator_id', currentUser.id)
+
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+
+    const matches = await fetchMatchOpportunities(supabase)
+    setMatchOpportunities(matches)
+    toast.success('Partido finalizado. Los jugadores pueden calificar en las próximas 48 h.')
+  }
+
+  const suspendMatchOpportunity = async (
+    opportunityId: string,
+    reason: string
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const opp = matchOpportunities.find((m) => m.id === opportunityId)
+    if (!opp || opp.creatorId !== currentUser.id) {
+      toast.error('Solo el organizador puede suspender el partido.')
+      return
+    }
+    if (opp.status === 'completed') {
+      toast.error('No puedes suspender un partido ya finalizado.')
+      return
+    }
+    const cleanReason = reason.trim()
+    if (cleanReason.length < 5) {
+      toast.error('El motivo debe tener al menos 5 caracteres.')
+      return
+    }
+
+    const supabase = createClient()
+    const now = new Date().toISOString()
+    const { error } = await supabase
+      .from('match_opportunities')
+      .update({
+        status: 'cancelled',
+        suspended_at: now,
+        suspended_reason: cleanReason,
+        updated_at: now,
+      })
+      .eq('id', opportunityId)
+      .eq('creator_id', currentUser.id)
+
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+
+    const matches = await fetchMatchOpportunities(supabase)
+    setMatchOpportunities(matches)
+    toast.success('Partido suspendido.')
+  }
+
+  const submitMatchRating = async (
+    opportunityId: string,
+    payload: {
+      organizerRating: number | null
+      matchRating: number
+      levelRating: number
+      comment?: string
+    }
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const { error } = await createClient()
+      .from('match_opportunity_ratings')
+      .insert({
+        opportunity_id: opportunityId,
+        rater_id: currentUser.id,
+        organizer_rating: payload.organizerRating,
+        match_rating: payload.matchRating,
+        level_rating: payload.levelRating,
+        comment: payload.comment?.trim() || null,
+      })
+
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    toast.success('¡Gracias por tu calificación!')
+  }
+
+  const getFilteredMatches = (gender: Gender) => {
+    return matchOpportunities.filter((m) => m.gender === gender)
+  }
+
+  const getFilteredUsers = (gender: Gender) => {
+    return users.filter(
+      (u) => u.gender === gender && u.id !== currentUser?.id
+    )
+  }
+
+  const createTeam = async (team: Omit<Team, 'id' | 'createdAt'>) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const { data: teamRow, error } = await supabase
+      .from('teams')
+      .insert({
+        name: team.name,
+        logo_url: team.logo ?? null,
+        level: team.level,
+        captain_id: team.captainId,
+        city: team.city,
+        gender: team.gender,
+        description: team.description ?? null,
+      })
+      .select('*')
+      .single()
+
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+
+    const captain =
+      team.members.find((m) => m.id === currentUser.id) ?? team.members[0]
+    if (!captain) {
+      toast.error('No se pudo determinar el capitán del equipo.')
+      return
+    }
+
+    const { error: memErr } = await supabase.from('team_members').insert({
+      team_id: teamRow.id,
+      user_id: captain.id,
+      position: captain.position,
+      photo_url: captain.photo,
+      status: 'confirmed',
+    })
+
+    if (memErr) {
+      toast.error(memErr.message)
+      return
+    }
+
+    const [freshTeams, freshInvites] = await Promise.all([
+      fetchTeamsWithMembers(supabase),
+      fetchTeamInvitesForUser(supabase, currentUser.id),
+    ])
+    setTeams(freshTeams)
+    setTeamInvites(freshInvites)
+  }
+
+  const updateTeam = async (
+    teamId: string,
+    updates: {
+      name?: string
+      description?: string | null
+      logo?: string | null
+    }
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const row: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    }
+    if (updates.name !== undefined) {
+      const n = updates.name.trim()
+      if (n.length < 2) {
+        toast.error('El nombre del equipo debe tener al menos 2 caracteres.')
+        return
+      }
+      row.name = n
+    }
+    if (updates.description !== undefined) {
+      const d =
+        updates.description === null
+          ? ''
+          : String(updates.description).trim()
+      row.description = d.length > 0 ? d : null
+    }
+    if (updates.logo !== undefined) {
+      row.logo_url = updates.logo
+    }
+
+    const { error } = await supabase
+      .from('teams')
+      .update(row)
+      .eq('id', teamId)
+      .eq('captain_id', currentUser.id)
+
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+
+    const freshTeams = await fetchTeamsWithMembers(supabase)
+    setTeams(freshTeams)
+    toast.success('Equipo actualizado')
+  }
+
+  const createRivalChallenge = async (payload: {
+    challengerTeam: Team
+    mode: 'direct' | 'open'
+    challengedTeam?: Team
+    message?: string
+    venue: string
+    location: string
+    dateTime: Date
+    level: Level
+  }) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const title =
+      payload.mode === 'direct' && payload.challengedTeam
+        ? `${payload.challengerTeam.name} vs ${payload.challengedTeam.name}`
+        : `${payload.challengerTeam.name} busca rival`
+    const description =
+      payload.message?.trim() ||
+      (payload.mode === 'direct'
+        ? `Desafío directo de ${payload.challengerTeam.name}`
+        : `${payload.challengerTeam.name} está buscando rival`)
+
+    const { data: oppData, error: oppErr } = await supabase
+      .from('match_opportunities')
+      .insert({
+        type: 'rival',
+        title,
+        description,
+        location: payload.location,
+        venue: payload.venue,
+        date_time: payload.dateTime.toISOString(),
+        level: payload.level,
+        creator_id: currentUser.id,
+        team_name: payload.challengerTeam.name,
+        gender: currentUser.gender,
+        status: 'pending',
+      })
+      .select('*')
+      .single()
+
+    if (oppErr || !oppData) {
+      toast.error(oppErr?.message ?? 'No se pudo crear el desafío')
+      return
+    }
+
+    const challengeInsert = {
+      opportunity_id: oppData.id,
+      challenger_team_id: payload.challengerTeam.id,
+      challenger_captain_id: currentUser.id,
+      challenged_team_id:
+        payload.mode === 'direct' ? payload.challengedTeam?.id ?? null : null,
+      challenged_captain_id:
+        payload.mode === 'direct'
+          ? payload.challengedTeam?.captainId ?? null
+          : null,
+      mode: payload.mode,
+      status: 'pending',
+    }
+    const { error: chErr } = await supabase
+      .from('rival_challenges')
+      .insert(challengeInsert)
+
+    if (chErr) {
+      toast.error(chErr.message)
+      return
+    }
+
+    const row = oppData as MatchOpportunityRow
+    const mapped = mapMatchOpportunityFromDb(row, {
+      id: currentUser.id,
+      name: currentUser.name,
+      photo_url: currentUser.photo,
+    })
+    setMatchOpportunities((prev) => [mapped, ...prev])
+
+    const freshChallenges = await fetchRivalChallengesForUser(supabase, currentUser.id)
+    setRivalChallenges(freshChallenges)
+    toast.success(
+      payload.mode === 'direct'
+        ? `Desafío enviado a ${payload.challengedTeam?.name ?? 'equipo rival'}`
+        : 'Búsqueda de rival publicada'
+    )
+  }
+
+  const respondToRivalChallenge = async (
+    challengeId: string,
+    accept: boolean,
+    myTeamId?: string
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const challenge = rivalChallenges.find((c) => c.id === challengeId)
+    if (!challenge || challenge.status !== 'pending') {
+      toast.error('Desafío no disponible.')
+      return
+    }
+
+    if (!accept) {
+      const { error } = await supabase
+        .from('rival_challenges')
+        .update({
+          status: 'declined',
+          responded_at: new Date().toISOString(),
+          accepted_team_id: null,
+          accepted_captain_id: currentUser.id,
+        })
+        .eq('id', challengeId)
+      if (error) toast.error(error.message)
+      else toast.success('Desafío rechazado.')
+    } else {
+      let acceptedTeamId = challenge.challengedTeamId
+      if (challenge.mode === 'open') {
+        if (!myTeamId) {
+          toast.error('Selecciona tu equipo para aceptar este desafío.')
+          return
+        }
+        acceptedTeamId = myTeamId
+      }
+
+      const acceptedTeam = teams.find((t) => t.id === acceptedTeamId)
+      const challengerTeam = teams.find((t) => t.id === challenge.challengerTeamId)
+      const updatePayload: Record<string, unknown> = {
+        status: 'accepted',
+        responded_at: new Date().toISOString(),
+        accepted_team_id: acceptedTeamId,
+        accepted_captain_id: currentUser.id,
+      }
+      if (challenge.mode === 'open') {
+        updatePayload.challenged_team_id = acceptedTeamId
+        updatePayload.challenged_captain_id = currentUser.id
+      }
+
+      const { error: updErr } = await supabase
+        .from('rival_challenges')
+        .update(updatePayload)
+        .eq('id', challengeId)
+      if (updErr) {
+        toast.error(updErr.message)
+        return
+      }
+
+      await supabase
+        .from('match_opportunities')
+        .update({
+          status: 'confirmed',
+          title:
+            challengerTeam && acceptedTeam
+              ? `${challengerTeam.name} vs ${acceptedTeam.name}`
+              : challenge.opportunityTitle,
+        })
+        .eq('id', challenge.opportunityId)
+
+      await supabase.from('match_opportunity_participants').upsert({
+        opportunity_id: challenge.opportunityId,
+        user_id: currentUser.id,
+        status: 'confirmed',
+        is_goalkeeper: false,
+      })
+
+      setSelectedChatOpportunityId(challenge.opportunityId)
+      setCurrentScreen('chat')
+      toast.success('¡Desafío aceptado! Ya pueden coordinar en el chat.')
+    }
+
+    const [freshChallenges, matches, partIds] = await Promise.all([
+      fetchRivalChallengesForUser(supabase, currentUser.id),
+      fetchMatchOpportunities(supabase),
+      fetchParticipatingOpportunityIds(supabase, currentUser.id),
+    ])
+    setRivalChallenges(freshChallenges)
+    setMatchOpportunities(matches)
+    setParticipatingOpportunityIds(partIds)
+  }
+
+  const acceptRivalOpportunityWithTeam = async (
+    opportunityId: string,
+    myTeamId: string
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const challenge = rivalChallenges.find(
+      (c) => c.opportunityId === opportunityId && c.status === 'pending'
+    )
+    if (!challenge) {
+      toast.error('No se encontró un desafío pendiente para este partido.')
+      return
+    }
+    await respondToRivalChallenge(challenge.id, true, myTeamId)
+  }
+
+  const inviteToTeam = async (teamId: string, userId: string) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const { error } = await supabase.from('team_invites').insert({
+      team_id: teamId,
+      inviter_id: currentUser.id,
+      invitee_id: userId,
+      status: 'pending',
+    })
+    if (error) {
+      toast.error(
+        error.code === '23505'
+          ? 'Ya existe una invitación pendiente para este jugador.'
+          : error.message
+      )
+      return
+    }
+    const invites = await fetchTeamInvitesForUser(supabase, currentUser.id)
+    setTeamInvites(invites)
+  }
+
+  const respondToInvite = async (inviteId: string, accept: boolean) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const invite = teamInvites.find((i) => i.id === inviteId)
+    if (!invite) return
+
+    if (accept) {
+      const { error: memErr } = await supabase.from('team_members').insert({
+        team_id: invite.teamId,
+        user_id: currentUser.id,
+        position: currentUser.position,
+        photo_url: currentUser.photo,
+        status: 'confirmed',
+      })
+      if (memErr) {
+        toast.error(memErr.message)
+        return
+      }
+      const { error: updErr } = await supabase
+        .from('team_invites')
+        .update({ status: 'accepted' })
+        .eq('id', inviteId)
+      if (updErr) {
+        toast.error(updErr.message)
+        return
+      }
+    } else {
+      const { error } = await supabase
+        .from('team_invites')
+        .update({ status: 'declined' })
+        .eq('id', inviteId)
+      if (error) {
+        toast.error(error.message)
+        return
+      }
+    }
+
+    const [freshTeams, freshInvites] = await Promise.all([
+      fetchTeamsWithMembers(supabase),
+      fetchTeamInvitesForUser(supabase, currentUser.id),
+    ])
+    setTeams(freshTeams)
+    setTeamInvites(freshInvites)
+  }
+
+  const getUserTeams = () => {
+    if (!currentUser) return []
+    return teams.filter(
+      (t) =>
+        t.captainId === currentUser.id ||
+        t.members.some((m) => m.id === currentUser.id)
+    )
+  }
+
+  const getFilteredTeams = (gender: Gender) => {
+    return teams.filter((t) => t.gender === gender)
+  }
+
+  const refreshAppData = useCallback(async () => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    try {
+      const supabase = createClient()
+      const [matches, others, teamList, invites, partIds, challenges] =
+        await Promise.all([
+          fetchMatchOpportunities(supabase),
+          fetchOtherProfiles(supabase, currentUser.id, currentUser.gender),
+          fetchTeamsWithMembers(supabase),
+          fetchTeamInvitesForUser(supabase, currentUser.id),
+          fetchParticipatingOpportunityIds(supabase, currentUser.id),
+          fetchRivalChallengesForUser(supabase, currentUser.id),
+        ])
+      setMatchOpportunities(matches)
+      setUsers(others)
+      setTeams(teamList)
+      setTeamInvites(invites)
+      setParticipatingOpportunityIds(partIds)
+      setRivalChallenges(challenges)
+    } catch {
+      // red/offline
+    }
+  }, [currentUser])
+
+  const clearSessionState = useCallback(() => {
+    try {
+      sessionStorage.removeItem(JOIN_TEAM_STORAGE_KEY)
+      sessionStorage.removeItem(JOIN_MATCH_STORAGE_KEY)
+      sessionStorage.removeItem(JOIN_REGISTER_STORAGE_KEY)
+    } catch {
+      // ignore
+    }
+    setCurrentUser(null)
+    setUsers([])
+    setMatchOpportunities([])
+    setTeams([])
+    setTeamInvites([])
+    setRivalChallenges([])
+    setParticipatingOpportunityIds([])
+    setSelectedChatOpportunityId(null)
+    setSelectedMatchOpportunityId(null)
+    setInitialMatchesTab(null)
+    setTeamsDetailFocusTeamId(null)
+    setOnboardingSource('registration')
+  }, [])
+
+  const loadAppStateForAuthUser = useCallback(async (authUser: SupabaseAuthUser) => {
+    if (!isSupabaseConfigured()) return
+    const email = getAuthUserEmail(authUser)
+    if (!email) return
+    try {
+      const supabase = createClient()
+      const profile = await fetchProfileForUser(supabase, authUser.id, email)
+      if (!profile) return
+      setCurrentUser(profile)
+      const [matches, others, teamList, invites, partIds, challenges] =
+        await Promise.all([
+          fetchMatchOpportunities(supabase),
+          fetchOtherProfiles(supabase, authUser.id, profile.gender),
+          fetchTeamsWithMembers(supabase),
+          fetchTeamInvitesForUser(supabase, authUser.id),
+          fetchParticipatingOpportunityIds(supabase, authUser.id),
+          fetchRivalChallengesForUser(supabase, authUser.id),
+        ])
+      setMatchOpportunities(matches)
+      setUsers(others)
+      setTeams(teamList)
+      setTeamInvites(invites)
+      setParticipatingOpportunityIds(partIds)
+      setRivalChallenges(challenges)
+    } catch {
+      // offline / error de red
+    }
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+    const finishAuthLoading = () => {
+      if (mounted) setAuthLoading(false)
+    }
+
+    if (!isSupabaseConfigured()) {
+      finishAuthLoading()
+      return () => {
+        mounted = false
+      }
+    }
+
+    let supabase: ReturnType<typeof createClient>
+    try {
+      supabase = createClient()
+    } catch {
+      finishAuthLoading()
+      return () => {
+        mounted = false
+      }
+    }
+
+    // Nunca uses callback `async` aquí: Supabase emite INITIAL_SESSION dentro de un lock;
+    // await + peticiones del cliente reintentan ese lock → deadlock y spinner infinito.
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return
+
+      if (event === 'SIGNED_OUT') {
+        clearSessionState()
+        return
+      }
+
+      if (event === 'INITIAL_SESSION') {
+        if (session?.user && getAuthUserEmail(session.user)) {
+          const safety = window.setTimeout(() => {
+            if (mounted) finishAuthLoading()
+          }, 15000)
+          void loadAppStateForAuthUser(session.user).finally(() => {
+            window.clearTimeout(safety)
+            if (mounted) finishAuthLoading()
+          })
+        } else {
+          clearSessionState()
+          finishAuthLoading()
+        }
+        return
+      }
+
+      if (
+        event === 'SIGNED_IN' ||
+        event === 'TOKEN_REFRESHED' ||
+        event === 'USER_UPDATED'
+      ) {
+        if (session?.user && getAuthUserEmail(session.user)) {
+          void loadAppStateForAuthUser(session.user)
+        }
+      }
+    })
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [clearSessionState, loadAppStateForAuthUser])
+
+  /** ?joinTeam= & ?register=1 → sessionStorage y URL limpia */
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const sp = new URLSearchParams(window.location.search)
+      const jt = sp.get('joinTeam')
+      if (jt && isValidTeamInviteId(jt)) {
+        sessionStorage.setItem(JOIN_TEAM_STORAGE_KEY, jt)
+      }
+      const jm = sp.get('joinMatch')
+      if (jm && isValidTeamInviteId(jm)) {
+        sessionStorage.setItem(JOIN_MATCH_STORAGE_KEY, jm)
+      }
+      if (sp.get('register') === '1') {
+        sessionStorage.setItem(JOIN_REGISTER_STORAGE_KEY, '1')
+      }
+      if (jt || jm || sp.get('register') === '1') {
+        window.history.replaceState({}, '', '/')
+      }
+    } catch {
+      // modo privado / storage bloqueado
+    }
+  }, [])
+
+  /** Invitación con registro: abrir auth desde landing */
+  useEffect(() => {
+    if (authLoading || currentUser) return
+    if (currentScreen !== 'landing') return
+    try {
+      if (sessionStorage.getItem(JOIN_REGISTER_STORAGE_KEY) === '1') {
+        setCurrentScreen('auth')
+      }
+    } catch {
+      // ignore
+    }
+  }, [authLoading, currentUser, currentScreen])
+
+  /** Tras sesión + perfil listo: deep link equipo (prioridad) o detalle de revuelta */
+  useEffect(() => {
+    if (authLoading || !currentUser) return
+    if (needsOnboardingProfile(currentUser)) return
+    let tid: string | null = null
+    let mid: string | null = null
+    try {
+      tid = sessionStorage.getItem(JOIN_TEAM_STORAGE_KEY)
+      mid = sessionStorage.getItem(JOIN_MATCH_STORAGE_KEY)
+    } catch {
+      return
+    }
+    if (tid && isValidTeamInviteId(tid)) {
+      try {
+        sessionStorage.removeItem(JOIN_TEAM_STORAGE_KEY)
+      } catch {
+        // ignore
+      }
+      setTeamsDetailFocusTeamId(tid)
+      setCurrentScreen('teams')
+      return
+    }
+    if (mid && isValidTeamInviteId(mid)) {
+      try {
+        sessionStorage.removeItem(JOIN_MATCH_STORAGE_KEY)
+      } catch {
+        // ignore
+      }
+      setSelectedMatchOpportunityId(mid)
+      setCurrentScreen('matchDetails')
+    }
+  }, [authLoading, currentUser])
+
+  const refreshTimerRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    let supabase: ReturnType<typeof createClient>
+    try {
+      supabase = createClient()
+    } catch {
+      return
+    }
+
+    const scheduleRefresh = () => {
+      if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current)
+      refreshTimerRef.current = window.setTimeout(() => {
+        void refreshAppData()
+      }, 250)
+    }
+
+    const channel = supabase
+      .channel(`app-realtime:${currentUser.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'match_opportunities' },
+        scheduleRefresh
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'match_opportunity_participants' },
+        scheduleRefresh
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'rival_challenges' },
+        scheduleRefresh
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'team_invites' },
+        scheduleRefresh
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'team_members' },
+        scheduleRefresh
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'teams' },
+        scheduleRefresh
+      )
+      .subscribe()
+
+    return () => {
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current)
+        refreshTimerRef.current = null
+      }
+      supabase.removeChannel(channel)
+    }
+  }, [currentUser, refreshAppData])
+
+  return (
+    <AppContext.Provider
+      value={{
+        authLoading,
+        currentScreen,
+        setCurrentScreen,
+        currentUser,
+        setCurrentUser,
+        isAuthenticated,
+        login,
+        logout,
+        completeOnboarding,
+        openProfileEditor,
+        onboardingSource,
+        setOnboardingSource,
+        updateProfilePhoto,
+        matchOpportunities,
+        addMatchOpportunity,
+        joinMatchOpportunity,
+        randomizeRevueltaTeams,
+        finalizeMatchOpportunity,
+        suspendMatchOpportunity,
+        submitMatchRating,
+        users,
+        getFilteredMatches,
+        getFilteredUsers,
+        teams,
+        teamInvites,
+        rivalChallenges,
+        createTeam,
+        updateTeam,
+        createRivalChallenge,
+        respondToRivalChallenge,
+        acceptRivalOpportunityWithTeam,
+        inviteToTeam,
+        respondToInvite,
+        getUserTeams,
+        getFilteredTeams,
+        participatingOpportunityIds,
+        selectedChatOpportunityId,
+        setSelectedChatOpportunityId,
+        selectedMatchOpportunityId,
+        setSelectedMatchOpportunityId,
+        initialMatchesTab,
+        setInitialMatchesTab,
+        teamsDetailFocusTeamId,
+        setTeamsDetailFocusTeamId,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  )
+}
+
+export function useApp() {
+  const context = useContext(AppContext)
+  if (context === undefined) {
+    throw new Error('useApp must be used within an AppProvider')
+  }
+  return context
+}

@@ -1,0 +1,481 @@
+'use client'
+
+import { useCallback, useEffect, useState } from 'react'
+import { useApp } from '@/lib/app-context'
+import { BottomNav } from '@/components/bottom-nav'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  fetchParticipantsForOpportunity,
+  type OpportunityParticipantRow,
+} from '@/lib/supabase/message-queries'
+import {
+  fetchMyRatingForOpportunity,
+  fetchRatingSummaryForOpportunity,
+  fetchRecentRatingCommentsForOpportunity,
+  type RatingSummary,
+  type MatchOpportunityRatingRow,
+} from '@/lib/supabase/rating-queries'
+import { MatchCompletionPanel } from '@/components/match-completion-panel'
+import { JoinRevueltaDialog } from '@/components/join-revuelta-dialog'
+import { JoinPlayersSearchDialog } from '@/components/join-players-search-dialog'
+import { RevueltaInviteActions } from '@/components/revuelta-invite-actions'
+import { RevueltaTeamsPanel } from '@/components/revuelta-teams-panel'
+import {
+  ArrowLeft,
+  Calendar,
+  Clock,
+  MapPin,
+  Users,
+  MessageCircle,
+  Shield,
+} from 'lucide-react'
+import { format } from 'date-fns'
+import { es } from 'date-fns/locale'
+import { playersSeekProfileLabel } from '@/lib/players-seek-profile'
+
+export function MatchDetailsScreen() {
+  const {
+    currentUser,
+    setCurrentScreen,
+    matchOpportunities,
+    selectedMatchOpportunityId,
+    setSelectedMatchOpportunityId,
+    setSelectedChatOpportunityId,
+    participatingOpportunityIds,
+    joinMatchOpportunity,
+    randomizeRevueltaTeams,
+    finalizeMatchOpportunity,
+    suspendMatchOpportunity,
+    submitMatchRating,
+  } = useApp()
+
+  const opportunity = selectedMatchOpportunityId
+    ? matchOpportunities.find((m) => m.id === selectedMatchOpportunityId)
+    : undefined
+
+  const [participants, setParticipants] = useState<OpportunityParticipantRow[]>([])
+  const [loadingParticipants, setLoadingParticipants] = useState(false)
+  const [myRating, setMyRating] = useState<MatchOpportunityRatingRow | null>(null)
+  const [loadingRating, setLoadingRating] = useState(false)
+  const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(null)
+  const [recentComments, setRecentComments] = useState<
+    Array<{ comment: string; createdAt: Date }>
+  >([])
+  const [joinRevueltaOpen, setJoinRevueltaOpen] = useState(false)
+  const [joinPlayersOpen, setJoinPlayersOpen] = useState(false)
+
+  const loadParticipants = useCallback(async () => {
+    if (!selectedMatchOpportunityId || !currentUser || !isSupabaseConfigured()) {
+      setParticipants([])
+      return
+    }
+    setLoadingParticipants(true)
+    try {
+      const rows = await fetchParticipantsForOpportunity(
+        createClient(),
+        selectedMatchOpportunityId
+      )
+      setParticipants(rows)
+    } finally {
+      setLoadingParticipants(false)
+    }
+  }, [selectedMatchOpportunityId, currentUser])
+
+  const loadRatingsOverview = useCallback(async () => {
+    if (!selectedMatchOpportunityId || !isSupabaseConfigured()) {
+      setRatingSummary(null)
+      setRecentComments([])
+      return
+    }
+    const supabase = createClient()
+    const [summary, comments] = await Promise.all([
+      fetchRatingSummaryForOpportunity(supabase, selectedMatchOpportunityId),
+      fetchRecentRatingCommentsForOpportunity(supabase, selectedMatchOpportunityId),
+    ])
+    setRatingSummary(summary)
+    setRecentComments(comments)
+  }, [selectedMatchOpportunityId])
+
+  const loadMyRating = useCallback(async () => {
+    if (!selectedMatchOpportunityId || !currentUser || !isSupabaseConfigured()) {
+      setMyRating(null)
+      return
+    }
+    setLoadingRating(true)
+    try {
+      const row = await fetchMyRatingForOpportunity(
+        createClient(),
+        selectedMatchOpportunityId,
+        currentUser.id
+      )
+      setMyRating(row)
+    } finally {
+      setLoadingRating(false)
+    }
+  }, [selectedMatchOpportunityId, currentUser])
+
+  useEffect(() => {
+    void loadParticipants()
+    void loadMyRating()
+    void loadRatingsOverview()
+  }, [loadParticipants, loadMyRating, loadRatingsOverview])
+
+  const goBack = () => {
+    setSelectedMatchOpportunityId(null)
+    setCurrentScreen('matches')
+  }
+
+  const openChat = () => {
+    if (!opportunity) return
+    setSelectedChatOpportunityId(opportunity.id)
+    setCurrentScreen('chat')
+  }
+
+  if (!currentUser || !opportunity) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <div className="text-center">
+          <p className="text-muted-foreground mb-4">No hay partido seleccionado.</p>
+          <Button onClick={goBack}>Volver a partidos</Button>
+        </div>
+      </div>
+    )
+  }
+
+  const isCreator = currentUser.id === opportunity.creatorId
+  const isParticipant = participatingOpportunityIds.includes(opportunity.id)
+  const gkCount = participants.filter((p) => p.isGoalkeeper).length
+  const needed = opportunity.playersNeeded ?? 0
+  const joined = opportunity.playersJoined ?? 0
+  const canJoinRevuelta =
+    opportunity.type === 'open' &&
+    !isCreator &&
+    !isParticipant &&
+    (opportunity.status === 'pending' || opportunity.status === 'confirmed')
+
+  const canJoinPlayersSearch =
+    opportunity.type === 'players' &&
+    !isCreator &&
+    !isParticipant &&
+    (opportunity.status === 'pending' || opportunity.status === 'confirmed')
+
+  return (
+    <div className="min-h-screen bg-background pb-20">
+      <header className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border">
+        <div className="flex items-center gap-3 p-4">
+          <Button variant="ghost" size="icon" onClick={goBack}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <div>
+            <h1 className="text-xl font-bold text-foreground">Detalle del partido</h1>
+            <p className="text-xs text-muted-foreground">
+              Información completa y estado
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <div className="p-4 space-y-4">
+        <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">{opportunity.title}</h2>
+              {opportunity.teamName && (
+                <p className="text-sm text-muted-foreground">{opportunity.teamName}</p>
+              )}
+            </div>
+            <Badge variant="outline">{opportunity.level}</Badge>
+          </div>
+
+          {opportunity.description && (
+            <p className="text-sm text-muted-foreground">{opportunity.description}</p>
+          )}
+
+          <div className="grid grid-cols-1 gap-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-primary" />
+              {format(new Date(opportunity.dateTime), "EEEE d 'de' MMMM", {
+                locale: es,
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-primary" />
+              {format(new Date(opportunity.dateTime), 'HH:mm', { locale: es })} hrs
+            </div>
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-primary" />
+              {opportunity.venue}, {opportunity.location}
+            </div>
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-primary" />
+              {opportunity.playersJoined ?? 0}
+              {opportunity.playersNeeded ? `/${opportunity.playersNeeded}` : ''}{' '}
+              jugadores
+            </div>
+            {opportunity.type === 'players' && needed > 0 && (
+              <div className="text-xs text-muted-foreground pl-6 space-y-1">
+                <p>
+                  El número es solo para jugadores que se suman; el organizador no
+                  ocupa cupo.
+                </p>
+                {playersSeekProfileLabel(opportunity.playersSeekProfile) && (
+                  <p>
+                    <span className="text-foreground font-medium">
+                      {playersSeekProfileLabel(opportunity.playersSeekProfile)}
+                    </span>
+                    {opportunity.playersSeekProfile === 'gk_and_field' && (
+                      <> · Máximo 1 arquero</>
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
+            {opportunity.type === 'open' && needed > 0 && (
+              <div className="text-xs text-muted-foreground pl-6 space-y-0.5">
+                <p>
+                  Cupos libres:{' '}
+                  <span className="text-foreground font-medium">
+                    {Math.max(0, needed - joined)}
+                  </span>
+                </p>
+                <p>
+                  Arqueros en lista:{' '}
+                  <span className="text-foreground font-medium">
+                    {gkCount}/2
+                  </span>
+                  {' · '}
+                  Campo:{' '}
+                  <span className="text-foreground font-medium">
+                    {Math.max(0, joined - gkCount)}
+                  </span>
+                </p>
+              </div>
+            )}
+          </div>
+
+          {opportunity.type === 'open' &&
+            (isCreator || isParticipant) &&
+            (opportunity.status === 'pending' ||
+              opportunity.status === 'confirmed') && (
+              <div className="rounded-xl border border-border bg-secondary/30 p-3 space-y-2">
+                <p className="text-xs font-medium text-foreground">
+                  Invitar jugadores
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Cualquier participante puede compartir el enlace (WhatsApp, etc.).
+                  Los cupos se ven en la página pública.
+                </p>
+                <RevueltaInviteActions opportunity={opportunity} />
+              </div>
+            )}
+
+          <div className="flex items-center gap-2 text-sm">
+            <Shield className="w-4 h-4 text-primary" />
+            <span className="text-muted-foreground">Organizador:</span>
+            <span className="text-foreground font-medium">{opportunity.creatorName}</span>
+          </div>
+          {opportunity.status === 'cancelled' && opportunity.suspendedReason && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+              <p className="text-xs uppercase tracking-wide text-red-300 mb-1">
+                Partido suspendido
+              </p>
+              <p className="text-sm text-red-100">{opportunity.suspendedReason}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-card rounded-2xl border border-border p-4">
+          <h3 className="font-medium text-foreground mb-3">Participantes</h3>
+          {loadingParticipants ? (
+            <p className="text-sm text-muted-foreground">Cargando participantes...</p>
+          ) : participants.length > 0 ? (
+            <div className="space-y-2">
+              {participants.map((p) => (
+                <div key={p.id} className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <img
+                      src={p.photo}
+                      alt={p.name}
+                      className="w-8 h-8 rounded-full object-cover border border-border"
+                    />
+                    <span className="text-sm text-foreground truncate">
+                      {p.name}
+                      {(opportunity.type === 'open' || opportunity.type === 'players') &&
+                      p.isGoalkeeper
+                        ? ' 🧤'
+                        : ''}
+                    </span>
+                  </div>
+                  <Badge variant="secondary" className="capitalize text-xs">
+                    {p.status === 'creator'
+                      ? 'Organizador'
+                      : p.status === 'confirmed'
+                        ? 'Confirmado'
+                        : p.status === 'pending'
+                          ? 'Pendiente'
+                          : p.status === 'invited'
+                            ? 'Invitado'
+                            : 'Cancelado'}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Sin participantes aún.</p>
+          )}
+        </div>
+
+        {opportunity.type === 'open' && (
+          <RevueltaTeamsPanel
+            opportunity={opportunity}
+            participants={participants}
+            isOrganizer={isCreator}
+            randomizeRevueltaTeams={randomizeRevueltaTeams}
+          />
+        )}
+
+        {canJoinRevuelta && (
+          <Button
+            type="button"
+            className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
+            onClick={() => setJoinRevueltaOpen(true)}
+          >
+            Unirme a la revuelta
+          </Button>
+        )}
+
+        {canJoinPlayersSearch && (
+          <Button
+            type="button"
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+            onClick={() => setJoinPlayersOpen(true)}
+          >
+            Postular
+          </Button>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <Button onClick={openChat} className="w-full">
+            <MessageCircle className="w-4 h-4 mr-2" />
+            Abrir chat
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setCurrentScreen('matches')}
+            className="w-full"
+          >
+            Ver en Partidos
+          </Button>
+        </div>
+
+        {(opportunity.status === 'completed' || ratingSummary?.count) && (
+          <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+            <h3 className="font-medium text-foreground">Calificaciones del partido</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <StatBox
+                label="Reseñas"
+                value={String(ratingSummary?.count ?? 0)}
+              />
+              <StatBox
+                label="General"
+                value={
+                  ratingSummary?.avgOverall != null
+                    ? `⭐ ${ratingSummary.avgOverall}`
+                    : '—'
+                }
+              />
+              <StatBox
+                label="Partido"
+                value={
+                  ratingSummary?.avgMatch != null
+                    ? `⭐ ${ratingSummary.avgMatch}`
+                    : '—'
+                }
+              />
+              <StatBox
+                label="Nivel"
+                value={
+                  ratingSummary?.avgLevel != null
+                    ? `⭐ ${ratingSummary.avgLevel}`
+                    : '—'
+                }
+              />
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Gestión organizador:{' '}
+              {ratingSummary?.avgOrganizer != null
+                ? `⭐ ${ratingSummary.avgOrganizer}`
+                : 'Sin datos aún'}
+            </div>
+
+            {recentComments.length > 0 ? (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Comentarios recientes
+                </p>
+                {recentComments.map((c) => (
+                  <div
+                    key={`${c.createdAt.toISOString()}-${c.comment.slice(0, 8)}`}
+                    className="text-sm text-muted-foreground bg-secondary/60 rounded-lg p-2"
+                  >
+                    “{c.comment}”
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Aún no hay comentarios en este partido.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <JoinRevueltaDialog
+        open={joinRevueltaOpen}
+        onOpenChange={setJoinRevueltaOpen}
+        opportunity={opportunity}
+        onJoin={async (isGk) => {
+          await joinMatchOpportunity(opportunity.id, { isGoalkeeper: isGk })
+        }}
+      />
+
+      <JoinPlayersSearchDialog
+        open={joinPlayersOpen}
+        onOpenChange={setJoinPlayersOpen}
+        opportunity={opportunity}
+        onJoin={async (isGk) => {
+          await joinMatchOpportunity(opportunity.id, { isGoalkeeper: isGk })
+        }}
+      />
+
+      <MatchCompletionPanel
+        opportunity={opportunity}
+        currentUserId={currentUser.id}
+        isConfirmedParticipant={isParticipant}
+        myRating={myRating}
+        loadingRating={loadingRating}
+        onReloadMyRating={() => {
+          void loadMyRating()
+          void loadRatingsOverview()
+        }}
+        finalizeMatchOpportunity={finalizeMatchOpportunity}
+        suspendMatchOpportunity={suspendMatchOpportunity}
+        submitMatchRating={submitMatchRating}
+      />
+
+      <BottomNav />
+    </div>
+  )
+}
+
+function StatBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-secondary/40 p-2">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="text-sm font-semibold text-foreground">{value}</p>
+    </div>
+  )
+}
