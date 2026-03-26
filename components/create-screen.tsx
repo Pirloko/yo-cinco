@@ -25,7 +25,12 @@ import {
 } from '@/lib/types'
 import { TIME_SLOT_OPTIONS } from '@/lib/time-slot-options'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
-import { fetchSportsVenuesList } from '@/lib/supabase/venue-queries'
+import {
+  fetchSportsVenuesList,
+  fetchVenueCourts,
+  fetchVenueReservationsRange,
+  fetchVenueWeeklyHours,
+} from '@/lib/supabase/venue-queries'
 import { readCreatePrefill, clearCreatePrefill } from '@/lib/create-prefill'
 import {
   ArrowLeft,
@@ -106,6 +111,13 @@ export function CreateScreen() {
   )
   const [linkedVenueId, setLinkedVenueId] = useState<string | null>(null)
   const [bookCourtSlot, setBookCourtSlot] = useState(false)
+  const [venueTimeOptions, setVenueTimeOptions] = useState<
+    Array<{ value: string; label: string }> | null
+  >(null)
+  const [loadingVenueTimes, setLoadingVenueTimes] = useState(false)
+  const [venueTimeHelp, setVenueTimeHelp] = useState<string | null>(null)
+  const [alternativeVenues, setAlternativeVenues] = useState<SportsVenue[]>([])
+  const [loadingAlternativeVenues, setLoadingAlternativeVenues] = useState(false)
 
   useEffect(() => {
     const pre = readCreatePrefill()
@@ -125,6 +137,165 @@ export function CreateScreen() {
     const supabase = createClient()
     void fetchSportsVenuesList(supabase).then(setSportsVenuesFromDb)
   }, [])
+
+  useEffect(() => {
+    if (!linkedVenueId || !formData.date) {
+      setVenueTimeOptions(null)
+      setLoadingVenueTimes(false)
+      setVenueTimeHelp(null)
+      return
+    }
+    if (!isSupabaseConfigured()) {
+      setVenueTimeOptions(null)
+      setLoadingVenueTimes(false)
+      setVenueTimeHelp(null)
+      return
+    }
+
+    let cancelled = false
+    setLoadingVenueTimes(true)
+    setVenueTimeHelp('Buscando horarios disponibles…')
+
+    void (async () => {
+      const supabase = createClient()
+      const venue = sportsVenuesFromDb.find((v) => v.id === linkedVenueId)
+      const slotDuration = venue?.slotDurationMinutes ?? 60
+      const dayStart = new Date(`${formData.date}T00:00:00`)
+      const dayEnd = new Date(dayStart)
+      dayEnd.setDate(dayEnd.getDate() + 1)
+      const dow = dayStart.getDay()
+
+      const [courts, weeklyHours, reservations] = await Promise.all([
+        fetchVenueCourts(supabase, linkedVenueId),
+        fetchVenueWeeklyHours(supabase, linkedVenueId),
+        fetchVenueReservationsRange(
+          supabase,
+          linkedVenueId,
+          dayStart.toISOString(),
+          dayEnd.toISOString()
+        ),
+      ])
+      if (cancelled) return
+
+      if (courts.length === 0) {
+        setVenueTimeOptions([])
+        setVenueTimeHelp('Este centro no tiene canchas registradas.')
+        setLoadingVenueTimes(false)
+        return
+      }
+
+      const dayHours = weeklyHours.find((h) => h.dayOfWeek === dow)
+      if (!dayHours) {
+        setVenueTimeOptions([])
+        setVenueTimeHelp('Este centro no atiende en la fecha seleccionada.')
+        setLoadingVenueTimes(false)
+        return
+      }
+
+      const options = computeVenueAvailableSlots({
+        dayStart,
+        openTime: dayHours.openTime,
+        closeTime: dayHours.closeTime,
+        slotDurationMinutes: slotDuration,
+        courtsCount: courts.length,
+        reservations: reservations.filter((r) => r.status === 'confirmed'),
+      })
+
+      setVenueTimeOptions(options)
+      setVenueTimeHelp(
+        options.length === 0
+          ? 'No hay horarios disponibles para esta fecha.'
+          : `Horarios disponibles considerando ${courts.length} cancha(s).`
+      )
+      setLoadingVenueTimes(false)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [linkedVenueId, formData.date, sportsVenuesFromDb])
+
+  useEffect(() => {
+    // Mantiene la hora elegida por el usuario para poder sugerir
+    // otros centros cuando ese horario no esté disponible aquí.
+  }, [linkedVenueId, formData.date, formData.time, venueTimeOptions])
+
+  const selectedVenueHasChosenTime = (() => {
+    if (!linkedVenueId || !formData.date || !formData.time) return true
+    const allowed = new Set((venueTimeOptions ?? []).map((x) => x.value))
+    return allowed.has(formData.time)
+  })()
+
+  useEffect(() => {
+    if (!linkedVenueId || !formData.date || !formData.time) {
+      setAlternativeVenues([])
+      setLoadingAlternativeVenues(false)
+      return
+    }
+    if (selectedVenueHasChosenTime || !isSupabaseConfigured()) {
+      setAlternativeVenues([])
+      setLoadingAlternativeVenues(false)
+      return
+    }
+
+    let cancelled = false
+    setLoadingAlternativeVenues(true)
+
+    void (async () => {
+      const supabase = createClient()
+      const dayStart = new Date(`${formData.date}T00:00:00`)
+      const dayEnd = new Date(dayStart)
+      dayEnd.setDate(dayEnd.getDate() + 1)
+      const dow = dayStart.getDay()
+      const targetTime = formData.time
+
+      const candidates = sportsVenuesFromDb.filter((v) => v.id !== linkedVenueId)
+      const checks = await Promise.all(
+        candidates.map(async (venue) => {
+          const [courts, weeklyHours, reservations] = await Promise.all([
+            fetchVenueCourts(supabase, venue.id),
+            fetchVenueWeeklyHours(supabase, venue.id),
+            fetchVenueReservationsRange(
+              supabase,
+              venue.id,
+              dayStart.toISOString(),
+              dayEnd.toISOString()
+            ),
+          ])
+          if (!courts.length) return null
+          const dayHours = weeklyHours.find((h) => h.dayOfWeek === dow)
+          if (!dayHours) return null
+          const options = computeVenueAvailableSlots({
+            dayStart,
+            openTime: dayHours.openTime,
+            closeTime: dayHours.closeTime,
+            slotDurationMinutes: venue.slotDurationMinutes,
+            courtsCount: courts.length,
+            reservations: reservations.filter((r) => r.status === 'confirmed'),
+          })
+          return options.some((o) => o.value === targetTime) ? venue : null
+        })
+      )
+
+      if (cancelled) return
+      const valid = checks.filter((v): v is SportsVenue => !!v)
+      const sameCity = valid.filter((v) => v.city === formData.location)
+      const otherCities = valid.filter((v) => v.city !== formData.location)
+      setAlternativeVenues([...sameCity, ...otherCities].slice(0, 5))
+      setLoadingAlternativeVenues(false)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    linkedVenueId,
+    formData.date,
+    formData.time,
+    formData.location,
+    selectedVenueHasChosenTime,
+    sportsVenuesFromDb,
+  ])
 
   const userTeams = getUserTeams()
   const allTeams = currentUser ? getFilteredTeams(currentUser.gender) : []
@@ -653,8 +824,57 @@ export function CreateScreen() {
                 <HoraSlotSelect
                   value={formData.time}
                   onValueChange={(time) => setFormData({ ...formData, time })}
+                  options={
+                    linkedVenueId && formData.date
+                      ? venueTimeOptions ?? []
+                      : TIME_SLOT_OPTIONS
+                  }
+                  loading={linkedVenueId !== null && formData.date !== '' && loadingVenueTimes}
+                  helperText={
+                    linkedVenueId && formData.date ? venueTimeHelp : null
+                  }
                 />
               </div>
+              {!selectedVenueHasChosenTime &&
+              linkedVenueId &&
+              formData.date &&
+              formData.time ? (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+                  <p className="text-sm text-foreground font-medium">
+                    Este centro no tiene cupo a las {labelForHm(formData.time)}.
+                  </p>
+                  {loadingAlternativeVenues ? (
+                    <p className="text-xs text-muted-foreground">
+                      Buscando otros centros con ese horario…
+                    </p>
+                  ) : alternativeVenues.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {alternativeVenues.map((v) => (
+                        <button
+                          key={v.id}
+                          type="button"
+                          className="px-3 py-1.5 rounded-full text-xs border border-border bg-card hover:border-primary/40"
+                          onClick={() => {
+                            setLinkedVenueId(v.id)
+                            setBookCourtSlot(true)
+                            setFormData((prev) => ({
+                              ...prev,
+                              venue: v.name,
+                              location: v.city,
+                            }))
+                          }}
+                        >
+                          {v.name} — {v.city}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      No encontramos otros centros disponibles para ese horario.
+                    </p>
+                  )}
+                </div>
+              ) : null}
 
               <div className="space-y-2">
                 <Label className="text-foreground flex items-center gap-2">
@@ -688,7 +908,12 @@ export function CreateScreen() {
 
             <Button
               onClick={handleSubmit}
-              disabled={!formData.venue || !formData.date || !formData.time}
+              disabled={
+                !formData.venue ||
+                !formData.date ||
+                !formData.time ||
+                !selectedVenueHasChosenTime
+              }
               className="w-full h-14 mt-4 bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
             >
               <Swords className="w-5 h-5 mr-2" />
@@ -990,8 +1215,57 @@ export function CreateScreen() {
                 <HoraSlotSelect
                   value={formData.time}
                   onValueChange={(time) => setFormData({ ...formData, time })}
+                  options={
+                    linkedVenueId && formData.date
+                      ? venueTimeOptions ?? []
+                      : TIME_SLOT_OPTIONS
+                  }
+                  loading={linkedVenueId !== null && formData.date !== '' && loadingVenueTimes}
+                  helperText={
+                    linkedVenueId && formData.date ? venueTimeHelp : null
+                  }
                 />
               </div>
+              {!selectedVenueHasChosenTime &&
+              linkedVenueId &&
+              formData.date &&
+              formData.time ? (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+                  <p className="text-sm text-foreground font-medium">
+                    Este centro no tiene cupo a las {labelForHm(formData.time)}.
+                  </p>
+                  {loadingAlternativeVenues ? (
+                    <p className="text-xs text-muted-foreground">
+                      Buscando otros centros con ese horario…
+                    </p>
+                  ) : alternativeVenues.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {alternativeVenues.map((v) => (
+                        <button
+                          key={v.id}
+                          type="button"
+                          className="px-3 py-1.5 rounded-full text-xs border border-border bg-card hover:border-primary/40"
+                          onClick={() => {
+                            setLinkedVenueId(v.id)
+                            setBookCourtSlot(true)
+                            setFormData((prev) => ({
+                              ...prev,
+                              venue: v.name,
+                              location: v.city,
+                            }))
+                          }}
+                        >
+                          {v.name} — {v.city}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      No encontramos otros centros disponibles para ese horario.
+                    </p>
+                  )}
+                </div>
+              ) : null}
 
               {/* Level */}
               <div className="space-y-2">
@@ -1024,7 +1298,13 @@ export function CreateScreen() {
 
             <Button
               onClick={handleSubmit}
-              disabled={!formData.title || !formData.venue || !formData.date || !formData.time}
+              disabled={
+                !formData.title ||
+                !formData.venue ||
+                !formData.date ||
+                !formData.time ||
+                !selectedVenueHasChosenTime
+              }
               className="w-full h-14 mt-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               Publicar
@@ -1130,9 +1410,15 @@ function CanchaLugarSelect({
 function HoraSlotSelect({
   value,
   onValueChange,
+  options,
+  loading,
+  helperText,
 }: {
   value: string
   onValueChange: (time: string) => void
+  options: Array<{ value: string; label: string }>
+  loading?: boolean
+  helperText?: string | null
 }) {
   return (
     <div className="space-y-2">
@@ -1140,20 +1426,97 @@ function HoraSlotSelect({
         <Clock className="w-4 h-4 text-primary" />
         Hora
       </Label>
-      <Select value={value || undefined} onValueChange={onValueChange}>
+      <Select
+        value={value || undefined}
+        onValueChange={onValueChange}
+        disabled={loading || options.length === 0}
+      >
         <SelectTrigger className="w-full h-12 bg-secondary border-border text-foreground">
-          <SelectValue placeholder="Selecciona la hora" />
+          <SelectValue
+            placeholder={loading ? 'Buscando horarios…' : 'Selecciona la hora'}
+          />
         </SelectTrigger>
         <SelectContent>
-          {TIME_SLOT_OPTIONS.map(({ value: v, label }) => (
+          {options.map(({ value: v, label }) => (
             <SelectItem key={v} value={v}>
               {label}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
+      {helperText ? (
+        <p className="text-xs text-muted-foreground">{helperText}</p>
+      ) : null}
     </div>
   )
+}
+
+function hmToMinutes(hm: string): number {
+  const [h, m] = hm.split(':').map((n) => Number(n))
+  return h * 60 + m
+}
+
+function minutesToHm(total: number): string {
+  const h = Math.floor(total / 60)
+  const m = total % 60
+  const hh = String(h).padStart(2, '0')
+  const mm = String(m).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+function labelForHm(hm: string): string {
+  const byPreset = TIME_SLOT_OPTIONS.find((t) => t.value === hm)
+  if (byPreset) return byPreset.label
+  const [hhRaw, mmRaw] = hm.split(':')
+  const hh = Number(hhRaw)
+  const mm = Number(mmRaw)
+  const suffix = hh >= 12 ? 'p. m.' : 'a. m.'
+  const h12 = hh % 12 === 0 ? 12 : hh % 12
+  return `${String(h12).padStart(2, '0')}:${String(mm).padStart(2, '0')} ${suffix}`
+}
+
+function computeVenueAvailableSlots({
+  dayStart,
+  openTime,
+  closeTime,
+  slotDurationMinutes,
+  courtsCount,
+  reservations,
+}: {
+  dayStart: Date
+  openTime: string
+  closeTime: string
+  slotDurationMinutes: number
+  courtsCount: number
+  reservations: Array<{ courtId: string; startsAt: Date; endsAt: Date }>
+}): Array<{ value: string; label: string }> {
+  if (courtsCount <= 0) return []
+  const openMin = hmToMinutes(openTime)
+  const closeMin = hmToMinutes(closeTime)
+  if (openMin >= closeMin) return []
+
+  const out: Array<{ value: string; label: string }> = []
+  for (
+    let startMin = openMin;
+    startMin + slotDurationMinutes <= closeMin;
+    startMin += slotDurationMinutes
+  ) {
+    const slotStart = new Date(dayStart)
+    slotStart.setHours(0, startMin, 0, 0)
+    const slotEnd = new Date(slotStart.getTime() + slotDurationMinutes * 60000)
+
+    const busyCourts = new Set<string>()
+    for (const r of reservations) {
+      if (r.startsAt < slotEnd && r.endsAt > slotStart) {
+        busyCourts.add(r.courtId)
+      }
+    }
+    if (busyCourts.size < courtsCount) {
+      const hm = minutesToHm(startMin)
+      out.push({ value: hm, label: labelForHm(hm) })
+    }
+  }
+  return out
 }
 
 function TypeCard({
