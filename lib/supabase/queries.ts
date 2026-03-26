@@ -85,6 +85,7 @@ export async function fetchOtherProfiles(
     .from('profiles')
     .select('*')
     .eq('gender', gender)
+    .eq('account_type', 'player')
     .neq('id', currentUserId)
 
   if (error || !data) return []

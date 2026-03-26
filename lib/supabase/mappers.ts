@@ -26,6 +26,7 @@ export type ProfileRow = {
   photo_url: string
   bio: string | null
   created_at: string
+  account_type?: 'player' | 'venue' | null
 }
 
 export function profileRowToUser(row: ProfileRow, email: string): User {
@@ -42,6 +43,7 @@ export function profileRowToUser(row: ProfileRow, email: string): User {
     photo: row.photo_url || DEFAULT_AVATAR,
     bio: row.bio ?? undefined,
     createdAt: new Date(row.created_at),
+    accountType: row.account_type === 'venue' ? 'venue' : 'player',
   }
 }
 
@@ -68,6 +70,8 @@ export type MatchOpportunityRow = {
   suspended_at?: string | null
   suspended_reason?: string | null
   revuelta_lineup?: unknown | null
+  sports_venue_id?: string | null
+  venue_reservation_id?: string | null
 }
 
 export type CreatorSnippet = {
@@ -115,6 +119,8 @@ export function mapMatchOpportunityFromDb(
     suspendedReason: row.suspended_reason ?? undefined,
     revueltaLineup:
       parseRevueltaLineup(row.revuelta_lineup) ?? undefined,
+    sportsVenueId: row.sports_venue_id ?? undefined,
+    venueReservationId: row.venue_reservation_id ?? undefined,
   }
 }
 

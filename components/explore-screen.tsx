@@ -1,15 +1,29 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useApp } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
 import { MatchCard } from '@/components/match-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Level, MatchOpportunity, MatchType } from '@/lib/types'
+import { Card, CardContent } from '@/components/ui/card'
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import { fetchSportsVenuesList } from '@/lib/supabase/venue-queries'
+import { Level, MatchOpportunity, MatchType, type SportsVenue } from '@/lib/types'
 import { JoinRevueltaDialog } from '@/components/join-revuelta-dialog'
 import { JoinPlayersSearchDialog } from '@/components/join-players-search-dialog'
-import { Search, SlidersHorizontal, X, Target, Users, Shuffle, Star, MapPin } from 'lucide-react'
+import {
+  Search,
+  SlidersHorizontal,
+  X,
+  Target,
+  Users,
+  Shuffle,
+  Star,
+  MapPin,
+  Building2,
+} from 'lucide-react'
 
 export function ExploreScreen() {
   const {
@@ -39,6 +53,13 @@ export function ExploreScreen() {
     types: [],
     levels: [],
   })
+  const [publicVenues, setPublicVenues] = useState<SportsVenue[]>([])
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return
+    const supabase = createClient()
+    void fetchSportsVenuesList(supabase).then(setPublicVenues)
+  }, [])
 
   const allMatches = currentUser
     ? getFilteredMatches(currentUser.gender).filter(
@@ -251,6 +272,32 @@ export function ExploreScreen() {
           </div>
         )}
       </header>
+
+      {publicVenues.length > 0 ? (
+        <section className="px-4 pt-2 pb-1 space-y-2 border-b border-border/60">
+          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-primary" />
+            Centros deportivos
+          </h2>
+          <div className="flex gap-2 overflow-x-auto pb-3 -mx-1 px-1">
+            {publicVenues.map((v) => (
+              <Link key={v.id} href={`/centro/${v.id}`} className="shrink-0 w-[200px]">
+                <Card className="bg-card border-border hover:border-primary/40 transition-colors">
+                  <CardContent className="p-3 space-y-1">
+                    <p className="font-medium text-sm text-foreground line-clamp-2">
+                      {v.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <MapPin className="w-3 h-3 shrink-0" />
+                      {v.city}
+                    </p>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {/* Results */}
       <div className="p-4 space-y-4">

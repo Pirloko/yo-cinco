@@ -6,7 +6,9 @@ import { Home, Search, LayoutList, PlusCircle, Users, User } from 'lucide-react'
 type NavItem = 'home' | 'explore' | 'matches' | 'create' | 'teams' | 'profile'
 
 export function BottomNav() {
-  const { currentScreen, setCurrentScreen } = useApp()
+  const { currentScreen, setCurrentScreen, currentUser } = useApp()
+
+  if (currentUser?.accountType === 'venue') return null
 
   const navItems: { id: NavItem; icon: React.ReactNode; label: string }[] = [
     { id: 'home', icon: <Home className="w-5 h-5 sm:w-6 sm:h-6" />, label: 'Inicio' },

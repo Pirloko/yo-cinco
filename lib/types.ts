@@ -24,6 +24,8 @@ export type MatchesHubTab = 'upcoming' | 'chats' | 'finished'
 /** Resultado en partidos tipo rival (equipo del creador vs rival). */
 export type RivalResult = 'creator_team' | 'rival_team' | 'draw'
 
+export type AccountType = 'player' | 'venue'
+
 export interface User {
   id: string
   email: string
@@ -37,6 +39,46 @@ export interface User {
   photo: string
   bio?: string
   createdAt: Date
+  /** Por defecto jugador; `venue` solo vía administración en Supabase. */
+  accountType?: AccountType
+}
+
+export interface SportsVenue {
+  id: string
+  ownerId: string
+  name: string
+  address: string
+  mapsUrl: string | null
+  phone: string
+  city: string
+  slotDurationMinutes: number
+  createdAt: Date
+}
+
+export interface VenueCourt {
+  id: string
+  venueId: string
+  name: string
+  sortOrder: number
+}
+
+export interface VenueWeeklyHour {
+  id: string
+  venueId: string
+  /** 0 = domingo … 6 = sábado. */
+  dayOfWeek: number
+  openTime: string
+  closeTime: string
+}
+
+export interface VenueReservationRow {
+  id: string
+  courtId: string
+  startsAt: Date
+  endsAt: Date
+  bookerUserId: string | null
+  matchOpportunityId: string | null
+  status: 'confirmed' | 'cancelled'
 }
 
 export interface TeamMember {
@@ -119,6 +161,9 @@ export interface MatchOpportunity {
   description?: string
   location: string
   venue: string
+  /** Centro deportivo vinculado (opcional). */
+  sportsVenueId?: string
+  venueReservationId?: string
   dateTime: Date
   level: Level
   creatorId: string
@@ -169,4 +214,14 @@ export interface OnboardingData {
   availability: string[]
   city: string
   photo: string
+}
+
+/** Primer alta del centro en la app (crea `sports_venues`). */
+export interface VenueOnboardingData {
+  name: string
+  address: string
+  phone: string
+  city: string
+  mapsUrl: string | null
+  slotDurationMinutes: number
 }

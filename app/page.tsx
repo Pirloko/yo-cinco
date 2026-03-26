@@ -13,6 +13,8 @@ import { ChatScreen } from '@/components/chat-screen'
 import { MatchDetailsScreen } from '@/components/match-details-screen'
 import { ProfileScreen } from '@/components/profile-screen'
 import { TeamsScreen } from '@/components/teams-screen'
+import { VenueDashboardScreen } from '@/components/venue-dashboard-screen'
+import { VenueOnboardingScreen } from '@/components/venue-onboarding-screen'
 
 function AppContent() {
   const { authLoading, currentScreen } = useApp()
@@ -53,6 +55,10 @@ function AppContent() {
       return <ProfileScreen />
     case 'teams':
       return <TeamsScreen />
+    case 'venueOnboarding':
+      return <VenueOnboardingScreen />
+    case 'venueDashboard':
+      return <VenueDashboardScreen />
     default:
       return <LandingPage />
   }

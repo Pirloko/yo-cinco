@@ -14,6 +14,7 @@ import {
   MatchOpportunity,
   MatchesHubTab,
   OnboardingData,
+  VenueOnboardingData,
   Gender,
   Level,
   RivalChallenge,
@@ -53,9 +54,15 @@ import {
 import {
   JOIN_MATCH_STORAGE_KEY,
 } from '@/lib/match-invite-url'
+import {
+  capturePrefillCreateQuery,
+  OPEN_CREATE_AFTER_AUTH_KEY,
+  tryNavigateCreateAfterPlayerReady,
+} from '@/lib/create-prefill'
 import { buildRandomRevueltaLineup } from '@/lib/revuelta-lineup'
 import { playersJoinRules } from '@/lib/players-seek-profile'
 import { uploadProfileAvatarFile } from '@/lib/supabase/profile-photo'
+import { fetchVenueForOwner } from '@/lib/supabase/venue-queries'
 
 function getAuthUserEmail(u: SupabaseAuthUser): string | undefined {
   if (u.email) return u.email
@@ -77,8 +84,11 @@ type AppScreen =
   | 'matchDetails'
   | 'profile'
   | 'teams'
+  | 'venueOnboarding'
+  | 'venueDashboard'
 
 function needsOnboardingProfile(u: User): boolean {
+  if (u.accountType === 'venue') return false
   return u.name.trim().length < 2 || u.age < 16
 }
 
@@ -94,9 +104,17 @@ interface AppContextType {
     password: string,
     gender: Gender,
     isSignUp: boolean
-  ) => Promise<{ ok: boolean; error?: string; needsOnboarding?: boolean }>
+  ) => Promise<{
+    ok: boolean
+    error?: string
+    needsOnboarding?: boolean
+    needsVenueOnboarding?: boolean
+    isVenue?: boolean
+  }>
   logout: () => Promise<void>
   completeOnboarding: (data: OnboardingData) => Promise<void>
+  /** Primera configuración del centro (`sports_venues`) para cuentas venue. */
+  completeVenueOnboarding: (data: VenueOnboardingData) => Promise<void>
   /** Mismo flujo que el registro, pero precargado y vuelve a Perfil al terminar. */
   openProfileEditor: () => void
   onboardingSource: 'registration' | 'profile_edit'
@@ -108,6 +126,9 @@ interface AppContextType {
     match: Omit<MatchOpportunity, 'id' | 'createdAt'> & {
       /** Revuelta (open): el organizador entra como participante con este rol. */
       creatorIsGoalkeeper?: boolean
+      /** Reservar cancha vía RPC al publicar (centros deportivos). */
+      bookCourtSlot?: boolean
+      courtSlotMinutes?: number
     }
   ) => Promise<void>
   /** Apuntarse a un partido ajeno (participante confirmado + acceso al chat). Revuelta: opción arquero. */
@@ -283,7 +304,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     password: string,
     gender: Gender,
     isSignUp: boolean
-  ): Promise<{ ok: boolean; error?: string; needsOnboarding?: boolean }> => {
+  ): Promise<{
+    ok: boolean
+    error?: string
+    needsOnboarding?: boolean
+    needsVenueOnboarding?: boolean
+    isVenue?: boolean
+  }> => {
     if (!isSupabaseConfigured()) {
       return {
         ok: false,
@@ -335,24 +362,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       setCurrentUser(profile)
-      const [matches, others, teamList, invites, partIds, challenges] = await Promise.all([
-        fetchMatchOpportunities(supabase),
-        fetchOtherProfiles(supabase, user.id, profile.gender),
-        fetchTeamsWithMembers(supabase),
-        fetchTeamInvitesForUser(supabase, user.id),
-        fetchParticipatingOpportunityIds(supabase, user.id),
-        fetchRivalChallengesForUser(supabase, user.id),
-      ])
+
+      if (profile.accountType === 'venue') {
+        setMatchOpportunities([])
+        setUsers([])
+        setTeams([])
+        setTeamInvites([])
+        setTeamJoinRequests([])
+        setParticipatingOpportunityIds([])
+        setRivalChallenges([])
+        const venueRow = await fetchVenueForOwner(supabase, user.id)
+        return {
+          ok: true,
+          needsOnboarding: false,
+          needsVenueOnboarding: !venueRow,
+          isVenue: true,
+        }
+      }
+
+      const [matches, others, teamList, invites, joinReqs, partIds, challenges] =
+        await Promise.all([
+          fetchMatchOpportunities(supabase),
+          fetchOtherProfiles(supabase, user.id, profile.gender),
+          fetchTeamsWithMembers(supabase),
+          fetchTeamInvitesForUser(supabase, user.id),
+          fetchTeamJoinRequestsForUser(supabase, user.id),
+          fetchParticipatingOpportunityIds(supabase, user.id),
+          fetchRivalChallengesForUser(supabase, user.id),
+        ])
       setMatchOpportunities(matches)
       setUsers(others)
       setTeams(teamList)
       setTeamInvites(invites)
+      setTeamJoinRequests(joinReqs)
       setParticipatingOpportunityIds(partIds)
       setRivalChallenges(challenges)
 
       return {
         ok: true,
         needsOnboarding: needsOnboardingProfile(profile),
+        isVenue: false,
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Error de conexión'
@@ -373,6 +422,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionStorage.removeItem(JOIN_TEAM_STORAGE_KEY)
       sessionStorage.removeItem(JOIN_MATCH_STORAGE_KEY)
       sessionStorage.removeItem(JOIN_REGISTER_STORAGE_KEY)
+      sessionStorage.removeItem(OPEN_CREATE_AFTER_AUTH_KEY)
     } catch {
       // ignore
     }
@@ -391,6 +441,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const completeOnboarding = async (data: OnboardingData) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    if (currentUser.accountType === 'venue') return
     const supabase = createClient()
     const photo = data.photo || DEFAULT_AVATAR
     const { error } = await supabase
@@ -424,18 +475,93 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.success('Perfil actualizado')
       setCurrentScreen('profile')
     } else {
-      setCurrentScreen('home')
+      if (tryNavigateCreateAfterPlayerReady()) {
+        setCurrentScreen('create')
+      } else {
+        setCurrentScreen('home')
+      }
     }
+  }
+
+  const completeVenueOnboarding = async (data: VenueOnboardingData) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    if (currentUser.accountType !== 'venue') return
+    const supabase = createClient()
+    const existing = await fetchVenueForOwner(supabase, currentUser.id)
+    if (existing) {
+      setCurrentScreen('venueDashboard')
+      return
+    }
+    const slot = Math.min(
+      180,
+      Math.max(15, Math.round(data.slotDurationMinutes) || 60)
+    )
+    const { error: insErr } = await supabase.from('sports_venues').insert({
+      owner_id: currentUser.id,
+      name: data.name.trim(),
+      address: data.address.trim(),
+      phone: data.phone.trim(),
+      city: data.city.trim() || 'Rancagua',
+      maps_url: data.mapsUrl?.trim() || null,
+      slot_duration_minutes: slot,
+    })
+    if (insErr) {
+      toast.error(insErr.message)
+      return
+    }
+    const { error: profErr } = await supabase
+      .from('profiles')
+      .update({ name: data.name.trim() })
+      .eq('id', currentUser.id)
+    if (profErr) {
+      toast.error(profErr.message)
+    }
+    setCurrentUser({
+      ...currentUser,
+      name: data.name.trim(),
+    })
+    toast.success('Centro creado')
+    setCurrentScreen('venueDashboard')
   }
 
   const addMatchOpportunity = async (
     m: Omit<MatchOpportunity, 'id' | 'createdAt'> & {
       creatorIsGoalkeeper?: boolean
+      bookCourtSlot?: boolean
+      courtSlotMinutes?: number
     }
   ) => {
     if (!currentUser || !isSupabaseConfigured()) return
     const supabase = createClient()
-    const insert = {
+
+    let reservationId: string | null = null
+    if (
+      m.sportsVenueId &&
+      m.bookCourtSlot === true &&
+      m.type !== 'rival'
+    ) {
+      const dur = m.courtSlotMinutes ?? 60
+      const end = new Date(m.dateTime.getTime() + dur * 60 * 1000)
+      const { data: resRpc, error: rpcErr } = await supabase.rpc(
+        'book_venue_slot',
+        {
+          p_venue_id: m.sportsVenueId,
+          p_starts_at: m.dateTime.toISOString(),
+          p_ends_at: end.toISOString(),
+        }
+      )
+      if (rpcErr) {
+        toast.error(
+          rpcErr.message.includes('no_court')
+            ? 'No hay cancha libre en ese horario en este centro.'
+            : rpcErr.message
+        )
+        return
+      }
+      reservationId = resRpc as string
+    }
+
+    const insert: Record<string, unknown> = {
       type: m.type,
       title: m.title,
       description: m.description ?? null,
@@ -453,6 +579,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           : null,
       gender: m.gender,
       status: m.status,
+      sports_venue_id: m.sportsVenueId ?? null,
+      venue_reservation_id: reservationId,
     }
     const { data, error } = await supabase
       .from('match_opportunities')
@@ -467,6 +595,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const row = data as MatchOpportunityRow
     const oppId = row.id
+
+    if (reservationId) {
+      const { error: linkErr } = await supabase
+        .from('venue_reservations')
+        .update({ match_opportunity_id: oppId })
+        .eq('id', reservationId)
+      if (linkErr) {
+        toast.error(linkErr.message)
+      }
+    }
 
     if (m.type === 'open') {
       const { error: partErr } = await supabase
@@ -1394,6 +1532,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionStorage.removeItem(JOIN_TEAM_STORAGE_KEY)
       sessionStorage.removeItem(JOIN_MATCH_STORAGE_KEY)
       sessionStorage.removeItem(JOIN_REGISTER_STORAGE_KEY)
+      sessionStorage.removeItem(OPEN_CREATE_AFTER_AUTH_KEY)
     } catch {
       // ignore
     }
@@ -1421,6 +1560,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const profile = await fetchProfileForUser(supabase, authUser.id, email)
       if (!profile) return
       setCurrentUser(profile)
+
+      if (profile.accountType === 'venue') {
+        setMatchOpportunities([])
+        setUsers([])
+        setTeams([])
+        setTeamInvites([])
+        setTeamJoinRequests([])
+        setParticipatingOpportunityIds([])
+        setRivalChallenges([])
+        return
+      }
+
       const [matches, others, teamList, invites, joinReqs, partIds, challenges] =
         await Promise.all([
           fetchMatchOpportunities(supabase),
@@ -1535,6 +1686,60 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  useEffect(() => {
+    capturePrefillCreateQuery()
+  }, [])
+
+  /** Jugador ya con sesión: abrir Crear si venía de un centro (`/?prefillCreate=1`). */
+  useEffect(() => {
+    if (authLoading || !currentUser) return
+    if (currentUser.accountType === 'venue') return
+    if (needsOnboardingProfile(currentUser)) return
+    if (tryNavigateCreateAfterPlayerReady()) {
+      setCurrentScreen('create')
+    }
+  }, [authLoading, currentUser])
+
+  /** Cuenta centro: onboarding sin `sports_venues` o panel si ya existe. */
+  useEffect(() => {
+    if (authLoading || !currentUser) return
+    if (currentUser.accountType !== 'venue') return
+    if (currentScreen === 'auth') return
+
+    let cancelled = false
+    void (async () => {
+      try {
+        if (!isSupabaseConfigured()) return
+        const supabase = createClient()
+        const v = await fetchVenueForOwner(supabase, currentUser.id)
+        if (cancelled) return
+
+        if (!v) {
+          if (currentScreen !== 'venueOnboarding') {
+            setCurrentScreen('venueOnboarding')
+          }
+          return
+        }
+
+        if (currentScreen === 'venueOnboarding') {
+          setCurrentScreen('venueDashboard')
+          return
+        }
+
+        const venueScreens: AppScreen[] = ['venueDashboard', 'venueOnboarding']
+        if (!venueScreens.includes(currentScreen)) {
+          setCurrentScreen('venueDashboard')
+        }
+      } catch {
+        // red / offline
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [authLoading, currentUser, currentScreen])
+
   /** Invitación con registro: abrir auth desde landing */
   useEffect(() => {
     if (authLoading || currentUser) return
@@ -1551,6 +1756,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /** Tras sesión + perfil listo: deep link equipo (prioridad) o detalle de revuelta */
   useEffect(() => {
     if (authLoading || !currentUser) return
+    if (currentUser.accountType === 'venue') return
     if (needsOnboardingProfile(currentUser)) return
     let tid: string | null = null
     let mid: string | null = null
@@ -1663,6 +1869,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         login,
         logout,
         completeOnboarding,
+        completeVenueOnboarding,
         openProfileEditor,
         onboardingSource,
         setOnboardingSource,

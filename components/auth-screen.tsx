@@ -9,6 +9,7 @@ import { useApp } from '@/lib/app-context'
 import { Gender } from '@/lib/types'
 import { ArrowLeft, Mail, Lock, User } from 'lucide-react'
 import { JOIN_REGISTER_STORAGE_KEY } from '@/lib/team-invite-url'
+import { tryNavigateCreateAfterPlayerReady } from '@/lib/create-prefill'
 
 export function AuthScreen() {
   const { setCurrentScreen, login, setOnboardingSource } = useApp()
@@ -36,10 +37,18 @@ export function AuthScreen() {
     const result = await login(email, password, gender, !isLogin)
 
     if (result.ok) {
-      if (result.needsOnboarding) {
+      if (result.isVenue) {
+        setCurrentScreen(
+          result.needsVenueOnboarding ? 'venueOnboarding' : 'venueDashboard'
+        )
+      } else if (result.needsOnboarding) {
         setOnboardingSource('registration')
+        setCurrentScreen('onboarding')
+      } else if (tryNavigateCreateAfterPlayerReady()) {
+        setCurrentScreen('create')
+      } else {
+        setCurrentScreen('home')
       }
-      setCurrentScreen(result.needsOnboarding ? 'onboarding' : 'home')
     } else if (result.error) {
       toast.error(result.error)
     }

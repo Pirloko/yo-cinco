@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useApp } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
@@ -16,9 +16,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { MatchType, Level, Team, type PlayersSeekProfile } from '@/lib/types'
+import {
+  MatchType,
+  Level,
+  Team,
+  type PlayersSeekProfile,
+  type SportsVenue,
+} from '@/lib/types'
 import { TIME_SLOT_OPTIONS } from '@/lib/time-slot-options'
-import { VENUE_OPTIONS } from '@/lib/venue-options'
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import { fetchSportsVenuesList } from '@/lib/supabase/venue-queries'
+import { readCreatePrefill, clearCreatePrefill } from '@/lib/create-prefill'
 import {
   ArrowLeft,
   ArrowRight,
@@ -93,6 +101,30 @@ export function CreateScreen() {
   /** Buscar jugadores: qué cupos ofrece (paso 3). */
   const [playersSeekProfile, setPlayersSeekProfile] =
     useState<PlayersSeekProfile | null>(null)
+  const [sportsVenuesFromDb, setSportsVenuesFromDb] = useState<SportsVenue[]>(
+    []
+  )
+  const [linkedVenueId, setLinkedVenueId] = useState<string | null>(null)
+  const [bookCourtSlot, setBookCourtSlot] = useState(false)
+
+  useEffect(() => {
+    const pre = readCreatePrefill()
+    if (pre) {
+      setLinkedVenueId(pre.sportsVenueId)
+      setBookCourtSlot(pre.bookCourtSlot)
+      setFormData((f) => ({
+        ...f,
+        venue: pre.venueLabel,
+        location: pre.city,
+        date: pre.date,
+        time: pre.time,
+      }))
+      clearCreatePrefill()
+    }
+    if (!isSupabaseConfigured()) return
+    const supabase = createClient()
+    void fetchSportsVenuesList(supabase).then(setSportsVenuesFromDb)
+  }, [])
 
   const userTeams = getUserTeams()
   const allTeams = currentUser ? getFilteredTeams(currentUser.gender) : []
@@ -149,6 +181,9 @@ export function CreateScreen() {
         level: formData.level,
       })
     } else {
+      const linked =
+        sportsVenuesFromDb.find((x) => x.id === linkedVenueId) ??
+        sportsVenuesFromDb.find((x) => x.name === formData.venue.trim())
       await addMatchOpportunity({
         type: matchType,
         title: formData.title,
@@ -171,6 +206,10 @@ export function CreateScreen() {
           matchType === 'players' && playersSeekProfile
             ? playersSeekProfile
             : undefined,
+        sportsVenueId: linked?.id,
+        bookCourtSlot:
+          linked && bookCourtSlot ? true : undefined,
+        courtSlotMinutes: linked?.slotDurationMinutes,
       })
     }
 
@@ -569,15 +608,26 @@ export function CreateScreen() {
                 />
               </div>
 
-              <CanchaVenueSelect
+              <CanchaLugarSelect
                 label={
                   <>
                     <MapPin className="w-4 h-4 text-primary" />
                     Cancha propuesta
                   </>
                 }
-                value={formData.venue}
-                onValueChange={(venue) => setFormData({ ...formData, venue })}
+                sportsVenues={sportsVenuesFromDb}
+                linkedVenueId={linkedVenueId}
+                venue={formData.venue}
+                onVenueChange={({ linkedVenueId: id, venue, city }) => {
+                  setLinkedVenueId(id)
+                  setBookCourtSlot(false)
+                  setFormData((f) => ({
+                    ...f,
+                    venue,
+                    ...(city !== undefined ? { location: city } : {}),
+                  }))
+                }}
+                showBookCheckbox={false}
               />
 
               {/* Date and Time */}
@@ -888,15 +938,28 @@ export function CreateScreen() {
                 </div>
               )}
 
-              <CanchaVenueSelect
+              <CanchaLugarSelect
                 label={
                   <>
                     <MapPin className="w-4 h-4 text-primary" />
                     Cancha / Lugar
                   </>
                 }
-                value={formData.venue}
-                onValueChange={(venue) => setFormData({ ...formData, venue })}
+                sportsVenues={sportsVenuesFromDb}
+                linkedVenueId={linkedVenueId}
+                venue={formData.venue}
+                onVenueChange={({ linkedVenueId: id, venue, city }) => {
+                  setLinkedVenueId(id)
+                  setBookCourtSlot(!!id)
+                  setFormData((f) => ({
+                    ...f,
+                    venue,
+                    ...(city !== undefined ? { location: city } : {}),
+                  }))
+                }}
+                showBookCheckbox
+                bookCourtSlot={bookCourtSlot}
+                onBookCourtSlotChange={setBookCourtSlot}
               />
 
               {/* Date and Time */}
@@ -964,33 +1027,91 @@ export function CreateScreen() {
   )
 }
 
-function CanchaVenueSelect({
+const CANCHA_DB_PREFIX = 'db:'
+
+function canchaSelectValue(
+  linkedVenueId: string | null,
+  venue: string,
+  sportsVenues: SportsVenue[]
+): string | undefined {
+  if (linkedVenueId) return `${CANCHA_DB_PREFIX}${linkedVenueId}`
+  const byName = sportsVenues.find((v) => v.name === venue)
+  if (byName) return `${CANCHA_DB_PREFIX}${byName.id}`
+  return undefined
+}
+
+function CanchaLugarSelect({
   label,
-  value,
-  onValueChange,
+  sportsVenues,
+  linkedVenueId,
+  venue,
+  onVenueChange,
+  showBookCheckbox,
+  bookCourtSlot,
+  onBookCourtSlotChange,
 }: {
   label: ReactNode
-  value: string
-  onValueChange: (venue: string) => void
+  sportsVenues: SportsVenue[]
+  linkedVenueId: string | null
+  venue: string
+  onVenueChange: (p: {
+    linkedVenueId: string | null
+    venue: string
+    city?: string
+  }) => void
+  /** Mostrar checkbox de reserva automática (solo revuelta / buscar jugadores). */
+  showBookCheckbox?: boolean
+  bookCourtSlot?: boolean
+  onBookCourtSlotChange?: (v: boolean) => void
 }) {
+  const selectValue = canchaSelectValue(linkedVenueId, venue, sportsVenues)
+
   return (
     <div className="space-y-2">
       <Label className="text-foreground flex items-center gap-2">{label}</Label>
-      <Select
-        value={value || undefined}
-        onValueChange={onValueChange}
-      >
-        <SelectTrigger className="w-full h-12 bg-secondary border-border text-foreground">
-          <SelectValue placeholder="Selecciona una cancha" />
-        </SelectTrigger>
-        <SelectContent>
-          {VENUE_OPTIONS.map((opt) => (
-            <SelectItem key={opt} value={opt}>
-              {opt}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {sportsVenues.length === 0 ? (
+        <p className="text-sm text-muted-foreground rounded-lg border border-dashed border-border px-3 py-3">
+          No hay centros deportivos registrados en la app. Cuando un centro se
+          dé de alta, aparecerá aquí.
+        </p>
+      ) : (
+        <Select
+          value={selectValue}
+          onValueChange={(v) => {
+            if (!v.startsWith(CANCHA_DB_PREFIX)) return
+            const id = v.slice(CANCHA_DB_PREFIX.length)
+            const sv = sportsVenues.find((x) => x.id === id)
+            if (!sv) return
+            onVenueChange({
+              linkedVenueId: id,
+              venue: sv.name,
+              city: sv.city,
+            })
+          }}
+        >
+          <SelectTrigger className="w-full h-12 bg-secondary border-border text-foreground">
+            <SelectValue placeholder="Selecciona un centro deportivo" />
+          </SelectTrigger>
+          <SelectContent className="max-h-[min(24rem,var(--radix-select-content-available-height))]">
+            {sportsVenues.map((sv) => (
+              <SelectItem key={sv.id} value={`${CANCHA_DB_PREFIX}${sv.id}`}>
+                {sv.name} — {sv.city}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {showBookCheckbox && linkedVenueId ? (
+        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+          <input
+            type="checkbox"
+            className="rounded border-border"
+            checked={bookCourtSlot === true}
+            onChange={(e) => onBookCourtSlotChange?.(e.target.checked)}
+          />
+          Reservar cancha automática al publicar (asigna una cancha libre)
+        </label>
+      ) : null}
     </div>
   )
 }
