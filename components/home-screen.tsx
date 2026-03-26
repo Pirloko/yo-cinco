@@ -39,10 +39,15 @@ export function HomeScreen() {
         (m) => m.status === 'pending' || m.status === 'confirmed'
       )
     : []
+
+  const midnight = new Date()
+  midnight.setHours(0, 0, 0, 0)
+
+  const visibleMatches = matches.filter((m) => m.dateTime.getTime() >= midnight.getTime())
   
   const filteredMatches = activeFilter === 'all' 
-    ? matches 
-    : matches.filter(m => m.type === activeFilter)
+    ? visibleMatches
+    : visibleMatches.filter((m) => m.type === activeFilter)
 
   const captainTeams = getUserTeams().filter((t) => t.captainId === currentUser?.id)
 

@@ -102,6 +102,13 @@ export function MatchCompletionPanel({
 }: Props) {
   const isCreator = opportunity.creatorId === currentUserId
   const completed = opportunity.status === 'completed'
+  const needsResolveAfterMidnight = (() => {
+    if (!isCreator) return false
+    if (completed || opportunity.status === 'cancelled') return false
+    const midnight = new Date()
+    midnight.setHours(0, 0, 0, 0)
+    return opportunity.dateTime.getTime() < midnight.getTime()
+  })()
   const finalizedAt = opportunity.finalizedAt
   const windowOpen =
     completed && finalizedAt && isRatingWindowOpen(finalizedAt)
@@ -228,14 +235,25 @@ export function MatchCompletionPanel({
 
   return (
     <div className="border-b border-border bg-secondary/40 px-4 py-3 space-y-4">
+      {needsResolveAfterMidnight && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-1">
+          <p className="text-sm font-semibold text-foreground">
+            Este partido ya pasó
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Para que no aparezca como disponible, confirma si se jugó o suspéndelo
+            con un motivo.
+          </p>
+        </div>
+      )}
       {showFinalize && (
         <div className="space-y-3">
           <p className="text-sm font-medium text-foreground">
-            Finalizar partido
+            {needsResolveAfterMidnight ? 'Resolver partido' : 'Finalizar partido'}
           </p>
           <p className="text-xs text-muted-foreground">
-            Al cerrar, se registrará el resultado y se abrirá la ventana de 48
-            h para que los jugadores califiquen.
+            Al cerrar, se registrará el resultado y se abrirá la ventana de 48 h
+            para que los jugadores califiquen.
           </p>
           {opportunity.type === 'rival' && (
             <div className="space-y-2">

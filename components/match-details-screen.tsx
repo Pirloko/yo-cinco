@@ -240,17 +240,6 @@ export function MatchDetailsScreen() {
                     {Math.max(0, needed - joined)}
                   </span>
                 </p>
-                <p>
-                  Arqueros en lista:{' '}
-                  <span className="text-foreground font-medium">
-                    {gkCount}/2
-                  </span>
-                  {' · '}
-                  Campo:{' '}
-                  <span className="text-foreground font-medium">
-                    {Math.max(0, joined - gkCount)}
-                  </span>
-                </p>
               </div>
             )}
           </div>

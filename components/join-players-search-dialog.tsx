@@ -79,6 +79,7 @@ export function JoinPlayersSearchDialog({
   const rules = playersJoinRules(opportunity)
   const needed = opportunity.playersNeeded ?? 0
   const full = needed > 0 && joined >= needed
+  const left = needed > 0 ? Math.max(0, needed - joined) : 0
 
   const handleJoin = async (asGk: boolean) => {
     if (full) return
@@ -97,6 +98,39 @@ export function JoinPlayersSearchDialog({
   const gkSlotOnly = rules.kind === 'gk_only' && gkCount < needed
   const fieldSlotOnly = rules.kind === 'field_only' && fieldCount < needed
 
+  const summaryTitle = (() => {
+    if (loading) return 'Revisando cupos…'
+    if (needed <= 0) return 'Cupos disponibles'
+    if (full) return 'Cupos completos'
+    if (left === 1) return 'Queda 1 cupo'
+    return `Quedan ${left} cupos`
+  })()
+
+  const summaryDetail = (() => {
+    if (loading) return 'Un segundo…'
+    if (needed <= 0) return 'El organizador está recibiendo postulaciones.'
+    if (full) return 'Ya no quedan cupos para sumarse a esta búsqueda.'
+    switch (rules.kind) {
+      case 'field_only':
+        return left === 1
+          ? 'Se busca 1 jugador de campo.'
+          : `Se buscan ${left} jugadores de campo.`
+      case 'gk_only':
+        return left === 1 ? 'Se busca 1 arquero.' : `Se buscan ${left} arqueros.`
+      case 'mixed': {
+        const needsGk = gkCount < 1
+        const needsField = fieldCount < Math.max(0, needed - 1)
+        if (needsGk && !needsField) return 'Solo queda cupo de arquero.'
+        if (!needsGk && needsField) return 'Solo quedan cupos de jugadores de campo.'
+        if (needsGk && needsField)
+          return 'Puedes postular como jugador de campo o como arquero.'
+        return 'Cupos disponibles.'
+      }
+      case 'legacy':
+        return left === 1 ? 'Se busca 1 jugador.' : `Se buscan ${left} jugadores.`
+    }
+  })()
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -107,22 +141,13 @@ export function JoinPlayersSearchDialog({
             organizador.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-2 text-sm text-muted-foreground">
-          <p>
-            Cupos:{' '}
-            <span className="text-foreground font-medium">
-              {loading ? '…' : `${joined}/${needed || '—'}`}
-            </span>
-            {needed > 0 && (
-              <> · Libres: {full ? 0 : Math.max(0, needed - joined)}</>
-            )}
-          </p>
-          {!loading && rules.kind !== 'legacy' && (
-            <p>
-              Arqueros: <span className="text-foreground font-medium">{gkCount}</span>
-              {' · '}
-              Campo:{' '}
-              <span className="text-foreground font-medium">{fieldCount}</span>
+        <div className="rounded-xl border border-border bg-secondary/20 p-3 space-y-1">
+          <p className="text-foreground font-medium">{summaryTitle}</p>
+          <p className="text-sm text-muted-foreground">{summaryDetail}</p>
+          {needed > 0 && !loading && (
+            <p className="text-xs text-muted-foreground">
+              Cupos: <span className="text-foreground font-medium">{joined}</span>/
+              <span className="text-foreground font-medium">{needed}</span>
             </p>
           )}
         </div>

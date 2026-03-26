@@ -91,15 +91,31 @@ export function MatchesScreen() {
     )
   }, [matchOpportunities, currentUser, participatingOpportunityIds])
 
+  const midnight = useMemo(() => {
+    const d = new Date()
+    d.setHours(0, 0, 0, 0)
+    return d
+  }, [])
+
+  const pendingToResolve = useMemo(() => {
+    if (!currentUser) return []
+    return myInvolved
+      .filter((m) => m.creatorId === currentUser.id)
+      .filter((m) => m.status === 'pending' || m.status === 'confirmed')
+      .filter((m) => m.dateTime.getTime() < midnight.getTime())
+      .sort((a, b) => b.dateTime.getTime() - a.dateTime.getTime())
+  }, [myInvolved, currentUser, midnight])
+
   const upcomingList = useMemo(
     () =>
       myInvolved
         .filter((m) => m.status === 'pending' || m.status === 'confirmed')
+        .filter((m) => m.dateTime.getTime() >= midnight.getTime())
         .sort(
           (a, b) =>
             new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()
         ),
-    [myInvolved]
+    [myInvolved, midnight]
   )
 
   const finishedList = useMemo(
@@ -160,6 +176,17 @@ export function MatchesScreen() {
     }
   }
 
+  const getTypeLabel = (type: 'rival' | 'players' | 'open') => {
+    switch (type) {
+      case 'rival':
+        return 'Rival vs rival'
+      case 'players':
+        return 'Yo + cinco'
+      case 'open':
+        return 'Revuelta abierta'
+    }
+  }
+
   const getTypeColor = (type: 'rival' | 'players' | 'open') => {
     switch (type) {
       case 'rival':
@@ -168,6 +195,17 @@ export function MatchesScreen() {
         return 'bg-primary/20 text-primary'
       case 'open':
         return 'bg-accent/20 text-accent'
+    }
+  }
+
+  const getTypeHeaderBg = (type: 'rival' | 'players' | 'open') => {
+    switch (type) {
+      case 'rival':
+        return 'bg-red-500/10 border-red-500/30'
+      case 'players':
+        return 'bg-primary/10 border-primary/30'
+      case 'open':
+        return 'bg-accent/10 border-accent/30'
     }
   }
 
@@ -219,6 +257,42 @@ export function MatchesScreen() {
       <div className="p-4">
         {activeTab === 'upcoming' && (
           <div className="space-y-4">
+            {pendingToResolve.length > 0 ? (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2">
+                <p className="text-sm font-semibold text-foreground">
+                  Pendientes por cerrar ({pendingToResolve.length})
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Estos partidos eran de días anteriores. Confirma si se jugaron o
+                  suspéndelos con un motivo.
+                </p>
+                <div className="space-y-2 pt-1">
+                  {pendingToResolve.slice(0, 3).map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => openDetails(m.id)}
+                      className="w-full text-left rounded-lg border border-border bg-card/60 px-3 py-2 hover:border-primary/40 transition-colors"
+                    >
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {m.title}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {format(m.dateTime, "EEEE d MMM · HH:mm", { locale: es })}
+                        {' · '}
+                        {m.venue}
+                      </p>
+                    </button>
+                  ))}
+                  {pendingToResolve.length > 3 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Y {pendingToResolve.length - 3} más…
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
             {upcomingList.length > 0 ? (
               upcomingList.map((match) => {
                 const isCreator =
@@ -233,25 +307,49 @@ export function MatchesScreen() {
                 return (
                   <div
                     key={match.id}
-                    className="bg-card rounded-xl border border-border p-4 space-y-3"
+                    className="bg-card rounded-xl border border-border overflow-hidden"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <img
-                          src={match.creatorPhoto}
-                          alt={match.creatorName}
-                          className="w-12 h-12 rounded-full object-cover border-2 border-border shrink-0"
-                        />
-                        <div className="min-w-0">
-                          <h3 className="font-semibold text-foreground truncate">
-                            {match.title}
-                          </h3>
-                          <p className="text-sm text-muted-foreground">
-                            {match.creatorName}
-                          </p>
+                    <div
+                      className={`px-4 py-3 border-b border-border ${getTypeHeaderBg(
+                        match.type
+                      )}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className={`p-1.5 rounded-lg ${getTypeColor(
+                              match.type
+                            )}`}
+                          >
+                            {getTypeIcon(match.type)}
+                          </div>
+                          <span className="text-sm font-medium text-foreground truncate">
+                            {getTypeLabel(match.type)}
+                          </span>
                         </div>
+                        <Badge variant="outline" className="text-xs">
+                          {match.level}
+                        </Badge>
                       </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
+                    </div>
+
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <img
+                            src={match.creatorPhoto}
+                            alt={match.creatorName}
+                            className="w-12 h-12 rounded-full object-cover border-2 border-border shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <h3 className="font-semibold text-foreground truncate">
+                              {match.title}
+                            </h3>
+                            <p className="text-sm text-muted-foreground">
+                              {match.creatorName}
+                            </p>
+                          </div>
+                        </div>
                         <Badge
                           variant="outline"
                           className={
@@ -262,52 +360,49 @@ export function MatchesScreen() {
                         >
                           {isCreator ? 'Organizas' : 'Participas'}
                         </Badge>
-                        <Badge className={getTypeColor(match.type)}>
-                          {getTypeIcon(match.type)}
-                        </Badge>
                       </div>
-                    </div>
 
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-4 h-4 text-primary" />
-                        {format(new Date(match.dateTime), "EEEE d MMM", {
-                          locale: es,
-                        })}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-4 h-4 text-primary" />
-                        {format(new Date(match.dateTime), 'HH:mm')}
-                      </span>
-                      <span className="flex items-center gap-1 min-w-0">
-                        <MapPin className="w-4 h-4 text-primary shrink-0" />
-                        <span className="truncate">{match.venue}</span>
-                      </span>
-                    </div>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-4 h-4 text-primary" />
+                          {format(new Date(match.dateTime), "EEEE d MMM", {
+                            locale: es,
+                          })}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-4 h-4 text-primary" />
+                          {format(new Date(match.dateTime), 'HH:mm')}
+                        </span>
+                        <span className="flex items-center gap-1 min-w-0">
+                          <MapPin className="w-4 h-4 text-primary shrink-0" />
+                          <span className="truncate">{match.venue}</span>
+                        </span>
+                      </div>
 
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => openDetails(match.id)}
-                        className="px-3 py-2.5 rounded-lg border border-border text-foreground hover:bg-secondary transition-colors"
-                      >
-                        Ver detalle
-                      </button>
-                      {canChat ? (
+                      <div className="flex gap-2 pt-1">
                         <button
                           type="button"
-                          onClick={() => openChat(match.id)}
-                          className="flex-1 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                          onClick={() => openDetails(match.id)}
+                          className="px-3 py-2.5 rounded-lg border border-border text-foreground hover:bg-secondary transition-colors"
                         >
-                          <MessageCircle className="w-4 h-4" />
-                          Abrir chat del grupo
+                          Ver detalle
                         </button>
-                      ) : (
-                        <p className="text-xs text-muted-foreground w-full text-center py-2">
-                          Únete al partido desde Inicio o Explorar para usar el
-                          chat
-                        </p>
-                      )}
+                        {canChat ? (
+                          <button
+                            type="button"
+                            onClick={() => openChat(match.id)}
+                            className="flex-1 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                          >
+                            <MessageCircle className="w-4 h-4" />
+                            Abrir chat del grupo
+                          </button>
+                        ) : (
+                          <p className="text-xs text-muted-foreground w-full text-center py-2">
+                            Únete al partido desde Inicio o Explorar para usar el
+                            chat
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )
@@ -334,49 +429,70 @@ export function MatchesScreen() {
                     key={chat.id}
                     type="button"
                     onClick={() => openChat(chat.id)}
-                    className="w-full bg-card rounded-xl border border-border p-4 flex items-center gap-4 hover:border-primary/50 transition-all text-left"
+                    className="w-full bg-card rounded-xl border border-border overflow-hidden hover:border-primary/50 transition-all text-left"
                   >
-                    <div className="relative shrink-0">
-                      <img
-                        src={chat.creatorPhoto}
-                        alt={chat.title}
-                        className="w-14 h-14 rounded-full object-cover border-2 border-border"
-                      />
-                      <div
-                        className={`absolute -bottom-1 -right-1 p-1.5 rounded-full ${getTypeColor(chat.type)}`}
-                      >
-                        {getTypeIcon(chat.type)}
+                    <div
+                      className={`px-4 py-3 border-b border-border ${getTypeHeaderBg(
+                        chat.type
+                      )}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className={`p-1.5 rounded-lg ${getTypeColor(
+                              chat.type
+                            )}`}
+                          >
+                            {getTypeIcon(chat.type)}
+                          </div>
+                          <span className="text-sm font-medium text-foreground truncate">
+                            {getTypeLabel(chat.type)}
+                          </span>
+                        </div>
+                        <Badge variant="outline" className="text-xs">
+                          {chat.level}
+                        </Badge>
                       </div>
                     </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <h3 className="font-semibold text-foreground truncate">
-                          {chat.title}
-                        </h3>
-                        {last && (
-                          <span className="text-xs text-muted-foreground flex-shrink-0">
-                            {format(last.createdAt, 'HH:mm')}
-                          </span>
-                        )}
+                    <div className="p-4 flex items-center gap-4">
+                      <div className="relative shrink-0">
+                        <img
+                          src={chat.creatorPhoto}
+                          alt={chat.title}
+                          className="w-14 h-14 rounded-full object-cover border-2 border-border"
+                        />
                       </div>
-                      <p className="text-sm text-muted-foreground truncate">
-                        {last?.content ?? 'Sin mensajes aún — escribe el primero'}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Calendar className="w-3 h-3" />
-                          {format(new Date(chat.dateTime), "d MMM HH:mm", {
-                            locale: es,
-                          })}
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="font-semibold text-foreground truncate">
+                            {chat.title}
+                          </h3>
+                          {last && (
+                            <span className="text-xs text-muted-foreground flex-shrink-0">
+                              {format(last.createdAt, 'HH:mm')}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate">
+                          {last?.content ?? 'Sin mensajes aún — escribe el primero'}
                         </p>
-                        {isDone && (
-                          <Badge variant="secondary" className="text-[10px]">
-                            {chat.status === 'completed'
-                              ? 'Finalizado'
-                              : 'Cancelado'}
-                          </Badge>
-                        )}
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {format(new Date(chat.dateTime), "d MMM HH:mm", {
+                              locale: es,
+                            })}
+                          </p>
+                          {isDone && (
+                            <Badge variant="secondary" className="text-[10px]">
+                              {chat.status === 'completed'
+                                ? 'Finalizado'
+                                : 'Cancelado'}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </button>
@@ -408,36 +524,65 @@ export function MatchesScreen() {
                 return (
                   <div
                     key={match.id}
-                    className="bg-card rounded-xl border border-border p-4 space-y-3"
+                    className="bg-card rounded-xl border border-border overflow-hidden"
                   >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h3 className="font-semibold text-foreground">
-                        {match.title}
-                      </h3>
-                      <p className="text-sm text-muted-foreground">
-                        {format(new Date(match.dateTime), "d MMM yyyy", {
-                          locale: es,
-                        })}
-                        {match.finalizedAt && (
-                          <span className="text-muted-foreground">
-                            {' '}
-                            · Cerrado{' '}
-                            {format(new Date(match.finalizedAt), 'd MMM', {
+                    <div
+                      className={`px-4 py-3 border-b border-border ${getTypeHeaderBg(
+                        match.type
+                      )}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className={`p-1.5 rounded-lg ${getTypeColor(
+                              match.type
+                            )}`}
+                          >
+                            {getTypeIcon(match.type)}
+                          </div>
+                          <span className="text-sm font-medium text-foreground truncate">
+                            {getTypeLabel(match.type)}
+                          </span>
+                        </div>
+                        <Badge variant="outline" className="text-xs">
+                          {match.level}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <h3 className="font-semibold text-foreground">
+                            {match.title}
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            {format(new Date(match.dateTime), "d MMM yyyy", {
                               locale: es,
                             })}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                    <Badge
-                      variant={
-                        match.status === 'cancelled' ? 'destructive' : 'secondary'
-                      }
-                    >
-                      {match.status === 'cancelled' ? 'Cancelado' : 'Finalizado'}
-                    </Badge>
-                  </div>
+                            {match.finalizedAt && (
+                              <span className="text-muted-foreground">
+                                {' '}
+                                · Cerrado{' '}
+                                {format(new Date(match.finalizedAt), 'd MMM', {
+                                  locale: es,
+                                })}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <Badge
+                          variant={
+                            match.status === 'cancelled'
+                              ? 'destructive'
+                              : 'secondary'
+                          }
+                        >
+                          {match.status === 'cancelled'
+                            ? 'Cancelado'
+                            : 'Finalizado'}
+                        </Badge>
+                      </div>
 
                   {match.status === 'completed' && (
                     <div className="space-y-1.5">
@@ -494,6 +639,7 @@ export function MatchesScreen() {
                           : 'Ver historial del chat'}
                       </button>
                     )}
+                  </div>
                   </div>
                 )
               })

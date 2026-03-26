@@ -67,7 +67,13 @@ export function ExploreScreen() {
       )
     : []
 
-  const filteredMatches = allMatches.filter((match) => {
+  const midnight = new Date()
+  midnight.setHours(0, 0, 0, 0)
+  const visibleMatches = allMatches.filter(
+    (m) => m.dateTime.getTime() >= midnight.getTime()
+  )
+
+  const filteredMatches = visibleMatches.filter((match) => {
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase()

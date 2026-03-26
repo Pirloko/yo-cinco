@@ -329,7 +329,13 @@ export function CreateScreen() {
                 title="Crear revuelta"
                 description="Partido abierto para todos"
                 selected={matchType === 'open'}
-                onClick={() => setMatchType('open')}
+                onClick={() => {
+                  setMatchType('open')
+                  setFormData((f) => ({
+                    ...f,
+                    playersNeeded: Math.min(12, Math.max(10, f.playersNeeded)),
+                  }))
+                }}
                 color="gold"
               />
             </div>
@@ -877,7 +883,7 @@ export function CreateScreen() {
                     Jugadores necesarios
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Total en cancha (incluye tu cupo como organizador).
+                    Total en cancha (incluye tu cupo como organizador). Mín. 10 · Máx. 12.
                   </p>
                   <div className="flex items-center gap-4">
                     <Button
@@ -887,7 +893,7 @@ export function CreateScreen() {
                         setFormData({
                           ...formData,
                           playersNeeded: Math.max(
-                            2,
+                            10,
                             formData.playersNeeded - 1
                           ),
                         })
@@ -902,7 +908,12 @@ export function CreateScreen() {
                     <Button
                       variant="outline"
                       size="icon"
-                      onClick={() => setFormData({ ...formData, playersNeeded: Math.min(12, formData.playersNeeded + 1) })}
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          playersNeeded: Math.min(12, formData.playersNeeded + 1),
+                        })
+                      }
                       className="border-border"
                     >
                       +

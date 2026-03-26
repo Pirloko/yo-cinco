@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 import type { MatchOpportunity } from '@/lib/types'
 import {
@@ -29,12 +29,16 @@ export function JoinRevueltaDialog({
   onJoin,
 }: Props) {
   const [gkCount, setGkCount] = useState(0)
+  const [fieldCount, setFieldCount] = useState(0)
+  const [joinedCount, setJoinedCount] = useState(0)
   const [loadingCount, setLoadingCount] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     if (!open || !opportunity || !isSupabaseConfigured()) {
       setGkCount(0)
+      setFieldCount(0)
+      setJoinedCount(0)
       return
     }
     let cancelled = false
@@ -42,12 +46,26 @@ export function JoinRevueltaDialog({
     void (async () => {
       try {
         const sb = createClient()
-        const { count, error } = await sb
+        const { data, error } = await sb
           .from('match_opportunity_participants')
-          .select('*', { count: 'exact', head: true })
+          .select('is_goalkeeper, status')
           .eq('opportunity_id', opportunity.id)
-          .eq('is_goalkeeper', true)
-        if (!cancelled && !error) setGkCount(count ?? 0)
+        if (error || cancelled) return
+        let gk = 0
+        let field = 0
+        let joined = 0
+        for (const p of data ?? []) {
+          const st = p.status as string
+          if (st !== 'pending' && st !== 'confirmed') continue
+          joined++
+          if (p.is_goalkeeper === true) gk++
+          else field++
+        }
+        if (!cancelled) {
+          setGkCount(gk)
+          setFieldCount(field)
+          setJoinedCount(joined)
+        }
       } finally {
         if (!cancelled) setLoadingCount(false)
       }
@@ -60,14 +78,28 @@ export function JoinRevueltaDialog({
   if (!opportunity) return null
 
   const needed = opportunity.playersNeeded ?? 0
-  const joined = opportunity.playersJoined ?? 0
-  const totalLeft = needed > 0 ? Math.max(0, needed - joined) : 999
+  const cap = needed
+  const joined = loadingCount ? (opportunity.playersJoined ?? 0) : joinedCount
+  const totalLeft = cap > 0 ? Math.max(0, cap - joined) : 999
   const gkLeft = Math.max(0, MAX_GOALKEEPERS - gkCount)
-  const full = needed > 0 && joined >= needed
+  const fieldCap = Math.max(0, cap - MAX_GOALKEEPERS)
+  const fieldLeft = Math.max(0, fieldCap - fieldCount)
+  const full = cap > 0 && joined >= cap
+
+  const availabilityText = useMemo(() => {
+    if (full) return 'No quedan cupos.'
+    if (fieldLeft <= 0 && gkLeft > 0) return 'Solo quedan cupos de arquero.'
+    if (gkLeft <= 0 && fieldLeft > 0) return 'Quedan cupos de jugadores.'
+    if (gkLeft > 0 && fieldLeft > 0) {
+      return `Quedan ${fieldLeft} de jugadores y ${gkLeft} de arquero.`
+    }
+    return 'Cupos disponibles.'
+  }, [full, fieldLeft, gkLeft])
 
   const handleJoin = async (asGk: boolean) => {
     if (full) return
     if (asGk && gkLeft <= 0) return
+    if (!asGk && fieldLeft <= 0) return
     setSubmitting(true)
     try {
       await onJoin(asGk)
@@ -83,8 +115,7 @@ export function JoinRevueltaDialog({
         <DialogHeader>
           <DialogTitle>Unirte a la revuelta</DialogTitle>
           <DialogDescription>
-            {opportunity.title} — elige si vas como arquero (máx. 2) o jugador de
-            campo.
+            {opportunity.title} — selecciona tu rol.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2 text-sm text-muted-foreground">
@@ -97,23 +128,13 @@ export function JoinRevueltaDialog({
               <> · Libres: {full ? 0 : totalLeft}</>
             )}
           </p>
-          <p>
-            Arqueros:{' '}
-            <span className="text-foreground font-medium">
-              {gkCount}/{MAX_GOALKEEPERS}
-            </span>
-            {gkLeft > 0 ? (
-              <span> · Quedan {gkLeft} cupo(s) de arquero</span>
-            ) : (
-              <span> · Completo</span>
-            )}
-          </p>
+          <p className="text-foreground font-medium">{availabilityText}</p>
         </div>
         <DialogFooter className="flex-col gap-2 sm:flex-col">
           <Button
             type="button"
             className="w-full bg-primary"
-            disabled={submitting || full}
+            disabled={submitting || full || fieldLeft <= 0}
             onClick={() => void handleJoin(false)}
           >
             Jugador de campo

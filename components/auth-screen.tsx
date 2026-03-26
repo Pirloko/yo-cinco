@@ -5,19 +5,111 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useApp } from '@/lib/app-context'
 import { Gender } from '@/lib/types'
-import { ArrowLeft, Mail, Lock, User } from 'lucide-react'
+import { ArrowLeft, Mail, Lock, User, Phone } from 'lucide-react'
 import { JOIN_REGISTER_STORAGE_KEY } from '@/lib/team-invite-url'
 import { tryNavigateCreateAfterPlayerReady } from '@/lib/create-prefill'
+
+type CountryOption = {
+  id: string
+  label: string
+  flag: string
+  dialCode: string
+  minDigits: number
+  maxDigits: number
+  placeholder: string
+}
+
+const WHATSAPP_COUNTRIES: CountryOption[] = [
+  {
+    id: 'CL',
+    label: 'Chile',
+    flag: '🇨🇱',
+    dialCode: '+56',
+    minDigits: 8,
+    maxDigits: 9,
+    placeholder: '9 1234 5678',
+  },
+  {
+    id: 'AR',
+    label: 'Argentina',
+    flag: '🇦🇷',
+    dialCode: '+54',
+    minDigits: 10,
+    maxDigits: 11,
+    placeholder: '11 1234 5678',
+  },
+  {
+    id: 'PE',
+    label: 'Perú',
+    flag: '🇵🇪',
+    dialCode: '+51',
+    minDigits: 9,
+    maxDigits: 9,
+    placeholder: '987 654 321',
+  },
+  {
+    id: 'CO',
+    label: 'Colombia',
+    flag: '🇨🇴',
+    dialCode: '+57',
+    minDigits: 10,
+    maxDigits: 10,
+    placeholder: '300 123 4567',
+  },
+  {
+    id: 'MX',
+    label: 'México',
+    flag: '🇲🇽',
+    dialCode: '+52',
+    minDigits: 10,
+    maxDigits: 10,
+    placeholder: '55 1234 5678',
+  },
+  {
+    id: 'ES',
+    label: 'España',
+    flag: '🇪🇸',
+    dialCode: '+34',
+    minDigits: 9,
+    maxDigits: 9,
+    placeholder: '612 345 678',
+  },
+  {
+    id: 'US',
+    label: 'EE. UU.',
+    flag: '🇺🇸',
+    dialCode: '+1',
+    minDigits: 10,
+    maxDigits: 10,
+    placeholder: '415 555 2671',
+  },
+]
 
 export function AuthScreen() {
   const { setCurrentScreen, login, setOnboardingSource } = useApp()
   const [isLogin, setIsLogin] = useState(true)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [whatsAppCountryId, setWhatsAppCountryId] = useState('CL')
+  const [whatsappLocal, setWhatsappLocal] = useState('')
   const [gender, setGender] = useState<Gender>('male')
   const [isLoading, setIsLoading] = useState(false)
+  const country =
+    WHATSAPP_COUNTRIES.find((c) => c.id === whatsAppCountryId) ??
+    WHATSAPP_COUNTRIES[0]
+  const localDigits = whatsappLocal.replace(/\D/g, '')
+  const whatsappE164 = `${country.dialCode}${localDigits}`
+  const isWhatsappValid =
+    localDigits.length >= country.minDigits && localDigits.length <= country.maxDigits
 
   useEffect(() => {
     try {
@@ -34,7 +126,13 @@ export function AuthScreen() {
     e.preventDefault()
     setIsLoading(true)
 
-    const result = await login(email, password, gender, !isLogin)
+    const result = await login(
+      email,
+      password,
+      gender,
+      !isLogin,
+      whatsappE164
+    )
 
     if (result.ok) {
       if (result.isVenue) {
@@ -137,6 +235,57 @@ export function AuthScreen() {
             {/* Gender Selection */}
             {!isLogin && (
               <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="whatsapp" className="text-foreground">
+                    WhatsApp (obligatorio)
+                  </Label>
+                  <div className="flex gap-2">
+                    <Select
+                      value={whatsAppCountryId}
+                      onValueChange={(v) => setWhatsAppCountryId(v)}
+                    >
+                      <SelectTrigger className="h-12 w-[140px] bg-secondary border-border text-foreground">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {WHATSAPP_COUNTRIES.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.flag} {c.label} ({c.dialCode})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    <div className="relative flex-1">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                      <Input
+                        id="whatsapp"
+                        type="tel"
+                        inputMode="tel"
+                        placeholder={country.placeholder}
+                        value={whatsappLocal}
+                        onChange={(e) => {
+                          const next = e.target.value.replace(/\D/g, '')
+                          setWhatsappLocal(next)
+                        }}
+                        className="pl-10 h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                        required
+                        autoComplete="tel"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Lo usaremos para coordinar partidos. Guardaremos tu número como{' '}
+                    <span className="text-foreground font-medium">{whatsappE164}</span>
+                    .
+                  </p>
+                  {whatsappLocal.trim().length > 0 && !isWhatsappValid ? (
+                    <p className="text-xs text-red-400">
+                      Ingresa un WhatsApp válido para crear tu cuenta.
+                    </p>
+                  ) : null}
+                </div>
+
                 <Label className="text-foreground">Genero</Label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
@@ -178,7 +327,7 @@ export function AuthScreen() {
             <Button 
               type="submit" 
               className="w-full h-12 text-lg bg-primary text-primary-foreground hover:bg-primary/90"
-              disabled={isLoading}
+              disabled={isLoading || (!isLogin && !isWhatsappValid)}
             >
               {isLoading ? 'Cargando...' : isLogin ? 'Iniciar sesion' : 'Crear cuenta'}
             </Button>

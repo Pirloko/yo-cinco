@@ -153,10 +153,27 @@ export function VenueCentroClient({ venue, courts, weeklyHours }: Props) {
         ) : null}
       </div>
 
+      <div className="rounded-xl border border-border bg-secondary/30 p-4 text-sm text-muted-foreground space-y-3">
+        <p className="text-foreground font-medium">
+          ¿Quieres organizar un partido en {venue.name}?
+        </p>
+        <p>
+          Mira los <strong className="text-foreground">horarios disponibles</strong> y pulsa{' '}
+          <strong className="text-foreground">“Crear partido aquí”</strong> en el
+          tramo que te acomode.
+        </p>
+        <p>
+          Si <strong className="text-foreground">no tienes cuenta</strong>, primero
+          regístrate en la app. Si ya tienes cuenta, inicia sesión y te llevamos a{' '}
+          <strong className="text-foreground">Crear</strong> con la fecha y hora
+          seleccionadas.
+        </p>
+      </div>
+
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <Calendar className="w-5 h-5 text-primary" />
-          <h2 className="text-lg font-semibold">Huecos ({dow})</h2>
+          <h2 className="text-lg font-semibold">Horarios disponibles ({dow})</h2>
         </div>
         <InputDate value={dayStr} onChange={setDayStr} />
         <p className="text-xs text-muted-foreground">
@@ -210,26 +227,6 @@ export function VenueCentroClient({ venue, courts, weeklyHours }: Props) {
             })}
           </ul>
         )}
-      </div>
-
-      <div className="rounded-xl border border-border bg-secondary/30 p-4 text-sm text-muted-foreground space-y-3">
-        <p>
-          ¿Tienes cuenta? Inicia sesión en la app y te llevamos a{' '}
-          <strong className="text-foreground">Crear</strong> con la fecha y hora de este
-          tramo; opcionalmente se reserva cancha al publicar.
-        </p>
-        <Button variant="outline" asChild className="w-full sm:w-auto">
-          <Link href="/?prefillCreate=1" onClick={() => writeCreatePrefill({
-            sportsVenueId: venue.id,
-            venueLabel: venue.name,
-            city: venue.city,
-            date: dayStr,
-            time: '18:00',
-            bookCourtSlot: true,
-          })}>
-            Ir a la app con este día (hora 18:00)
-          </Link>
-        </Button>
       </div>
     </div>
   )

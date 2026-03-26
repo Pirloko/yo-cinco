@@ -56,8 +56,19 @@ export function RevueltaTeamsPanel({
   if (opportunity.type !== 'open') return null
 
   const needed = opportunity.playersNeeded ?? 0
-  const joined = opportunity.playersJoined ?? 0
+  const joined = participants.filter(
+    (p) =>
+      p.status === 'creator' || p.status === 'confirmed' || p.status === 'pending'
+  ).length
+  const gkCount = participants.filter(
+    (p) =>
+      (p.status === 'creator' ||
+        p.status === 'confirmed' ||
+        p.status === 'pending') &&
+      p.isGoalkeeper === true
+  ).length
   const full = needed > 0 && joined >= needed
+  const hasTwoGoalkeepers = gkCount >= 2
   const lineup = opportunity.revueltaLineup
 
   const [colorA, setColorA] = useState<string>(JERSEY_COLOR_PRESETS[0].hex)
@@ -140,15 +151,17 @@ export function RevueltaTeamsPanel({
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          {full
+          {full && hasTwoGoalkeepers
             ? isOrganizer
               ? 'Cupos completos. Elige color de camiseta y sortea Equipo A y B.'
               : 'Cuando el organizador sortee, verás los equipos aquí.'
+            : full && !hasTwoGoalkeepers
+              ? 'Lista completa, pero faltan 2 arqueros para poder sortear.'
             : `Faltan cupos (${joined}/${needed}) para sortear equipos.`}
         </p>
       )}
 
-      {isOrganizer && full && (
+      {isOrganizer && full && hasTwoGoalkeepers && (
         <div className="space-y-3 border-t border-border pt-3">
           {!compact && (
             <p className="text-xs font-medium text-muted-foreground">

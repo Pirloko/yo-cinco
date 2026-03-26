@@ -64,6 +64,16 @@ import { playersJoinRules } from '@/lib/players-seek-profile'
 import { uploadProfileAvatarFile } from '@/lib/supabase/profile-photo'
 import { fetchVenueForOwner } from '@/lib/supabase/venue-queries'
 
+function isTeamLimitReached(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { message?: unknown }
+  return typeof e.message === 'string' && e.message.includes('team_limit_reached')
+}
+
+function toastTeamLimitReached() {
+  toast.error('Llegaste al máximo de 5 equipos.')
+}
+
 function getAuthUserEmail(u: SupabaseAuthUser): string | undefined {
   if (u.email) return u.email
   const meta = u.user_metadata
@@ -103,7 +113,8 @@ interface AppContextType {
     email: string,
     password: string,
     gender: Gender,
-    isSignUp: boolean
+    isSignUp: boolean,
+    whatsappPhone?: string
   ) => Promise<{
     ok: boolean
     error?: string
@@ -181,6 +192,10 @@ interface AppContextType {
       logo?: string | null
     }
   ) => Promise<void>
+  /** Capitán: eliminar equipo completo (cascade). */
+  deleteTeam: (teamId: string) => Promise<void>
+  /** Miembro (no capitán): retirarse del equipo. */
+  leaveTeam: (teamId: string) => Promise<void>
   /** Capitán: enlace WhatsApp y reglas internas (tabla privada; solo miembros leen). */
   updateTeamPrivateSettings: (
     teamId: string,
@@ -303,7 +318,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     email: string,
     password: string,
     gender: Gender,
-    isSignUp: boolean
+    isSignUp: boolean,
+    whatsappPhone?: string
   ): Promise<{
     ok: boolean
     error?: string
@@ -322,10 +338,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const supabase = createClient()
       const emailTrimmed = email.trim()
       if (isSignUp) {
+        const whatsapp = whatsappPhone?.trim() ?? ''
+        if (!whatsapp) {
+          return { ok: false, error: 'Debes ingresar tu WhatsApp.' }
+        }
         const { data, error } = await supabase.auth.signUp({
           email: emailTrimmed,
           password,
-          options: { data: { gender } },
+          options: { data: { gender, whatsapp_phone: whatsapp } },
         })
         if (error) return { ok: false, error: formatAuthError(error) }
         if (data.user && !data.session) {
@@ -338,7 +358,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (data.user) {
           await supabase
             .from('profiles')
-            .update({ gender })
+            .update({ gender, whatsapp_phone: whatsapp })
             .eq('id', data.user.id)
         }
       } else {
@@ -649,29 +669,60 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.error('No encontramos este partido.')
       return
     }
+
+    const midnight = new Date()
+    midnight.setHours(0, 0, 0, 0)
+    if (opp.dateTime.getTime() < midnight.getTime()) {
+      toast.error('Este partido ya pasó. Ya no se puede unir.')
+      return
+    }
     const cap = opp.playersNeeded ?? 0
     const isGkRequest = options?.isGoalkeeper === true
 
     let insertAsGk = false
 
     if (opp.type === 'open') {
-      insertAsGk = isGkRequest
-      if (cap > 0 && (opp.playersJoined ?? 0) >= cap) {
+      const { data: partRows, error: partQErr } = await supabase
+        .from('match_opportunity_participants')
+        .select('is_goalkeeper, status')
+        .eq('opportunity_id', opportunityId)
+      if (partQErr) {
+        toast.error(partQErr.message)
+        return
+      }
+      let gkCount = 0
+      let fieldCount = 0
+      let joinedDb = 0
+      for (const p of partRows ?? []) {
+        const st = p.status as string
+        if (st !== 'pending' && st !== 'confirmed') continue
+        joinedDb++
+        if (p.is_goalkeeper === true) gkCount++
+        else fieldCount++
+      }
+
+      if (cap > 0 && joinedDb >= cap) {
         toast.error('No quedan cupos en este partido.')
         return
       }
+
+      const gkLeft = Math.max(0, 2 - gkCount)
+      const fieldCap = Math.max(0, cap - 2)
+      const fieldLeft = Math.max(0, fieldCap - fieldCount)
+
+      insertAsGk = isGkRequest
       if (insertAsGk) {
-        const { count, error: cntErr } = await supabase
-          .from('match_opportunity_participants')
-          .select('*', { count: 'exact', head: true })
-          .eq('opportunity_id', opportunityId)
-          .eq('is_goalkeeper', true)
-        if (cntErr) {
-          toast.error(cntErr.message)
+        if (gkLeft <= 0) {
+          toast.error('Solo quedan cupos de jugadores.')
           return
         }
-        if ((count ?? 0) >= 2) {
-          toast.error('Ya no quedan cupos de arquero (máx. 2).')
+      } else {
+        if (fieldLeft <= 0 && gkLeft > 0) {
+          toast.error('Solo quedan cupos de arquero.')
+          return
+        }
+        if (fieldLeft <= 0) {
+          toast.error('No quedan cupos en este partido.')
           return
         }
       }
@@ -805,15 +856,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
     const byUser = new Map<string, boolean>()
+    let joinedDb = 0
+    let gkCount = 0
     for (const p of parts ?? []) {
       const st = p.status as string
       if (st !== 'confirmed' && st !== 'pending') continue
+      joinedDb++
       const uid = p.user_id as string
       const gk = p.is_goalkeeper === true
+      if (gk) gkCount++
       byUser.set(uid, (byUser.get(uid) ?? false) || gk)
     }
     if (opp.creatorId && !byUser.has(opp.creatorId)) {
       byUser.set(opp.creatorId, false)
+    }
+
+    // En revuelta exigimos lista completa y 2 arqueros antes de sortear.
+    if (needed > 0 && joinedDb !== needed) {
+      toast.error('La lista aún no está completa para sortear equipos.')
+      return
+    }
+    if (gkCount < 2) {
+      toast.error('Se necesitan 2 arqueros inscritos para poder sortear.')
+      return
     }
     const roster = [...byUser.entries()].map(([userId, isGoalkeeper]) => ({
       userId,
@@ -997,7 +1062,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .single()
 
     if (error) {
-      toast.error(error.message)
+      if (isTeamLimitReached(error)) {
+        toastTeamLimitReached()
+      } else {
+        toast.error(error.message)
+      }
       return
     }
 
@@ -1017,7 +1086,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
 
     if (memErr) {
+      if (isTeamLimitReached(memErr)) {
+        toastTeamLimitReached()
+      } else {
       toast.error(memErr.message)
+      }
       return
     }
 
@@ -1075,6 +1148,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const freshTeams = await fetchTeamsWithMembers(supabase)
     setTeams(freshTeams)
     toast.success('Equipo actualizado')
+  }
+
+  const deleteTeam = async (teamId: string) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const team = teams.find((t) => t.id === teamId)
+    if (!team || team.captainId !== currentUser.id) {
+      toast.error('Solo el capitán puede eliminar el equipo.')
+      return
+    }
+    const { error } = await supabase.from('teams').delete().eq('id', teamId)
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    toast.success('Equipo eliminado')
+    const freshTeams = await fetchTeamsWithMembers(supabase)
+    setTeams(freshTeams)
+  }
+
+  const leaveTeam = async (teamId: string) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const team = teams.find((t) => t.id === teamId)
+    if (team?.captainId === currentUser.id) {
+      toast.error('El capitán no puede retirarse; debe eliminar el equipo.')
+      return
+    }
+    const { error } = await supabase
+      .from('team_members')
+      .delete()
+      .eq('team_id', teamId)
+      .eq('user_id', currentUser.id)
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    toast.success('Te retiraste del equipo')
+    const [freshTeams, freshInvites, joinReqs] = await Promise.all([
+      fetchTeamsWithMembers(supabase),
+      fetchTeamInvitesForUser(supabase, currentUser.id),
+      fetchTeamJoinRequestsForUser(supabase, currentUser.id),
+    ])
+    setTeams(freshTeams)
+    setTeamInvites(freshInvites)
+    setTeamJoinRequests(joinReqs)
   }
 
   const updateTeamPrivateSettings = async (
@@ -1349,7 +1468,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         status: 'confirmed',
       })
       if (memErr) {
+        if (isTeamLimitReached(memErr)) {
+          toastTeamLimitReached()
+        } else {
         toast.error(memErr.message)
+        }
         return
       }
       const { error: updErr } = await supabase
@@ -1447,7 +1570,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       status: 'confirmed',
     })
     if (memErr) {
+      if (isTeamLimitReached(memErr)) {
+        toastTeamLimitReached()
+      } else {
       toast.error(memErr.message)
+      }
       return
     }
 
@@ -1890,6 +2017,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         rivalChallenges,
         createTeam,
         updateTeam,
+        deleteTeam,
+        leaveTeam,
         updateTeamPrivateSettings,
         createRivalChallenge,
         respondToRivalChallenge,

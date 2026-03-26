@@ -11,6 +11,8 @@ import { NextResponse, type NextRequest } from 'next/server'
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
 
+  // En desarrollo, o si Supabase está intermitente, el middleware no debe bloquear la app.
+  // Si el refresh de sesión falla, seguimos sin romper navegación/login.
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!url || !key) {
@@ -42,7 +44,18 @@ export async function middleware(request: NextRequest) {
     },
   })
 
-  await supabase.auth.getUser()
+  // Evitar que un timeout/red caída deje la app inusable.
+  // Nota: `getUser()` refresca cookies si corresponde; si falla, ignoramos.
+  try {
+    const ac = new AbortController()
+    const t = setTimeout(() => ac.abort(), 3000)
+    // @supabase/ssr acepta `global.fetch`; `signal` se respeta por fetch runtime.
+    // Si el runtime no soporta AbortController, el catch igualmente protege.
+    await supabase.auth.getUser({ signal: ac.signal } as never)
+    clearTimeout(t)
+  } catch {
+    // ignore
+  }
 
   return response
 }

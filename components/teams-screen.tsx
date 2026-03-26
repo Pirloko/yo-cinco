@@ -69,6 +69,8 @@ export function TeamsScreen() {
     getFilteredTeams,
     createTeam,
     updateTeam,
+    deleteTeam,
+    leaveTeam,
     updateTeamPrivateSettings,
     inviteToTeam,
     teamInvites,
@@ -110,6 +112,8 @@ export function TeamsScreen() {
 
   const userTeams = getUserTeams()
   const myCaptainTeams = userTeams.filter((t) => t.captainId === currentUser?.id)
+  const TEAM_LIMIT_MAX = 5
+  const isTeamLimitReached = userTeams.length >= TEAM_LIMIT_MAX
   const allTeams = currentUser ? getFilteredTeams(currentUser.gender) : []
   const pendingInvites = teamInvites.filter(
     inv => inv.inviteeId === currentUser?.id && inv.status === 'pending'
@@ -221,6 +225,10 @@ export function TeamsScreen() {
 
   const handleCreateTeam = async () => {
     if (!currentUser || !teamName.trim()) return
+    if (isTeamLimitReached) {
+      toast.error(`Llegaste al máximo de ${TEAM_LIMIT_MAX} equipos.`)
+      return
+    }
 
     await createTeam({
       name: teamName,
@@ -319,6 +327,35 @@ export function TeamsScreen() {
     } finally {
       setSavingTeam(false)
     }
+  }
+
+  const handleDeleteTeam = async () => {
+    if (!detailTeam || detailTeam.captainId !== currentUser?.id) return
+    const ok = confirm(
+      `¿Eliminar el equipo "${detailTeam.name}"? Se borrarán miembros, invitaciones y solicitudes.`
+    )
+    if (!ok) return
+    try {
+      if (detailTeam.logo && isSupabaseConfigured()) {
+        const supabase = createClient()
+        await deleteTeamLogoFile(supabase, detailTeam.id)
+      }
+    } catch {
+      // ignore
+    }
+    await deleteTeam(detailTeam.id)
+    setSelectedTeam(null)
+    setView('list')
+  }
+
+  const handleLeaveTeam = async () => {
+    if (!detailTeam || !currentUser) return
+    if (detailTeam.captainId === currentUser.id) return
+    const ok = confirm(`¿Quieres retirarte de "${detailTeam.name}"?`)
+    if (!ok) return
+    await leaveTeam(detailTeam.id)
+    setSelectedTeam(null)
+    setView('list')
   }
 
   const getTeamInviteUrl = (team: Team) =>
@@ -647,11 +684,21 @@ export function TeamsScreen() {
               size="sm"
               onClick={() => setView('create')}
               className="bg-primary hover:bg-primary/90"
+              disabled={isTeamLimitReached}
             >
               <Plus className="w-4 h-4 mr-1" />
               Crear
             </Button>
           </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            Puedes ser parte de hasta <span className="text-foreground font-medium">{TEAM_LIMIT_MAX}</span>{' '}
+            equipos en total (incluye los que creas y a los que te unes).
+            {isTeamLimitReached ? (
+              <span className="text-foreground font-medium">
+                {' '}Ya llegaste al límite.
+              </span>
+            ) : null}
+          </p>
           
           {userTeams.length > 0 ? (
             <div className="space-y-3">
@@ -666,6 +713,7 @@ export function TeamsScreen() {
                   variant="link"
                   onClick={() => setView('create')}
                   className="text-primary mt-2"
+                  disabled={isTeamLimitReached}
                 >
                   Crear tu primer equipo
                 </Button>
@@ -701,6 +749,20 @@ export function TeamsScreen() {
         </button>
 
         <h2 className="text-2xl font-bold text-foreground mb-6">Crear Equipo</h2>
+
+        {isTeamLimitReached ? (
+          <Card className="bg-card border-border">
+            <CardContent className="p-4 text-sm text-muted-foreground space-y-1">
+              <p className="text-foreground font-medium">
+                Límite máximo de equipos
+              </p>
+              <p>
+                Ya eres parte de {userTeams.length}/{TEAM_LIMIT_MAX} equipos. Para crear uno nuevo,
+                primero debes salir de alguno.
+              </p>
+            </CardContent>
+          </Card>
+        ) : null}
 
         <div className="space-y-6">
           <div>
@@ -750,7 +812,7 @@ export function TeamsScreen() {
 
           <Button
             onClick={handleCreateTeam}
-            disabled={!teamName.trim()}
+            disabled={!teamName.trim() || isTeamLimitReached}
             className="w-full bg-primary hover:bg-primary/90 py-6"
           >
             <Shield className="w-5 h-5 mr-2" />
@@ -882,20 +944,50 @@ export function TeamsScreen() {
                   </>
                 ) : (
                   <>
-                    <h2 className="text-2xl font-bold text-foreground">{team.name}</h2>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      className="w-fit"
-                      onClick={() => setTeamDetailEditing(true)}
-                    >
-                      Editar
-                    </Button>
+                    <div className="flex items-start justify-between gap-3">
+                      <h2 className="text-2xl font-bold text-foreground">
+                        {team.name}
+                      </h2>
+                      <div className="flex gap-2 shrink-0">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="w-fit"
+                          onClick={() => setTeamDetailEditing(true)}
+                        >
+                          Editar
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          disabled={savingTeam}
+                          onClick={() => void handleDeleteTeam()}
+                        >
+                          <Trash2 className="w-4 h-4 mr-1" />
+                          Eliminar
+                        </Button>
+                      </div>
+                    </div>
                   </>
                 )
               ) : (
-                <h2 className="text-2xl font-bold text-foreground">{team.name}</h2>
+                <div className="flex items-start justify-between gap-3">
+                  <h2 className="text-2xl font-bold text-foreground">
+                    {team.name}
+                  </h2>
+                  {isMember ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void handleLeaveTeam()}
+                    >
+                      Salir
+                    </Button>
+                  ) : null}
+                </div>
               )}
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">{levelLabels[team.level]}</Badge>
