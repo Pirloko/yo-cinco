@@ -95,6 +95,70 @@ export async function fetchVenueWeeklyHours(
   }))
 }
 
+/** Reservas “solo cancha” del jugador (sin partido vinculado), aún vigentes desde `fromEndsAtIso`. */
+export type PlayerVenueReservationListItem = {
+  id: string
+  courtId: string
+  venueId: string
+  startsAt: Date
+  endsAt: Date
+  status: VenueReservationRow['status']
+  paymentStatus?: VenueReservationRow['paymentStatus']
+  courtName: string
+  venueName: string
+  venueCity: string
+}
+
+export async function fetchPlayerUpcomingVenueReservationsOnly(
+  supabase: SupabaseClient,
+  bookerUserId: string,
+  fromEndsAtIso: string
+): Promise<PlayerVenueReservationListItem[]> {
+  const { data: rows, error } = await supabase
+    .from('venue_reservations')
+    .select('id, court_id, starts_at, ends_at, status, payment_status')
+    .eq('booker_user_id', bookerUserId)
+    .is('match_opportunity_id', null)
+    .in('status', ['pending', 'confirmed'])
+    .gte('ends_at', fromEndsAtIso)
+    .order('starts_at', { ascending: true })
+
+  if (error || !rows?.length) return []
+
+  const courtIds = [...new Set(rows.map((r) => r.court_id as string))]
+  const { data: courts } = await supabase
+    .from('venue_courts')
+    .select('id, name, venue_id')
+    .in('id', courtIds)
+  if (!courts?.length) return []
+
+  const courtMap = new Map(courts.map((c) => [c.id as string, c]))
+  const venueIds = [...new Set(courts.map((c) => c.venue_id as string))]
+  const { data: venues } = await supabase
+    .from('sports_venues')
+    .select('id, name, city')
+    .in('id', venueIds)
+  const venueMap = new Map((venues ?? []).map((v) => [v.id as string, v]))
+
+  return rows.map((r) => {
+    const c = courtMap.get(r.court_id as string)
+    const v = c ? venueMap.get(c.venue_id as string) : undefined
+    return {
+      id: r.id as string,
+      courtId: r.court_id as string,
+      venueId: (v?.id as string) ?? (c?.venue_id as string) ?? '',
+      startsAt: new Date(r.starts_at as string),
+      endsAt: new Date(r.ends_at as string),
+      status: r.status as VenueReservationRow['status'],
+      paymentStatus:
+        (r.payment_status as VenueReservationRow['paymentStatus']) ?? undefined,
+      courtName: (c?.name as string) ?? 'Cancha',
+      venueName: (v?.name as string) ?? 'Centro',
+      venueCity: (v?.city as string) ?? '',
+    }
+  })
+}
+
 export async function fetchVenueReservationsRange(
   supabase: SupabaseClient,
   venueId: string,

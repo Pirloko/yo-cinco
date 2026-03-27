@@ -5,6 +5,11 @@ import { useApp } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
 import { Badge } from '@/components/ui/badge'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  fetchPlayerUpcomingVenueReservationsOnly,
+  type PlayerVenueReservationListItem,
+} from '@/lib/supabase/venue-queries'
+import Link from 'next/link'
 import { fetchLastMessagesForOpportunities } from '@/lib/supabase/message-queries'
 import {
   fetchRatingSummariesForOpportunities,
@@ -23,6 +28,7 @@ import {
   Shuffle,
   Trophy,
   History,
+  Building2,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -77,6 +83,9 @@ export function MatchesScreen() {
   const [ratingByOpp, setRatingByOpp] = useState<Map<string, RatingSummary>>(
     new Map()
   )
+  const [venueReserveUpcoming, setVenueReserveUpcoming] = useState<
+    PlayerVenueReservationListItem[]
+  >([])
 
   useEffect(() => {
     if (currentScreen !== 'matches' || !initialMatchesTab) return
@@ -117,6 +126,43 @@ export function MatchesScreen() {
         ),
     [myInvolved, midnight]
   )
+
+  const upcomingMerged = useMemo(() => {
+    const items: Array<
+      | { kind: 'match'; match: MatchOpportunity }
+      | { kind: 'reserve'; reserve: PlayerVenueReservationListItem }
+    > = []
+    for (const m of upcomingList) items.push({ kind: 'match', match: m })
+    for (const r of venueReserveUpcoming)
+      items.push({ kind: 'reserve', reserve: r })
+    items.sort((a, b) => {
+      const ta =
+        a.kind === 'match'
+          ? a.match.dateTime.getTime()
+          : a.reserve.startsAt.getTime()
+      const tb =
+        b.kind === 'match'
+          ? b.match.dateTime.getTime()
+          : b.reserve.startsAt.getTime()
+      return ta - tb
+    })
+    return items
+  }, [upcomingList, venueReserveUpcoming])
+
+  useEffect(() => {
+    if (currentScreen !== 'matches') return
+    if (!currentUser || currentUser.accountType !== 'player') {
+      setVenueReserveUpcoming([])
+      return
+    }
+    if (!isSupabaseConfigured()) return
+    const supabase = createClient()
+    void fetchPlayerUpcomingVenueReservationsOnly(
+      supabase,
+      currentUser.id,
+      midnight.toISOString()
+    ).then(setVenueReserveUpcoming)
+  }, [currentScreen, currentUser, midnight])
 
   const finishedList = useMemo(
     () =>
@@ -235,7 +281,7 @@ export function MatchesScreen() {
             onClick={() => setActiveTab('upcoming')}
             icon={<Clock className="w-4 h-4" />}
             label="Próximos"
-            count={upcomingList.length}
+            count={upcomingMerged.length}
           />
           <TabButton
             active={activeTab === 'chats'}
@@ -293,8 +339,79 @@ export function MatchesScreen() {
               </div>
             ) : null}
 
-            {upcomingList.length > 0 ? (
-              upcomingList.map((match) => {
+            {upcomingMerged.length > 0 ? (
+              upcomingMerged.map((item) => {
+                if (item.kind === 'reserve') {
+                  const r = item.reserve
+                  const statusLabel =
+                    r.status === 'pending'
+                      ? r.paymentStatus === 'unpaid' || !r.paymentStatus
+                        ? 'Pendiente de pago'
+                        : 'Pendiente'
+                      : 'Confirmada'
+                  return (
+                    <div
+                      key={`reserve-${r.id}`}
+                      className="bg-card rounded-xl border border-border overflow-hidden"
+                    >
+                      <div className="px-4 py-3 border-b border-border bg-accent/10 border-accent/30">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="p-1.5 rounded-lg bg-accent/20 text-accent">
+                              <Building2 className="w-4 h-4" />
+                            </div>
+                            <span className="text-sm font-medium text-foreground truncate">
+                              Solo reserva cancha
+                            </span>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {statusLabel}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <h3 className="font-semibold text-foreground truncate">
+                              {r.venueName}
+                            </h3>
+                            <p className="text-sm text-muted-foreground">
+                              {r.courtName}
+                              {r.venueCity ? ` · ${r.venueCity}` : ''}
+                            </p>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className="border-primary/50 text-primary shrink-0"
+                          >
+                            Reservas
+                          </Badge>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-4 h-4 text-primary" />
+                            {format(r.startsAt, 'EEEE d MMM', { locale: es })}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-4 h-4 text-primary" />
+                            {format(r.startsAt, 'HH:mm')} –{' '}
+                            {format(r.endsAt, 'HH:mm')}
+                          </span>
+                        </div>
+                        <div className="flex gap-2 pt-1">
+                          <Link
+                            href={`/centro/${r.venueId}`}
+                            className="flex-1 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 text-center text-sm"
+                          >
+                            Ver centro
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
+
+                const match = item.match
                 const isCreator =
                   !!currentUser && currentUser.id === match.creatorId
                 const canChat =
@@ -411,7 +528,7 @@ export function MatchesScreen() {
               <EmptyState
                 icon={<Calendar className="w-8 h-8" />}
                 title="Sin partidos próximos"
-                description="Únete a un partido o crea uno desde el botón Crear. Aquí verás solo tus partidos activos."
+                description="Únete a un partido o crea uno desde el botón Crear, o reserva solo cancha. Aquí verás tus partidos activos y reservas de cancha."
               />
             )}
           </div>
