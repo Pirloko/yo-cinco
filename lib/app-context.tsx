@@ -141,7 +141,13 @@ interface AppContextType {
       bookCourtSlot?: boolean
       courtSlotMinutes?: number
     }
-  ) => Promise<void>
+  ) => Promise<{ ok: true } | { ok: false; code?: 'no_court'; error: string }>
+  /** Reserva de cancha sin crear partido. */
+  reserveVenueOnly: (payload: {
+    sportsVenueId: string
+    startsAt: Date
+    durationMinutes: number
+  }) => Promise<{ ok: true } | { ok: false; code?: 'no_court'; error: string }>
   /** Apuntarse a un partido ajeno (participante confirmado + acceso al chat). Revuelta: opción arquero. */
   joinMatchOpportunity: (
     opportunityId: string,
@@ -550,8 +556,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       bookCourtSlot?: boolean
       courtSlotMinutes?: number
     }
-  ) => {
-    if (!currentUser || !isSupabaseConfigured()) return
+  ): Promise<{ ok: true } | { ok: false; code?: 'no_court'; error: string }> => {
+    if (!currentUser || !isSupabaseConfigured()) {
+      return { ok: false as const, error: 'Sesión no disponible.' }
+    }
     const supabase = createClient()
 
     let reservationId: string | null = null
@@ -571,12 +579,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       )
       if (rpcErr) {
-        toast.error(
-          rpcErr.message.includes('no_court')
-            ? 'No hay cancha libre en ese horario en este centro.'
-            : rpcErr.message
-        )
-        return
+        if (rpcErr.message.includes('no_court')) {
+          toast.error('No hay cancha libre en ese horario en este centro.')
+          return {
+            ok: false as const,
+            code: 'no_court',
+            error: 'No hay cancha libre en ese horario en este centro.',
+          }
+        }
+        toast.error(rpcErr.message)
+        return { ok: false as const, error: rpcErr.message }
       }
       reservationId = resRpc as string
     }
@@ -610,7 +622,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (error) {
       toast.error(error.message)
-      return
+      return { ok: false as const, error: error.message }
     }
 
     const row = data as MatchOpportunityRow
@@ -638,7 +650,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (partErr) {
         toast.error(partErr.message)
         await supabase.from('match_opportunities').delete().eq('id', oppId)
-        return
+        return { ok: false as const, error: partErr.message }
       }
     }
 
@@ -648,6 +660,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ])
     setMatchOpportunities(matches)
     setParticipatingOpportunityIds(partIds)
+    return { ok: true as const }
+  }
+
+  const reserveVenueOnly = async ({
+    sportsVenueId,
+    startsAt,
+    durationMinutes,
+  }: {
+    sportsVenueId: string
+    startsAt: Date
+    durationMinutes: number
+  }): Promise<{ ok: true } | { ok: false; code?: 'no_court'; error: string }> => {
+    if (!currentUser || !isSupabaseConfigured()) {
+      return { ok: false as const, error: 'Sesión no disponible.' }
+    }
+    const supabase = createClient()
+    const end = new Date(startsAt.getTime() + durationMinutes * 60 * 1000)
+    const { error } = await supabase.rpc('book_venue_slot', {
+      p_venue_id: sportsVenueId,
+      p_starts_at: startsAt.toISOString(),
+      p_ends_at: end.toISOString(),
+    })
+    if (error) {
+      if (error.message.includes('no_court')) {
+        toast.error('No hay cancha libre en ese horario en este centro.')
+        return {
+          ok: false as const,
+          code: 'no_court',
+          error: 'No hay cancha libre en ese horario en este centro.',
+        }
+      }
+      toast.error(error.message)
+      return { ok: false as const, error: error.message }
+    }
+    toast.success('Reserva creada en estado pendiente de pago.')
+    return { ok: true as const }
   }
 
   const joinMatchOpportunity = async (
@@ -2003,6 +2051,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateProfilePhoto,
         matchOpportunities,
         addMatchOpportunity,
+        reserveVenueOnly,
         joinMatchOpportunity,
         randomizeRevueltaTeams,
         finalizeMatchOpportunity,

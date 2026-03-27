@@ -120,5 +120,14 @@ export async function fetchVenueReservationsRange(
     bookerUserId: (r.booker_user_id as string | null) ?? null,
     matchOpportunityId: (r.match_opportunity_id as string | null) ?? null,
     status: r.status as VenueReservationRow['status'],
+    paymentStatus:
+      (r.payment_status as VenueReservationRow['paymentStatus']) ?? undefined,
+    pricePerHour: (r.price_per_hour as number | null) ?? undefined,
+    currency: (r.currency as string | null) ?? undefined,
+    depositAmount: (r.deposit_amount as number | null) ?? undefined,
+    paidAmount: (r.paid_amount as number | null) ?? undefined,
+    confirmedAt: r.confirmed_at ? new Date(r.confirmed_at as string) : null,
+    cancelledAt: r.cancelled_at ? new Date(r.cancelled_at as string) : null,
+    cancelledReason: (r.cancelled_reason as string | null) ?? null,
   }))
 }

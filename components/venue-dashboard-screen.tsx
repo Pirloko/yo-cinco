@@ -21,6 +21,7 @@ import {
   LayoutGrid,
   Link2,
   LogOut,
+  MessageCircle,
   MapPin,
   Plus,
   Trash2,
@@ -60,6 +61,12 @@ export function VenueDashboardScreen() {
   const [reservations, setReservations] = useState<
     Awaited<ReturnType<typeof fetchVenueReservationsRange>>
   >([])
+  const [matchById, setMatchById] = useState<
+    Map<string, { id: string; title: string; creatorId: string }>
+  >(new Map())
+  const [organizerById, setOrganizerById] = useState<
+    Map<string, { id: string; name: string; whatsappPhone: string | null }>
+  >(new Map())
 
   const [profileForm, setProfileForm] = useState({
     name: '',
@@ -138,12 +145,102 @@ export function VenueDashboardScreen() {
         start.toISOString(),
         end.toISOString()
       )
-      if (!cancelled) setReservations(list)
+      if (cancelled) return
+      setReservations(list)
+
+      const matchIds = [...new Set((list ?? []).map((r) => r.matchOpportunityId).filter(Boolean))] as string[]
+      const mMap = new Map<string, { id: string; title: string; creatorId: string }>()
+      const contactIds = new Set<string>()
+      const fallbackBookerIds = new Set<string>()
+      for (const r of list ?? []) {
+        if (r.bookerUserId) fallbackBookerIds.add(r.bookerUserId)
+      }
+
+      if (matchIds.length > 0) {
+        const { data: matches } = await supabase
+          .from('match_opportunities')
+          .select('id, title, creator_id')
+          .in('id', matchIds)
+        for (const m of matches ?? []) {
+          const id = m.id as string
+          const creatorId = m.creator_id as string
+          contactIds.add(creatorId)
+          mMap.set(id, { id, title: (m.title as string) ?? 'Partido', creatorId })
+        }
+      }
+      setMatchById(mMap)
+
+      for (const id of fallbackBookerIds) contactIds.add(id)
+      if (contactIds.size === 0) {
+        setOrganizerById(new Map())
+        return
+      }
+      const { data: profs } = await supabase
+        .from('profiles')
+        .select('id, name, whatsapp_phone')
+        .in('id', [...contactIds])
+      const pMap = new Map<string, { id: string; name: string; whatsappPhone: string | null }>()
+      for (const p of profs ?? []) {
+        pMap.set(p.id as string, {
+          id: p.id as string,
+          name: (p.name as string) ?? 'Organizador',
+          whatsappPhone: (p.whatsapp_phone as string | null) ?? null,
+        })
+      }
+      setOrganizerById(pMap)
     })()
     return () => {
       cancelled = true
     }
   }, [venue, dayStr])
+
+  const formatWhatsAppLink = (raw: string, message: string) => {
+    const digits = raw.replace(/\D/g, '')
+    const text = encodeURIComponent(message)
+    return `https://wa.me/${digits}?text=${text}`
+  }
+
+  const setReservationPayment = async (
+    reservationId: string,
+    payload: Record<string, unknown>
+  ) => {
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('venue_reservations')
+      .update(payload)
+      .eq('id', reservationId)
+    if (error) {
+      toast.error(error.message)
+      return false
+    }
+    return true
+  }
+
+  const confirmReservation = async (id: string) => {
+    if (!confirm('¿Confirmar esta reserva? (pago recibido)')) return
+    const ok = await setReservationPayment(id, {
+      status: 'confirmed',
+      payment_status: 'paid',
+    })
+    if (!ok) return
+    toast.success('Reserva confirmada')
+    await reloadAll()
+  }
+
+  const cancelReservation = async (id: string) => {
+    const reason = prompt(
+      'Motivo de cancelación (el organizador lo verá en su historial):',
+      'No se recibió el pago a tiempo'
+    )
+    if (!reason) return
+    const ok = await setReservationPayment(id, {
+      status: 'cancelled',
+      cancelled_reason: reason,
+    })
+    if (!ok) return
+    toast.success('Reserva cancelada')
+    await reloadAll()
+  }
 
   const courtNameById = useMemo(() => {
     const m = new Map<string, string>()
@@ -257,33 +354,7 @@ export function VenueDashboardScreen() {
     await reloadAll()
   }
 
-  const cancelReservation = async (id: string) => {
-    if (!confirm('¿Marcar esta reserva como cancelada?')) return
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('venue_reservations')
-      .update({ status: 'cancelled' })
-      .eq('id', id)
-    if (error) {
-      toast.error(error.message)
-      return
-    }
-    toast.success('Reserva cancelada')
-    if (venue) {
-      const d = new Date(dayStr + 'T12:00:00')
-      const start = new Date(d)
-      start.setHours(0, 0, 0, 0)
-      const end = new Date(d)
-      end.setHours(23, 59, 59, 999)
-      const list = await fetchVenueReservationsRange(
-        supabase,
-        venue.id,
-        start.toISOString(),
-        end.toISOString()
-      )
-      setReservations(list)
-    }
-  }
+  // cancelReservation redefinida más abajo (con motivo y cancelación de partido asociado).
 
   const copyPublicLink = async () => {
     if (!venue || typeof window === 'undefined') return
@@ -380,14 +451,14 @@ export function VenueDashboardScreen() {
                   Copiar página pública
                 </Button>
                 <ul className="space-y-2">
-                  {reservations.filter((r) => r.status === 'confirmed').length ===
+                  {reservations.filter((r) => r.status !== 'cancelled').length ===
                   0 ? (
                     <p className="text-sm text-muted-foreground">
-                      No hay reservas confirmadas este día.
+                      No hay reservas este día.
                     </p>
                   ) : (
                     reservations
-                      .filter((r) => r.status === 'confirmed')
+                      .filter((r) => r.status !== 'cancelled')
                       .map((r) => (
                         <Card key={r.id} className="bg-card border-border">
                           <CardContent className="p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-sm">
@@ -406,19 +477,93 @@ export function VenueDashboardScreen() {
                                   minute: '2-digit',
                                 })}
                               </p>
-                              {r.matchOpportunityId ? (
-                                <p className="text-xs text-primary mt-1">
-                                  Partido #{r.matchOpportunityId.slice(0, 8)}…
-                                </p>
-                              ) : null}
+                              {(r.matchOpportunityId || r.bookerUserId) ? (() => {
+                                const m = matchById.get(r.matchOpportunityId)
+                                const org = m
+                                  ? organizerById.get(m.creatorId)
+                                  : r.bookerUserId
+                                    ? organizerById.get(r.bookerUserId)
+                                    : null
+                                const wa = org?.whatsappPhone?.trim() || null
+                                const timeLabel = r.startsAt.toLocaleTimeString('es-CL', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                                const dateLabel = r.startsAt.toLocaleDateString('es-CL', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                })
+                                const msg = m
+                                  ? `Hola ${org?.name ?? ''}. Soy el centro deportivo ${venue?.name ?? ''}. Para confirmar la reserva del partido “${m.title}” (${r.startsAt.toLocaleTimeString('es-CL', {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })}), con fecha ${r.startsAt.toLocaleDateString('es-CL', {
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                      year: 'numeric',
+                                    })}, necesitamos el abono/pago. ¿Te envío los datos para transferir o link de pago?`
+                                  : `Hola ${org?.name ?? ''}. Soy el centro deportivo ${venue?.name ?? ''}. Para confirmar tu reserva (${timeLabel}) del día ${dateLabel}, necesitamos el abono/pago. ¿Te envío los datos para transferir o link de pago?`
+                                return (
+                                  <div className="mt-2 space-y-1">
+                                    <p className="text-xs text-primary">
+                                      {m
+                                        ? m.title
+                                        : r.matchOpportunityId
+                                          ? `Partido #${r.matchOpportunityId.slice(0, 8)}…`
+                                          : 'Reserva directa'}
+                                    </p>
+                                    <p className="text-[11px] text-muted-foreground">
+                                      {m ? 'Organizador' : 'Reservante'}:{' '}
+                                      <span className="text-foreground font-medium">
+                                        {org?.name?.trim() || 'Sin nombre'}
+                                      </span>
+                                    </p>
+                                    <p className="text-[11px] text-muted-foreground">
+                                      Estado: <span className="text-foreground font-medium">{r.status === 'pending' ? 'Pendiente' : 'Confirmada'}</span>
+                                    </p>
+                                    {wa ? (
+                                      <Button asChild size="sm" className="mt-1 bg-green-600 hover:bg-green-500 text-white">
+                                        <a
+                                          href={formatWhatsAppLink(wa, msg)}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                        >
+                                          <MessageCircle className="w-4 h-4 mr-1.5" />
+                                          {m
+                                            ? 'Enviar mensaje al organizador'
+                                            : 'Enviar WhatsApp al reservante'}
+                                        </a>
+                                      </Button>
+                                    ) : (
+                                      <p className="text-[11px] text-muted-foreground">
+                                        {m
+                                          ? 'El organizador no tiene WhatsApp registrado.'
+                                          : 'El reservante no tiene WhatsApp registrado.'}
+                                      </p>
+                                    )}
+                                  </div>
+                                )
+                              })() : null}
                             </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => void cancelReservation(r.id)}
-                            >
-                              Cancelar
-                            </Button>
+                            <div className="flex gap-2">
+                              {r.status === 'pending' ? (
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => void confirmReservation(r.id)}
+                                >
+                                  Confirmar (pagado)
+                                </Button>
+                              ) : null}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void cancelReservation(r.id)}
+                              >
+                                Cancelar
+                              </Button>
+                            </div>
                           </CardContent>
                         </Card>
                       ))

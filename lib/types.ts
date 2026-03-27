@@ -78,7 +78,15 @@ export interface VenueReservationRow {
   endsAt: Date
   bookerUserId: string | null
   matchOpportunityId: string | null
-  status: 'confirmed' | 'cancelled'
+  status: 'pending' | 'confirmed' | 'cancelled'
+  paymentStatus?: 'unpaid' | 'deposit_paid' | 'paid'
+  pricePerHour?: number | null
+  currency?: string
+  depositAmount?: number | null
+  paidAmount?: number | null
+  confirmedAt?: Date | null
+  cancelledAt?: Date | null
+  cancelledReason?: string | null
 }
 
 export interface TeamMember {

@@ -38,6 +38,7 @@ import {
   Target,
   Users,
   Shuffle,
+  CalendarCheck2,
   MapPin,
   Calendar,
   Clock,
@@ -79,12 +80,13 @@ export function CreateScreen() {
     setCurrentScreen,
     currentUser,
     addMatchOpportunity,
+    reserveVenueOnly,
     createRivalChallenge,
     getUserTeams,
     getFilteredTeams,
   } = useApp()
   const [step, setStep] = useState(1)
-  const [matchType, setMatchType] = useState<MatchType | null>(null)
+  const [matchType, setMatchType] = useState<MatchType | 'reserve' | null>(null)
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null)
   const [selectedRivalTeam, setSelectedRivalTeam] = useState<Team | null>(null)
   const [rivalMode, setRivalMode] = useState<'direct' | 'open'>('direct')
@@ -118,6 +120,8 @@ export function CreateScreen() {
   const [venueTimeHelp, setVenueTimeHelp] = useState<string | null>(null)
   const [alternativeVenues, setAlternativeVenues] = useState<SportsVenue[]>([])
   const [loadingAlternativeVenues, setLoadingAlternativeVenues] = useState(false)
+  const [bookingNoCourt, setBookingNoCourt] = useState(false)
+  const [venueTimesRefreshKey, setVenueTimesRefreshKey] = useState(0)
 
   useEffect(() => {
     const pre = readCreatePrefill()
@@ -198,7 +202,7 @@ export function CreateScreen() {
         closeTime: dayHours.closeTime,
         slotDurationMinutes: slotDuration,
         courtsCount: courts.length,
-        reservations: reservations.filter((r) => r.status === 'confirmed'),
+        reservations: reservations.filter((r) => r.status !== 'cancelled'),
       })
 
       setVenueTimeOptions(options)
@@ -213,7 +217,7 @@ export function CreateScreen() {
     return () => {
       cancelled = true
     }
-  }, [linkedVenueId, formData.date, sportsVenuesFromDb])
+  }, [linkedVenueId, formData.date, sportsVenuesFromDb, venueTimesRefreshKey])
 
   useEffect(() => {
     // Mantiene la hora elegida por el usuario para poder sugerir
@@ -225,14 +229,17 @@ export function CreateScreen() {
     const allowed = new Set((venueTimeOptions ?? []).map((x) => x.value))
     return allowed.has(formData.time)
   })()
+  const shouldSuggestAlternatives =
+    bookingNoCourt || !selectedVenueHasChosenTime
 
   useEffect(() => {
     if (!linkedVenueId || !formData.date || !formData.time) {
       setAlternativeVenues([])
       setLoadingAlternativeVenues(false)
+      setBookingNoCourt(false)
       return
     }
-    if (selectedVenueHasChosenTime || !isSupabaseConfigured()) {
+    if (!shouldSuggestAlternatives || !isSupabaseConfigured()) {
       setAlternativeVenues([])
       setLoadingAlternativeVenues(false)
       return
@@ -271,7 +278,7 @@ export function CreateScreen() {
             closeTime: dayHours.closeTime,
             slotDurationMinutes: venue.slotDurationMinutes,
             courtsCount: courts.length,
-            reservations: reservations.filter((r) => r.status === 'confirmed'),
+            reservations: reservations.filter((r) => r.status !== 'cancelled'),
           })
           return options.some((o) => o.value === targetTime) ? venue : null
         })
@@ -293,9 +300,10 @@ export function CreateScreen() {
     formData.date,
     formData.time,
     formData.location,
-    selectedVenueHasChosenTime,
+    shouldSuggestAlternatives,
     sportsVenuesFromDb,
   ])
+
 
   const userTeams = getUserTeams()
   const allTeams = currentUser ? getFilteredTeams(currentUser.gender) : []
@@ -324,6 +332,8 @@ export function CreateScreen() {
         setPlayersSeekProfile(null)
       } else if (matchType === 'open' && step === 2) {
         setStep(1)
+      } else if (matchType === 'reserve' && step === 2) {
+        setStep(1)
       } else {
         setStep(step - 1)
       }
@@ -337,6 +347,25 @@ export function CreateScreen() {
     if (matchType === 'players' && !playersSeekProfile) return
 
     const dateTime = new Date(`${formData.date}T${formData.time}`)
+
+    if (matchType === 'reserve') {
+      if (!linkedVenueId || !formData.date || !formData.time) return
+      const venue = sportsVenuesFromDb.find((v) => v.id === linkedVenueId)
+      const res = await reserveVenueOnly({
+        sportsVenueId: linkedVenueId,
+        startsAt: dateTime,
+        durationMinutes: venue?.slotDurationMinutes ?? 60,
+      })
+      if (!res.ok) {
+        if (res.code === 'no_court') {
+          setBookingNoCourt(true)
+          setVenueTimesRefreshKey((k) => k + 1)
+        }
+        return
+      }
+      setIsSubmitted(true)
+      return
+    }
 
     // Rival challenge flow (direct or open)
     if (matchType === 'rival' && selectedTeam) {
@@ -355,9 +384,17 @@ export function CreateScreen() {
       const linked =
         sportsVenuesFromDb.find((x) => x.id === linkedVenueId) ??
         sportsVenuesFromDb.find((x) => x.name === formData.venue.trim())
-      await addMatchOpportunity({
+      const autoTitle =
+        matchType === 'players'
+          ? `Faltan ${formData.playersNeeded} ${
+              formData.playersNeeded === 1 ? 'jugador' : 'jugadores'
+            }`
+          : matchType === 'open'
+            ? 'Revuelta'
+            : 'Partido'
+      const res = await addMatchOpportunity({
         type: matchType,
-        title: formData.title,
+        title: formData.title.trim() || autoTitle,
         description: formData.description,
         teamName: formData.teamName || undefined,
         venue: formData.venue,
@@ -382,6 +419,13 @@ export function CreateScreen() {
           linked && bookCourtSlot ? true : undefined,
         courtSlotMinutes: linked?.slotDurationMinutes,
       })
+      if (!res.ok) {
+        if (res.code === 'no_court') {
+          setBookingNoCourt(true)
+          setVenueTimesRefreshKey((k) => k + 1)
+        }
+        return
+      }
     }
 
     setIsSubmitted(true)
@@ -395,12 +439,15 @@ export function CreateScreen() {
             <CheckCircle className="w-10 h-10 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Publicado!</h1>
+            <h1 className="text-2xl font-bold text-foreground">
+              {matchType === 'reserve' ? 'Reserva creada' : 'Publicado!'}
+            </h1>
             <p className="text-muted-foreground mt-2">
               {matchType === 'rival' && rivalMode === 'direct' && selectedRivalTeam 
                 ? `Tu desafio a ${selectedRivalTeam.name} ha sido enviado` 
                 : matchType === 'rival' ? 'Tu busqueda de rival ya esta visible'
                 : matchType === 'players' ? 'Tu busqueda de jugadores ya esta visible' 
+                : matchType === 'reserve' ? 'Tu solicitud de reserva quedó pendiente de confirmación.'
                 : 'Tu revuelta ya esta visible'}
             </p>
           </div>
@@ -421,6 +468,8 @@ export function CreateScreen() {
   const showCasualForm =
     (matchType === 'open' && step === 2) ||
     (matchType === 'players' && step === 4)
+
+  const showReserveForm = matchType === 'reserve' && step === 2
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -508,6 +557,14 @@ export function CreateScreen() {
                   }))
                 }}
                 color="gold"
+              />
+              <TypeCard
+                icon={<CalendarCheck2 className="w-8 h-8" />}
+                title="Solo reservar cancha"
+                description="Reserva rápida sin crear partido"
+                selected={matchType === 'reserve'}
+                onClick={() => setMatchType('reserve')}
+                color="green"
               />
             </div>
 
@@ -798,6 +855,7 @@ export function CreateScreen() {
                 onVenueChange={({ linkedVenueId: id, venue, city }) => {
                   setLinkedVenueId(id)
                   setBookCourtSlot(false)
+                  setBookingNoCourt(false)
                   setFormData((f) => ({
                     ...f,
                     venue,
@@ -817,13 +875,19 @@ export function CreateScreen() {
                   <Input
                     type="date"
                     value={formData.date}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                    onChange={(e) => {
+                      setBookingNoCourt(false)
+                      setFormData({ ...formData, date: e.target.value })
+                    }}
                     className="h-12 bg-secondary border-border text-foreground"
                   />
                 </div>
                 <HoraSlotSelect
                   value={formData.time}
-                  onValueChange={(time) => setFormData({ ...formData, time })}
+                  onValueChange={(time) => {
+                    setBookingNoCourt(false)
+                    setFormData({ ...formData, time })
+                  }}
                   options={
                     linkedVenueId && formData.date
                       ? venueTimeOptions ?? []
@@ -835,13 +899,19 @@ export function CreateScreen() {
                   }
                 />
               </div>
-              {!selectedVenueHasChosenTime &&
+              {shouldSuggestAlternatives &&
               linkedVenueId &&
               formData.date &&
               formData.time ? (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
                   <p className="text-sm text-foreground font-medium">
-                    Este centro no tiene cupo a las {labelForHm(formData.time)}.
+                    {bookingNoCourt
+                      ? `Se ocupó justo el último cupo a las ${labelForHm(
+                          formData.time
+                        )}.`
+                      : `Este centro no tiene cupo a las ${labelForHm(
+                          formData.time
+                        )}.`}
                   </p>
                   {loadingAlternativeVenues ? (
                     <p className="text-xs text-muted-foreground">
@@ -857,6 +927,7 @@ export function CreateScreen() {
                           onClick={() => {
                             setLinkedVenueId(v.id)
                             setBookCourtSlot(true)
+                            setBookingNoCourt(false)
                             setFormData((prev) => ({
                               ...prev,
                               venue: v.name,
@@ -912,7 +983,8 @@ export function CreateScreen() {
                 !formData.venue ||
                 !formData.date ||
                 !formData.time ||
-                !selectedVenueHasChosenTime
+                !selectedVenueHasChosenTime ||
+                bookingNoCourt
               }
               className="w-full h-14 mt-4 bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
             >
@@ -1045,43 +1117,37 @@ export function CreateScreen() {
             </div>
 
             <div className="space-y-4">
-              {/* Title */}
-              <div className="space-y-2">
-                <Label className="text-foreground">Titulo</Label>
-                <Input
-                  placeholder={
-                    matchType === 'players'
-                      ? 'Ej: Faltan 2 jugadores'
-                      : 'Ej: Pichanga domingo en la tarde'
-                  }
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
-                />
-              </div>
+              {/* Title/description full only for revuelta */}
+              {matchType === 'open' && (
+                <>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Titulo</Label>
+                    <Input
+                      placeholder="Ej: Pichanga domingo en la tarde"
+                      value={formData.title}
+                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                      className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Descripcion (opcional)</Label>
+                    <Textarea
+                      placeholder="Agrega mas detalles..."
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      className="bg-secondary border-border text-foreground placeholder:text-muted-foreground resize-none"
+                      rows={3}
+                    />
+                  </div>
+                </>
+              )}
 
-              {/* Description */}
-              <div className="space-y-2">
-                <Label className="text-foreground">Descripcion (opcional)</Label>
-                <Textarea
-                  placeholder="Agrega mas detalles..."
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="bg-secondary border-border text-foreground placeholder:text-muted-foreground resize-none"
-                  rows={3}
-                />
-              </div>
-
-              {/* Team Name (players flow en este paso) */}
               {matchType === 'players' && (
                 <div className="space-y-2">
-                  <Label className="text-foreground">Nombre del equipo</Label>
-                  <Input
-                    placeholder="Ej: Los Cracks FC"
-                    value={formData.teamName}
-                    onChange={(e) => setFormData({ ...formData, teamName: e.target.value })}
-                    className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
-                  />
+                  <Label className="text-foreground">Resumen</Label>
+                  <p className="text-sm text-muted-foreground rounded-lg border border-border bg-secondary/30 px-3 py-2">
+                    Publicaremos una búsqueda rápida con cancha, fecha, hora y cupos faltantes.
+                  </p>
                 </div>
               )}
 
@@ -1187,6 +1253,7 @@ export function CreateScreen() {
                 onVenueChange={({ linkedVenueId: id, venue, city }) => {
                   setLinkedVenueId(id)
                   setBookCourtSlot(!!id)
+                  setBookingNoCourt(false)
                   setFormData((f) => ({
                     ...f,
                     venue,
@@ -1208,13 +1275,19 @@ export function CreateScreen() {
                   <Input
                     type="date"
                     value={formData.date}
-                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                    onChange={(e) => {
+                      setBookingNoCourt(false)
+                      setFormData({ ...formData, date: e.target.value })
+                    }}
                     className="h-12 bg-secondary border-border text-foreground"
                   />
                 </div>
                 <HoraSlotSelect
                   value={formData.time}
-                  onValueChange={(time) => setFormData({ ...formData, time })}
+                  onValueChange={(time) => {
+                    setBookingNoCourt(false)
+                    setFormData({ ...formData, time })
+                  }}
                   options={
                     linkedVenueId && formData.date
                       ? venueTimeOptions ?? []
@@ -1226,13 +1299,19 @@ export function CreateScreen() {
                   }
                 />
               </div>
-              {!selectedVenueHasChosenTime &&
+              {shouldSuggestAlternatives &&
               linkedVenueId &&
               formData.date &&
               formData.time ? (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
                   <p className="text-sm text-foreground font-medium">
-                    Este centro no tiene cupo a las {labelForHm(formData.time)}.
+                    {bookingNoCourt
+                      ? `Se ocupó justo el último cupo a las ${labelForHm(
+                          formData.time
+                        )}.`
+                      : `Este centro no tiene cupo a las ${labelForHm(
+                          formData.time
+                        )}.`}
                   </p>
                   {loadingAlternativeVenues ? (
                     <p className="text-xs text-muted-foreground">
@@ -1248,6 +1327,7 @@ export function CreateScreen() {
                           onClick={() => {
                             setLinkedVenueId(v.id)
                             setBookCourtSlot(true)
+                            setBookingNoCourt(false)
                             setFormData((prev) => ({
                               ...prev,
                               venue: v.name,
@@ -1267,47 +1347,169 @@ export function CreateScreen() {
                 </div>
               ) : null}
 
-              {/* Level */}
-              <div className="space-y-2">
-                <Label className="text-foreground flex items-center gap-2">
-                  <Star className="w-4 h-4 text-primary" />
-                  Nivel
-                </Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {LEVELS.map((lvl) => (
-                    <button
-                      key={lvl.value}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, level: lvl.value })}
-                      className={`p-3 rounded-xl border-2 transition-all text-center ${
-                        formData.level === lvl.value
-                          ? 'border-primary bg-primary/10'
-                          : 'border-border bg-secondary hover:border-muted-foreground'
-                      }`}
-                    >
-                      <span className={`font-medium text-sm ${
-                        formData.level === lvl.value ? 'text-primary' : 'text-foreground'
-                      }`}>
-                        {lvl.label}
-                      </span>
-                    </button>
-                  ))}
+              {matchType === 'open' && (
+                <div className="space-y-2">
+                  <Label className="text-foreground flex items-center gap-2">
+                    <Star className="w-4 h-4 text-primary" />
+                    Nivel
+                  </Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {LEVELS.map((lvl) => (
+                      <button
+                        key={lvl.value}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, level: lvl.value })}
+                        className={`p-3 rounded-xl border-2 transition-all text-center ${
+                          formData.level === lvl.value
+                            ? 'border-primary bg-primary/10'
+                            : 'border-border bg-secondary hover:border-muted-foreground'
+                        }`}
+                      >
+                        <span className={`font-medium text-sm ${
+                          formData.level === lvl.value ? 'text-primary' : 'text-foreground'
+                        }`}>
+                          {lvl.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <Button
               onClick={handleSubmit}
               disabled={
-                !formData.title ||
                 !formData.venue ||
                 !formData.date ||
                 !formData.time ||
-                !selectedVenueHasChosenTime
+                !selectedVenueHasChosenTime ||
+                bookingNoCourt
               }
               className="w-full h-14 mt-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              Publicar
+              {matchType === 'players' ? 'Publicar búsqueda rápida' : 'Publicar'}
+            </Button>
+          </div>
+        )}
+
+        {showReserveForm && (
+          <div className="space-y-6">
+            <div className="text-center space-y-2">
+              <h2 className="text-xl font-bold text-foreground">Reserva rápida</h2>
+              <p className="text-sm text-muted-foreground">
+                Reserva una cancha sin crear partido.
+              </p>
+            </div>
+            <div className="space-y-4">
+              <CanchaLugarSelect
+                label={
+                  <>
+                    <MapPin className="w-4 h-4 text-primary" />
+                    Centro deportivo
+                  </>
+                }
+                sportsVenues={sportsVenuesFromDb}
+                linkedVenueId={linkedVenueId}
+                venue={formData.venue}
+                onVenueChange={({ linkedVenueId: id, venue, city }) => {
+                  setLinkedVenueId(id)
+                  setBookCourtSlot(true)
+                  setBookingNoCourt(false)
+                  setFormData((f) => ({
+                    ...f,
+                    venue,
+                    ...(city !== undefined ? { location: city } : {}),
+                  }))
+                }}
+                showBookCheckbox={false}
+              />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-foreground flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-primary" />
+                    Fecha
+                  </Label>
+                  <Input
+                    type="date"
+                    value={formData.date}
+                    onChange={(e) => {
+                      setBookingNoCourt(false)
+                      setFormData({ ...formData, date: e.target.value })
+                    }}
+                    className="h-12 bg-secondary border-border text-foreground"
+                  />
+                </div>
+                <HoraSlotSelect
+                  value={formData.time}
+                  onValueChange={(time) => {
+                    setBookingNoCourt(false)
+                    setFormData({ ...formData, time })
+                  }}
+                  options={
+                    linkedVenueId && formData.date
+                      ? venueTimeOptions ?? []
+                      : TIME_SLOT_OPTIONS
+                  }
+                  loading={linkedVenueId !== null && formData.date !== '' && loadingVenueTimes}
+                  helperText={linkedVenueId && formData.date ? venueTimeHelp : null}
+                />
+              </div>
+              {shouldSuggestAlternatives &&
+              linkedVenueId &&
+              formData.date &&
+              formData.time ? (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+                  <p className="text-sm text-foreground font-medium">
+                    {bookingNoCourt
+                      ? `Se ocupó justo el último cupo a las ${labelForHm(formData.time)}.`
+                      : `Este centro no tiene cupo a las ${labelForHm(formData.time)}.`}
+                  </p>
+                  {loadingAlternativeVenues ? (
+                    <p className="text-xs text-muted-foreground">
+                      Buscando otros centros con ese horario…
+                    </p>
+                  ) : alternativeVenues.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {alternativeVenues.map((v) => (
+                        <button
+                          key={v.id}
+                          type="button"
+                          className="px-3 py-1.5 rounded-full text-xs border border-border bg-card hover:border-primary/40"
+                          onClick={() => {
+                            setLinkedVenueId(v.id)
+                            setBookingNoCourt(false)
+                            setFormData((prev) => ({
+                              ...prev,
+                              venue: v.name,
+                              location: v.city,
+                            }))
+                          }}
+                        >
+                          {v.name} — {v.city}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      No encontramos otros centros disponibles para ese horario.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+            </div>
+            <Button
+              onClick={handleSubmit}
+              disabled={
+                !linkedVenueId ||
+                !formData.date ||
+                !formData.time ||
+                !selectedVenueHasChosenTime ||
+                bookingNoCourt
+              }
+              className="w-full h-14 mt-2 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              Reservar cancha
             </Button>
           </div>
         )}
