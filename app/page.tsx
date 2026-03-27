@@ -15,6 +15,7 @@ import { ProfileScreen } from '@/components/profile-screen'
 import { TeamsScreen } from '@/components/teams-screen'
 import { VenueDashboardScreen } from '@/components/venue-dashboard-screen'
 import { VenueOnboardingScreen } from '@/components/venue-onboarding-screen'
+import { AdminDashboardScreen } from '@/components/admin-dashboard-screen'
 
 function AppContent() {
   const { authLoading, currentScreen } = useApp()
@@ -59,6 +60,8 @@ function AppContent() {
       return <VenueOnboardingScreen />
     case 'venueDashboard':
       return <VenueDashboardScreen />
+    case 'adminDashboard':
+      return <AdminDashboardScreen />
     default:
       return <LandingPage />
   }

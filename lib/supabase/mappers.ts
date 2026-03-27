@@ -25,8 +25,9 @@ export type ProfileRow = {
   availability: string[]
   photo_url: string
   bio: string | null
+  whatsapp_phone?: string | null
   created_at: string
-  account_type?: 'player' | 'venue' | null
+  account_type?: 'player' | 'venue' | 'admin' | null
 }
 
 export function profileRowToUser(row: ProfileRow, email: string): User {
@@ -42,8 +43,14 @@ export function profileRowToUser(row: ProfileRow, email: string): User {
     availability: row.availability ?? [],
     photo: row.photo_url || DEFAULT_AVATAR,
     bio: row.bio ?? undefined,
+    whatsappPhone: row.whatsapp_phone ?? undefined,
     createdAt: new Date(row.created_at),
-    accountType: row.account_type === 'venue' ? 'venue' : 'player',
+    accountType:
+      row.account_type === 'venue'
+        ? 'venue'
+        : row.account_type === 'admin'
+          ? 'admin'
+          : 'player',
   }
 }
 

@@ -24,7 +24,7 @@ export type MatchesHubTab = 'upcoming' | 'chats' | 'finished'
 /** Resultado en partidos tipo rival (equipo del creador vs rival). */
 export type RivalResult = 'creator_team' | 'rival_team' | 'draw'
 
-export type AccountType = 'player' | 'venue'
+export type AccountType = 'player' | 'venue' | 'admin'
 
 export interface User {
   id: string
@@ -38,6 +38,7 @@ export interface User {
   availability: string[]
   photo: string
   bio?: string
+  whatsappPhone?: string
   createdAt: Date
   /** Por defecto jugador; `venue` solo vía administración en Supabase. */
   accountType?: AccountType
@@ -87,6 +88,10 @@ export interface VenueReservationRow {
   confirmedAt?: Date | null
   cancelledAt?: Date | null
   cancelledReason?: string | null
+  confirmedByUserId?: string | null
+  confirmationSource?: 'venue_owner' | 'booker_self' | 'admin' | null
+  confirmationNote?: string | null
+  notes?: string | null
 }
 
 export interface TeamMember {
@@ -217,6 +222,7 @@ export interface OnboardingData {
   name: string
   age: number
   gender: Gender
+  whatsappPhone: string
   position: Position
   level: Level
   availability: string[]

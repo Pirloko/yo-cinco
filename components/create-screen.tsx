@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, type ReactNode } from 'react'
+import { toast } from 'sonner'
 import { useApp } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
@@ -32,6 +33,7 @@ import {
   fetchVenueWeeklyHours,
 } from '@/lib/supabase/venue-queries'
 import { readCreatePrefill, clearCreatePrefill } from '@/lib/create-prefill'
+import { consumeRivalTargetTeamId } from '@/lib/rival-prefill'
 import {
   ArrowLeft,
   ArrowRight,
@@ -141,6 +143,30 @@ export function CreateScreen() {
     const supabase = createClient()
     void fetchSportsVenuesList(supabase).then(setSportsVenuesFromDb)
   }, [])
+
+  useEffect(() => {
+    if (!currentUser) return
+    const rivalTeamId = consumeRivalTargetTeamId()
+    if (!rivalTeamId) return
+    const allTeams = getFilteredTeams(currentUser.gender)
+    const target = allTeams.find((t) => t.id === rivalTeamId)
+    if (!target) return
+
+    const captainTeams = getUserTeams().filter((t) => t.captainId === currentUser.id)
+    setMatchType('rival')
+    setRivalMode('direct')
+    setSelectedRivalTeam(target)
+    setStep(2)
+    if (captainTeams.length === 1) {
+      setSelectedTeam(captainTeams[0])
+      setStep(3)
+    }
+    toast.success(
+      captainTeams.length > 0
+        ? `Desafío listo contra ${target.name}. Completa fecha y publica.`
+        : 'Para desafiar, primero debes ser capitán de un equipo.'
+    )
+  }, [currentUser, getFilteredTeams, getUserTeams])
 
   useEffect(() => {
     if (!linkedVenueId || !formData.date) {

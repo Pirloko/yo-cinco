@@ -96,9 +96,10 @@ type AppScreen =
   | 'teams'
   | 'venueOnboarding'
   | 'venueDashboard'
+  | 'adminDashboard'
 
 function needsOnboardingProfile(u: User): boolean {
-  if (u.accountType === 'venue') return false
+  if (u.accountType !== 'player') return false
   return u.name.trim().length < 2 || u.age < 16
 }
 
@@ -121,6 +122,7 @@ interface AppContextType {
     needsOnboarding?: boolean
     needsVenueOnboarding?: boolean
     isVenue?: boolean
+    isAdmin?: boolean
   }>
   logout: () => Promise<void>
   completeOnboarding: (data: OnboardingData) => Promise<void>
@@ -332,6 +334,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     needsOnboarding?: boolean
     needsVenueOnboarding?: boolean
     isVenue?: boolean
+    isAdmin?: boolean
   }> => {
     if (!isSupabaseConfigured()) {
       return {
@@ -388,6 +391,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       setCurrentUser(profile)
+
+      if (profile.accountType === 'admin') {
+        setMatchOpportunities([])
+        setUsers([])
+        setTeams([])
+        setTeamInvites([])
+        setTeamJoinRequests([])
+        setParticipatingOpportunityIds([])
+        setRivalChallenges([])
+        return {
+          ok: true,
+          needsOnboarding: false,
+          isVenue: false,
+          isAdmin: true,
+        }
+      }
 
       if (profile.accountType === 'venue') {
         setMatchOpportunities([])
@@ -467,7 +486,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const completeOnboarding = async (data: OnboardingData) => {
     if (!currentUser || !isSupabaseConfigured()) return
-    if (currentUser.accountType === 'venue') return
+    if (currentUser.accountType !== 'player') return
     const supabase = createClient()
     const photo = data.photo || DEFAULT_AVATAR
     const { error } = await supabase
@@ -476,6 +495,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         name: data.name,
         age: data.age,
         gender: data.gender,
+        whatsapp_phone: data.whatsappPhone.trim(),
         position: data.position,
         level: data.level,
         city: data.city,
@@ -492,6 +512,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCurrentUser({
       ...currentUser,
       ...data,
+      whatsappPhone: data.whatsappPhone.trim(),
       photo,
       email: currentUser.email,
       createdAt: currentUser.createdAt,
@@ -1736,7 +1757,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!profile) return
       setCurrentUser(profile)
 
-      if (profile.accountType === 'venue') {
+      if (profile.accountType === 'venue' || profile.accountType === 'admin') {
         setMatchOpportunities([])
         setUsers([])
         setTeams([])
@@ -1868,7 +1889,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /** Jugador ya con sesión: abrir Crear si venía de un centro (`/?prefillCreate=1`). */
   useEffect(() => {
     if (authLoading || !currentUser) return
-    if (currentUser.accountType === 'venue') return
+    if (currentUser.accountType !== 'player') return
     if (needsOnboardingProfile(currentUser)) return
     if (tryNavigateCreateAfterPlayerReady()) {
       setCurrentScreen('create')
@@ -1915,6 +1936,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [authLoading, currentUser, currentScreen])
 
+  /** Cuenta admin: siempre entra al dashboard admin. */
+  useEffect(() => {
+    if (authLoading || !currentUser) return
+    if (currentUser.accountType !== 'admin') return
+    if (currentScreen === 'auth') return
+    if (currentScreen !== 'adminDashboard') {
+      setCurrentScreen('adminDashboard')
+    }
+  }, [authLoading, currentUser, currentScreen])
+
   /** Invitación con registro: abrir auth desde landing */
   useEffect(() => {
     if (authLoading || currentUser) return
@@ -1931,7 +1962,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /** Tras sesión + perfil listo: deep link equipo (prioridad) o detalle de revuelta */
   useEffect(() => {
     if (authLoading || !currentUser) return
-    if (currentUser.accountType === 'venue') return
+    if (currentUser.accountType !== 'player') return
     if (needsOnboardingProfile(currentUser)) return
     let tid: string | null = null
     let mid: string | null = null

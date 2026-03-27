@@ -84,6 +84,17 @@ export function VenueDashboardScreen() {
   })
 
   const [newCourtName, setNewCourtName] = useState('')
+  const [showManualForm, setShowManualForm] = useState(false)
+  const [manualSaving, setManualSaving] = useState(false)
+  const [manualForm, setManualForm] = useState({
+    courtId: '',
+    time: '20:00',
+    durationMinutes: 60,
+    clientName: '',
+    clientPhone: '',
+    status: 'pending' as 'pending' | 'confirmed',
+    note: '',
+  })
 
   const reloadAll = useCallback(async () => {
     if (!currentUser || !isSupabaseConfigured()) return
@@ -221,6 +232,9 @@ export function VenueDashboardScreen() {
     const ok = await setReservationPayment(id, {
       status: 'confirmed',
       payment_status: 'paid',
+      confirmation_source: 'venue_owner',
+      confirmed_by_user_id: currentUser?.id ?? null,
+      confirmation_note: 'Confirmada por centro deportivo',
     })
     if (!ok) return
     toast.success('Reserva confirmada')
@@ -240,6 +254,83 @@ export function VenueDashboardScreen() {
     if (!ok) return
     toast.success('Reserva cancelada')
     await reloadAll()
+  }
+
+  const createManualReservation = async () => {
+    if (!venue || !isSupabaseConfigured()) return
+    if (!manualForm.courtId) {
+      toast.error('Selecciona una cancha para la reserva manual.')
+      return
+    }
+    if (!/^\d{2}:\d{2}$/.test(manualForm.time.trim())) {
+      toast.error('Ingresa una hora válida en formato HH:MM.')
+      return
+    }
+    if (manualForm.durationMinutes < 30 || manualForm.durationMinutes > 240) {
+      toast.error('La duración debe estar entre 30 y 240 minutos.')
+      return
+    }
+    const startsAt = new Date(`${dayStr}T${manualForm.time}:00`)
+    if (Number.isNaN(startsAt.getTime())) {
+      toast.error('Fecha u hora inválida.')
+      return
+    }
+    const endsAt = new Date(startsAt.getTime() + manualForm.durationMinutes * 60 * 1000)
+    const now = new Date()
+    if (startsAt.getTime() < now.getTime() - 5 * 60 * 1000) {
+      toast.error('No puedes crear reservas manuales en el pasado.')
+      return
+    }
+
+    setManualSaving(true)
+    try {
+      const noteParts = [
+        'manual_reservation',
+        manualForm.clientName.trim() ? `cliente:${manualForm.clientName.trim()}` : '',
+        manualForm.clientPhone.trim() ? `telefono:${manualForm.clientPhone.trim()}` : '',
+        manualForm.note.trim() ? `nota:${manualForm.note.trim()}` : '',
+      ].filter(Boolean)
+      const notes = noteParts.join(' | ')
+      const payload: Record<string, unknown> = {
+        court_id: manualForm.courtId,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        status: manualForm.status,
+        payment_status: manualForm.status === 'confirmed' ? 'paid' : 'unpaid',
+        notes,
+        booker_user_id: null,
+        match_opportunity_id: null,
+        confirmation_source: manualForm.status === 'confirmed' ? 'venue_owner' : null,
+        confirmed_by_user_id:
+          manualForm.status === 'confirmed' ? currentUser?.id ?? null : null,
+        confirmation_note:
+          manualForm.status === 'confirmed'
+            ? 'Reserva manual confirmada por centro'
+            : 'Reserva manual cargada por centro',
+      }
+      const supabase = createClient()
+      const { error } = await supabase.from('venue_reservations').insert(payload)
+      if (error) {
+        if (error.message.includes('venue_reservation_overlap')) {
+          toast.error('Ese horario ya está ocupado en esta cancha.')
+        } else {
+          toast.error(error.message)
+        }
+        return
+      }
+      toast.success('Reserva manual creada correctamente.')
+      setManualForm((f) => ({
+        ...f,
+        courtId: f.courtId,
+        clientName: '',
+        clientPhone: '',
+        note: '',
+      }))
+      await reloadAll()
+      setDayStr(toDateInputValue(startsAt))
+    } finally {
+      setManualSaving(false)
+    }
   }
 
   const courtNameById = useMemo(() => {
@@ -450,6 +541,126 @@ export function VenueDashboardScreen() {
                   <Link2 className="w-4 h-4 mr-1" />
                   Copiar página pública
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowManualForm((v) => !v)}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  {showManualForm ? 'Ocultar reserva manual' : 'Nueva reserva manual'}
+                </Button>
+                {showManualForm ? (
+                  <Card className="bg-card border-border">
+                    <CardContent className="p-3 space-y-3">
+                      <p className="text-sm font-medium text-foreground">
+                        Ingresar reserva manual (cliente externo)
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Cancha</Label>
+                          <select
+                            value={manualForm.courtId}
+                            onChange={(e) =>
+                              setManualForm((f) => ({ ...f, courtId: e.target.value }))
+                            }
+                            className="h-10 w-full rounded-md border border-border bg-secondary px-3 text-sm text-foreground"
+                          >
+                            <option value="">Seleccionar</option>
+                            {courts.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Hora</Label>
+                          <Input
+                            type="time"
+                            value={manualForm.time}
+                            onChange={(e) =>
+                              setManualForm((f) => ({ ...f, time: e.target.value }))
+                            }
+                            className="h-10 bg-secondary border-border"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Duración (min)</Label>
+                          <Input
+                            type="number"
+                            min={30}
+                            max={240}
+                            step={30}
+                            value={manualForm.durationMinutes}
+                            onChange={(e) =>
+                              setManualForm((f) => ({
+                                ...f,
+                                durationMinutes: Number(e.target.value || 60),
+                              }))
+                            }
+                            className="h-10 bg-secondary border-border"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Estado inicial</Label>
+                          <select
+                            value={manualForm.status}
+                            onChange={(e) =>
+                              setManualForm((f) => ({
+                                ...f,
+                                status: e.target.value as 'pending' | 'confirmed',
+                              }))
+                            }
+                            className="h-10 w-full rounded-md border border-border bg-secondary px-3 text-sm text-foreground"
+                          >
+                            <option value="pending">Pendiente</option>
+                            <option value="confirmed">Confirmada</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Nombre cliente</Label>
+                          <Input
+                            value={manualForm.clientName}
+                            onChange={(e) =>
+                              setManualForm((f) => ({ ...f, clientName: e.target.value }))
+                            }
+                            placeholder="Ej: Carlos"
+                            className="h-10 bg-secondary border-border"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">WhatsApp cliente</Label>
+                          <Input
+                            value={manualForm.clientPhone}
+                            onChange={(e) =>
+                              setManualForm((f) => ({ ...f, clientPhone: e.target.value }))
+                            }
+                            placeholder="+56912345678"
+                            className="h-10 bg-secondary border-border"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Nota (opcional)</Label>
+                        <Input
+                          value={manualForm.note}
+                          onChange={(e) =>
+                            setManualForm((f) => ({ ...f, note: e.target.value }))
+                          }
+                          placeholder="Observación interna"
+                          className="h-10 bg-secondary border-border"
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => void createManualReservation()}
+                        disabled={manualSaving}
+                      >
+                        {manualSaving ? 'Guardando...' : 'Guardar reserva manual'}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ) : null}
                 <ul className="space-y-2">
                   {reservations.filter((r) => r.status !== 'cancelled').length ===
                   0 ? (
@@ -513,6 +724,11 @@ export function VenueDashboardScreen() {
                                           ? `Partido #${r.matchOpportunityId.slice(0, 8)}…`
                                           : 'Reserva directa'}
                                     </p>
+                                    {r.notes?.includes('manual_reservation') ? (
+                                      <p className="text-[11px] text-amber-300">
+                                        Reserva manual (cliente externo)
+                                      </p>
+                                    ) : null}
                                     <p className="text-[11px] text-muted-foreground">
                                       {m ? 'Organizador' : 'Reservante'}:{' '}
                                       <span className="text-foreground font-medium">

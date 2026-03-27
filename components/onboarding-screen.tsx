@@ -18,6 +18,7 @@ import {
   Camera,
   Loader2,
   ImagePlus,
+  Phone,
 } from 'lucide-react'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 import { uploadProfileAvatarFile } from '@/lib/supabase/profile-photo'
@@ -53,6 +54,7 @@ export function OnboardingScreen() {
     name: '',
     age: 0,
     gender: currentUser?.gender || 'male',
+    whatsappPhone: currentUser?.whatsappPhone || '',
     position: 'mediocampista',
     level: 'intermedio',
     availability: [],
@@ -69,6 +71,7 @@ export function OnboardingScreen() {
       name: currentUser.name,
       age: currentUser.age,
       gender: currentUser.gender,
+      whatsappPhone: currentUser.whatsappPhone || '',
       position: currentUser.position,
       level: currentUser.level,
       availability: [...currentUser.availability],
@@ -138,7 +141,11 @@ export function OnboardingScreen() {
   const canProceed = () => {
     switch (step) {
       case 1:
-        return data.name.length >= 2 && data.age >= 16
+        return (
+          data.name.length >= 2 &&
+          data.age >= 16 &&
+          data.whatsappPhone.trim().length >= 8
+        )
       case 2:
         return true
       case 3:
@@ -232,6 +239,23 @@ export function OnboardingScreen() {
                   placeholder="Tu ciudad"
                   value={data.city}
                   onChange={(e) => setData({ ...data, city: e.target.value })}
+                  className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="whatsappPhone" className="text-foreground flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-primary" />
+                  WhatsApp
+                </Label>
+                <Input
+                  id="whatsappPhone"
+                  type="tel"
+                  placeholder="+56912345678"
+                  value={data.whatsappPhone}
+                  onChange={(e) =>
+                    setData({ ...data, whatsappPhone: e.target.value })
+                  }
                   className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
                 />
               </div>

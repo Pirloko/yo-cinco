@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { useApp } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
@@ -65,6 +66,19 @@ export function MatchDetailsScreen() {
   >([])
   const [joinRevueltaOpen, setJoinRevueltaOpen] = useState(false)
   const [joinPlayersOpen, setJoinPlayersOpen] = useState(false)
+  const [reservationState, setReservationState] = useState<{
+    id: string
+    status: 'pending' | 'confirmed' | 'cancelled'
+    paymentStatus: 'unpaid' | 'deposit_paid' | 'paid' | null
+    confirmationSource: 'venue_owner' | 'booker_self' | 'admin' | null
+    confirmedAt: Date | null
+    bookerUserId: string | null
+  } | null>(null)
+  const [confirmingReservation, setConfirmingReservation] = useState(false)
+  const [venueContact, setVenueContact] = useState<{
+    name: string
+    phone: string | null
+  } | null>(null)
 
   const loadParticipants = useCallback(async () => {
     if (!selectedMatchOpportunityId || !currentUser || !isSupabaseConfigured()) {
@@ -122,6 +136,70 @@ export function MatchDetailsScreen() {
     void loadRatingsOverview()
   }, [loadParticipants, loadMyRating, loadRatingsOverview])
 
+  useEffect(() => {
+    if (!opportunity?.venueReservationId || !currentUser || !isSupabaseConfigured()) {
+      setReservationState(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('venue_reservations')
+        .select(
+          'id, status, payment_status, confirmation_source, confirmed_at, booker_user_id'
+        )
+        .eq('id', opportunity.venueReservationId)
+        .maybeSingle()
+      if (cancelled) return
+      if (error || !data) {
+        setReservationState(null)
+        return
+      }
+      setReservationState({
+        id: data.id as string,
+        status: data.status as 'pending' | 'confirmed' | 'cancelled',
+        paymentStatus: (data.payment_status as 'unpaid' | 'deposit_paid' | 'paid' | null) ?? null,
+        confirmationSource:
+          (data.confirmation_source as 'venue_owner' | 'booker_self' | 'admin' | null) ??
+          null,
+        confirmedAt: data.confirmed_at ? new Date(data.confirmed_at as string) : null,
+        bookerUserId: (data.booker_user_id as string | null) ?? null,
+      })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [opportunity?.venueReservationId, currentUser])
+
+  useEffect(() => {
+    if (!opportunity?.sportsVenueId || !isSupabaseConfigured()) {
+      setVenueContact(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('sports_venues')
+        .select('name, phone')
+        .eq('id', opportunity.sportsVenueId)
+        .maybeSingle()
+      if (cancelled) return
+      if (!data) {
+        setVenueContact(null)
+        return
+      }
+      setVenueContact({
+        name: (data.name as string) ?? opportunity.venue,
+        phone: ((data.phone as string | null) ?? '').trim() || null,
+      })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [opportunity?.sportsVenueId, opportunity?.venue])
+
   const goBack = () => {
     setSelectedMatchOpportunityId(null)
     setCurrentScreen('matches')
@@ -160,6 +238,64 @@ export function MatchDetailsScreen() {
     !isCreator &&
     !isParticipant &&
     (opportunity.status === 'pending' || opportunity.status === 'confirmed')
+
+  const canSelfConfirmReservation =
+    isCreator &&
+    !!reservationState &&
+    reservationState.status === 'pending' &&
+    reservationState.bookerUserId === currentUser.id
+
+  const contactWaHref = (() => {
+    const raw = venueContact?.phone?.trim() ?? ''
+    const digits = raw.replace(/\D/g, '')
+    if (!digits || !opportunity) return null
+    const msg = `Hola ${venueContact?.name ?? opportunity.venue}. Soy ${currentUser.name} y vengo de la app futmatch (soy el organizador del partido "${opportunity.title}"). Quiero confirmar la reserva de cancha para el ${format(new Date(opportunity.dateTime), "d 'de' MMMM", {
+      locale: es,
+    })} a las ${format(new Date(opportunity.dateTime), 'HH:mm')} hrs. ¿quisiera saber si Está disponible y cómo realizo el pago?`
+    return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`
+  })()
+
+  const handleSelfConfirmReservation = async () => {
+    if (!reservationState || !isSupabaseConfigured()) return
+    if (
+      !confirm(
+        'Confirmarás que ya coordinaste con el centro deportivo. ¿Deseas marcar esta reserva como confirmada?'
+      )
+    ) {
+      return
+    }
+    setConfirmingReservation(true)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('venue_reservations')
+        .update({
+          status: 'confirmed',
+          confirmation_source: 'booker_self',
+          confirmed_by_user_id: currentUser.id,
+          confirmation_note: 'Confirmada por organizador en flujo guiado',
+        })
+        .eq('id', reservationState.id)
+        .eq('booker_user_id', currentUser.id)
+      if (error) {
+        toast.error(error.message)
+        return
+      }
+      toast.success('Reserva confirmada. Quedó registrada como autoconfirmada.')
+      setReservationState((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: 'confirmed',
+              confirmationSource: 'booker_self',
+              confirmedAt: new Date(),
+            }
+          : prev
+      )
+    } finally {
+      setConfirmingReservation(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -243,6 +379,67 @@ export function MatchDetailsScreen() {
               </div>
             )}
           </div>
+
+          {reservationState ? (
+            <div className="rounded-xl border border-border bg-secondary/30 p-3 space-y-2">
+              <p className="text-xs font-medium text-foreground">
+                Estado de reserva de cancha: {reservationState.status === 'pending'
+                  ? 'Pendiente'
+                  : reservationState.status === 'confirmed'
+                    ? 'Confirmada'
+                    : 'Cancelada'}
+              </p>
+              {canSelfConfirmReservation ? (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Paso a paso: 1) contacta al centro, 2) valida horario y pago, 3) al cerrar
+                    con el centro, marca esta reserva como confirmada. Queda registrada como
+                    autoconfirmada por el organizador.
+                  </p>
+                  {contactWaHref ? (
+                    <Button
+                      asChild
+                      variant="outline"
+                      size="sm"
+                      className="border-green-500/40 text-green-400 hover:bg-green-500/10"
+                    >
+                      <a href={contactWaHref} target="_blank" rel="noreferrer">
+                        <MessageCircle className="w-4 h-4 mr-1.5" />
+                        Contactar por WhatsApp al centro
+                      </a>
+                    </Button>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Este centro aún no tiene WhatsApp/teléfono cargado.
+                    </p>
+                  )}
+                  <Button
+                    size="sm"
+                    onClick={() => void handleSelfConfirmReservation()}
+                    disabled={confirmingReservation}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    {confirmingReservation
+                      ? 'Confirmando...'
+                      : 'Ya coordiné con el centro, confirmar reserva'}
+                  </Button>
+                </>
+              ) : reservationState.status === 'confirmed' ? (
+                <p className="text-xs text-muted-foreground">
+                  Fuente de confirmación:{' '}
+                  <span className="text-foreground font-medium">
+                    {reservationState.confirmationSource === 'booker_self'
+                      ? 'Organizador (autoconfirmada)'
+                      : reservationState.confirmationSource === 'venue_owner'
+                        ? 'Centro deportivo'
+                        : reservationState.confirmationSource === 'admin'
+                          ? 'Administrador'
+                          : 'No registrada'}
+                  </span>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           {opportunity.type === 'open' &&
             (isCreator || isParticipant) &&

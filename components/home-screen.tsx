@@ -5,7 +5,7 @@ import { useApp } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
 import { MatchCard } from '@/components/match-card'
 import { Button } from '@/components/ui/button'
-import { Target, Users, Shuffle, Sparkles, Bell, LayoutList } from 'lucide-react'
+import { Target, Users, Shuffle, Sparkles, Bell } from 'lucide-react'
 import { MatchOpportunity, MatchType } from '@/lib/types'
 import { JoinRevueltaDialog } from '@/components/join-revuelta-dialog'
 import { JoinPlayersSearchDialog } from '@/components/join-players-search-dialog'
@@ -95,13 +95,6 @@ export function HomeScreen() {
     }
   }
 
-  const filters: { id: FilterType; icon: React.ReactNode; label: string }[] = [
-    { id: 'all', icon: <Sparkles className="w-4 h-4" />, label: 'Todos' },
-    { id: 'rival', icon: <Target className="w-4 h-4" />, label: 'Rivales' },
-    { id: 'players', icon: <Users className="w-4 h-4" />, label: 'Jugadores' },
-    { id: 'open', icon: <Shuffle className="w-4 h-4" />, label: 'Revueltas' },
-  ]
-
   return (
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
@@ -143,88 +136,51 @@ export function HomeScreen() {
           </div>
         </div>
 
-        {/* Filter Tabs */}
-        <div className="flex gap-2 px-4 pb-4 overflow-x-auto scrollbar-hide">
-          {filters.map((filter) => (
-            <button
-              key={filter.id}
-              onClick={() => setActiveFilter(filter.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full whitespace-nowrap transition-all ${
-                activeFilter === filter.id
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-secondary text-muted-foreground hover:bg-secondary/80'
-              }`}
-            >
-              {filter.icon}
-              <span className="text-sm font-medium">{filter.label}</span>
-            </button>
-          ))}
-        </div>
       </header>
 
       {/* Quick Actions */}
       <div className="p-4">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <QuickActionCard
+            icon={<Sparkles className="w-6 h-6" />}
+            label="Todos"
+            cta="Ver oportunidades"
+            selected={activeFilter === 'all'}
+            color="bg-primary/10 text-primary border-primary/30"
+            onClick={() => setActiveFilter('all')}
+          />
           <QuickActionCard
             icon={<Target className="w-6 h-6" />}
-            label="Buscar rival"
+            label="Se busca rival"
+            cta="Acepta un desafío"
+            selected={activeFilter === 'rival'}
             color="bg-red-500/10 text-red-400 border-red-500/30"
-            onClick={() => setCurrentScreen('create')}
+            onClick={() => setActiveFilter('rival')}
           />
           <QuickActionCard
             icon={<Users className="w-6 h-6" />}
-            label="Buscar jugadores"
+            label="Falta uno"
+            cta="Súmate al equipo"
+            selected={activeFilter === 'players'}
             color="bg-primary/10 text-primary border-primary/30"
-            onClick={() => setCurrentScreen('create')}
+            onClick={() => setActiveFilter('players')}
           />
           <QuickActionCard
             icon={<Shuffle className="w-6 h-6" />}
-            label="Crear revuelta"
+            label="Partido revuelta"
+            cta="Entra a jugar"
+            selected={activeFilter === 'open'}
             color="bg-accent/10 text-accent border-accent/30"
-            onClick={() => setCurrentScreen('create')}
+            onClick={() => setActiveFilter('open')}
           />
         </div>
       </div>
 
-      {/* Mis partidos y chats */}
-      <div className="px-4 mb-4">
-        <button
-          type="button"
-          onClick={() => setCurrentScreen('matches')}
-          className="w-full p-4 bg-card rounded-2xl border border-border flex items-center justify-between gap-3 hover:border-primary/50 transition-all text-left"
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-12 h-12 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
-              <LayoutList className="w-6 h-6 text-primary" />
-            </div>
-            <div className="min-w-0">
-              <p className="font-semibold text-foreground">Mis partidos y chats</p>
-              <p className="text-sm text-muted-foreground">
-                Próximos, conversaciones y finalizados
-              </p>
-            </div>
-          </div>
-          <svg
-            className="w-5 h-5 text-primary shrink-0"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
-        </button>
-      </div>
-
-      {/* Swipe Banner */}
+      {/* Discover Teams Banner */}
       <div className="px-4 mb-4">
         <button 
           type="button"
-          onClick={() => setCurrentScreen('swipe')}
+          onClick={() => setCurrentScreen('teams')}
           className="w-full p-4 bg-gradient-to-r from-primary/20 to-accent/20 rounded-2xl border border-primary/30 flex items-center justify-between group hover:border-primary/50 transition-all"
         >
           <div className="flex items-center gap-3">
@@ -232,8 +188,8 @@ export function HomeScreen() {
               <Sparkles className="w-6 h-6 text-primary" />
             </div>
             <div className="text-left">
-              <p className="font-semibold text-foreground">Descubre jugadores</p>
-              <p className="text-sm text-muted-foreground">Desliza para conectar</p>
+              <p className="font-semibold text-foreground">Descubre equipos</p>
+              <p className="text-sm text-muted-foreground">Solicita unirte o desafía</p>
             </div>
           </div>
           <div className="text-primary group-hover:translate-x-1 transition-transform">
@@ -366,21 +322,28 @@ export function HomeScreen() {
 function QuickActionCard({
   icon,
   label,
+  cta,
+  selected,
   color,
   onClick,
 }: {
   icon: React.ReactNode
   label: string
+  cta: string
+  selected: boolean
   color: string
   onClick: () => void
 }) {
   return (
     <button
       onClick={onClick}
-      className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all hover:scale-105 ${color}`}
+      className={`p-4 rounded-xl border flex flex-col items-center gap-1.5 transition-all hover:scale-105 text-center ${
+        selected ? 'ring-2 ring-primary/40' : ''
+      } ${color}`}
     >
       {icon}
-      <span className="text-xs font-medium text-center">{label}</span>
+      <span className="text-sm font-semibold">{label}</span>
+      <span className="text-[11px] opacity-90">{cta}</span>
     </button>
   )
 }

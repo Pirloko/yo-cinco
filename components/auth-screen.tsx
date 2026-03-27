@@ -135,7 +135,9 @@ export function AuthScreen() {
     )
 
     if (result.ok) {
-      if (result.isVenue) {
+      if (result.isAdmin) {
+        setCurrentScreen('adminDashboard')
+      } else if (result.isVenue) {
         setCurrentScreen(
           result.needsVenueOnboarding ? 'venueOnboarding' : 'venueDashboard'
         )

@@ -44,6 +44,7 @@ import {
 } from '@/lib/types'
 import { fetchTeamPrivateSettings } from '@/lib/supabase/team-queries'
 import { teamInviteAbsoluteUrl } from '@/lib/team-invite-url'
+import { saveRivalTargetTeamId } from '@/lib/rival-prefill'
 
 type TeamsView = 'list' | 'create' | 'detail' | 'invite'
 
@@ -84,6 +85,7 @@ export function TeamsScreen() {
     getFilteredUsers,
     teamsDetailFocusTeamId,
     setTeamsDetailFocusTeamId,
+    setCurrentScreen,
   } = useApp()
   
   const [view, setView] = useState<TeamsView>('list')
@@ -412,6 +414,15 @@ export function TeamsScreen() {
 
   const renderTeamCard = (team: Team, isUserTeam: boolean) => {
     const isCaptain = team.captainId === currentUser?.id
+    const isMember = userTeams.some((t) => t.id === team.id)
+    const myJoin = myPendingJoinForTeam(team.id)
+    const canRequestJoin =
+      !isUserTeam &&
+      !isMember &&
+      team.gender === currentUser?.gender &&
+      team.members.length < 6 &&
+      !myJoin
+    const canChallenge = !isUserTeam && myCaptainTeams.length > 0
 
     return (
       <Card 
@@ -462,6 +473,42 @@ export function TeamsScreen() {
             
             <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
           </div>
+          {!isUserTeam && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!canRequestJoin}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (!canRequestJoin) return
+                  void requestToJoinTeam(team.id)
+                }}
+              >
+                <Handshake className="w-4 h-4 mr-1.5" />
+                {myJoin ? 'Solicitud pendiente' : 'Solicitar unirme'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="bg-red-500 hover:bg-red-500/90 text-white"
+                disabled={!canChallenge}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (!canChallenge) {
+                    toast.error('Debes ser capitán de un equipo para desafiar.')
+                    return
+                  }
+                  saveRivalTargetTeamId(team.id)
+                  setCurrentScreen('create')
+                }}
+              >
+                <Shield className="w-4 h-4 mr-1.5" />
+                Desafiar
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     )

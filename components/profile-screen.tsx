@@ -29,6 +29,7 @@ import {
   Info,
   Loader2,
   Camera,
+  Phone,
 } from 'lucide-react'
 import type { Level } from '@/lib/types'
 
@@ -331,6 +332,12 @@ export function ProfileScreen() {
               <MapPin className="w-4 h-4 shrink-0 text-primary" />
               {currentUser.city || 'Rancagua'}
             </p>
+            {currentUser.whatsappPhone?.trim() && (
+              <p className="mt-1 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+                <Phone className="w-4 h-4 shrink-0 text-primary" />
+                {currentUser.whatsappPhone}
+              </p>
+            )}
 
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
               <Badge variant="outline" className={getLevelColor()}>

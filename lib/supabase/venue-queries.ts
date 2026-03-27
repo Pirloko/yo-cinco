@@ -129,5 +129,10 @@ export async function fetchVenueReservationsRange(
     confirmedAt: r.confirmed_at ? new Date(r.confirmed_at as string) : null,
     cancelledAt: r.cancelled_at ? new Date(r.cancelled_at as string) : null,
     cancelledReason: (r.cancelled_reason as string | null) ?? null,
+    confirmedByUserId: (r.confirmed_by_user_id as string | null) ?? null,
+    confirmationSource:
+      (r.confirmation_source as VenueReservationRow['confirmationSource']) ?? null,
+    confirmationNote: (r.confirmation_note as string | null) ?? null,
+    notes: (r.notes as string | null) ?? null,
   }))
 }
