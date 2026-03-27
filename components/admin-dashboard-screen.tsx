@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { CalendarDays, LogOut, RefreshCw, Trophy } from 'lucide-react'
+import { ThemeMenuButton } from '@/components/theme-controls'
 
 type AdminMetrics = {
   range: RangeKey
@@ -155,10 +156,13 @@ export function AdminDashboardScreen() {
             Métricas de reservas y alta rápida de centros deportivos.
           </p>
         </div>
-        <Button variant="outline" onClick={() => void logout()}>
-          <LogOut className="w-4 h-4 mr-1.5" />
-          Salir
-        </Button>
+        <div className="flex items-center gap-2">
+          <ThemeMenuButton />
+          <Button variant="outline" onClick={() => void logout()}>
+            <LogOut className="w-4 h-4 mr-1.5" />
+            Salir
+          </Button>
+        </div>
       </header>
 
       <Card className="bg-card border-border">

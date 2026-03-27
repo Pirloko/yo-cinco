@@ -9,9 +9,10 @@ export function isSupabaseConfigured(): boolean {
 }
 
 /**
- * Cliente de navegador: sin `cookieOptions` personalizados para que @supabase/ssr
- * use `document.cookie` con los mismos defaults que el middleware (evita desajustes
- * al refrescar). La librería ya aplica singleton en el browser.
+ * Cliente de navegador para SPA:
+ * - Persistimos sesión en localStorage para que sobreviva a F5 incluso si en
+ *   deploy el middleware/cookies tiene algún desajuste.
+ * - Mantenemos auto-refresh del token y detección estándar de callback auth.
  */
 export function createClient(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -21,5 +22,12 @@ export function createClient(): SupabaseClient {
       'Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY en .env.local'
     )
   }
-  return createBrowserClient(url, key)
+  return createBrowserClient(url, key, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storageKey: 'pichanga-auth',
+    },
+  })
 }

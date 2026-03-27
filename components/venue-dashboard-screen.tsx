@@ -27,6 +27,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { WEEKDAY_SHORT_ES } from '@/lib/venue-slots'
+import { ThemeMenuButton } from '@/components/theme-controls'
 
 type DayHours = { open: string; close: string } | null
 
@@ -469,10 +470,13 @@ export function VenueDashboardScreen() {
           </h1>
           <p className="text-xs text-muted-foreground">Cuenta centro deportivo</p>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => void logout()}>
-          <LogOut className="w-4 h-4 mr-1" />
-          Salir
-        </Button>
+        <div className="flex items-center gap-0.5 shrink-0">
+          <ThemeMenuButton />
+          <Button variant="ghost" size="sm" onClick={() => void logout()}>
+            <LogOut className="w-4 h-4 mr-1" />
+            Salir
+          </Button>
+        </div>
       </header>
 
       {loading ? (
@@ -725,7 +729,7 @@ export function VenueDashboardScreen() {
                                           : 'Reserva directa'}
                                     </p>
                                     {r.notes?.includes('manual_reservation') ? (
-                                      <p className="text-[11px] text-amber-300">
+                                      <p className="text-[11px] text-amber-700 dark:text-amber-300">
                                         Reserva manual (cliente externo)
                                       </p>
                                     ) : null}

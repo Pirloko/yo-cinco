@@ -240,7 +240,7 @@ export function MatchCard({
                     ? 'bg-red-500 hover:bg-red-600 text-primary-foreground'
                     : match.type === 'players'
                       ? 'bg-primary hover:bg-primary/90 text-primary-foreground'
-                      : 'bg-accent hover:bg-accent/90 text-primary-foreground'
+                      : 'bg-accent hover:bg-accent/90 text-accent-foreground'
               }
             >
               {joining ? (

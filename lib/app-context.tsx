@@ -63,6 +63,10 @@ import { buildRandomRevueltaLineup } from '@/lib/revuelta-lineup'
 import { playersJoinRules } from '@/lib/players-seek-profile'
 import { uploadProfileAvatarFile } from '@/lib/supabase/profile-photo'
 import { fetchVenueForOwner } from '@/lib/supabase/venue-queries'
+import {
+  persistPlayerLastNav,
+  type PlayerNavId,
+} from '@/lib/player-nav-storage'
 
 function isTeamLimitReached(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
@@ -97,6 +101,15 @@ type AppScreen =
   | 'venueOnboarding'
   | 'venueDashboard'
   | 'adminDashboard'
+
+const PLAYER_NAV_SCREENS = new Set<AppScreen>([
+  'home',
+  'explore',
+  'matches',
+  'create',
+  'teams',
+  'profile',
+])
 
 function needsOnboardingProfile(u: User): boolean {
   if (u.accountType !== 'player') return false
@@ -1885,6 +1898,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     capturePrefillCreateQuery()
   }, [])
+
+  /** `/?screen=...`: navegación directa desde páginas públicas (ej: centro). */
+  useEffect(() => {
+    if (authLoading || !currentUser) return
+    if (currentUser.accountType !== 'player') return
+    if (needsOnboardingProfile(currentUser)) return
+    if (typeof window === 'undefined') return
+    try {
+      const sp = new URLSearchParams(window.location.search)
+      const screen = sp.get('screen')
+      if (!screen) return
+      if (!PLAYER_NAV_SCREENS.has(screen as AppScreen)) {
+        window.history.replaceState({}, '', '/')
+        return
+      }
+      setCurrentScreen(screen as AppScreen)
+      persistPlayerLastNav(screen as PlayerNavId)
+      window.history.replaceState({}, '', '/')
+    } catch {
+      // ignore
+    }
+  }, [authLoading, currentUser])
+
+  /** Recordar última pestaña principal (barra inferior en `/centro/...`). */
+  useEffect(() => {
+    if (!currentUser || currentUser.accountType !== 'player') return
+    if (!PLAYER_NAV_SCREENS.has(currentScreen)) return
+    persistPlayerLastNav(currentScreen as PlayerNavId)
+  }, [currentUser, currentScreen])
 
   /** Jugador ya con sesión: abrir Crear si venía de un centro (`/?prefillCreate=1`). */
   useEffect(() => {

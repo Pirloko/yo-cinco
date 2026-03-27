@@ -30,8 +30,10 @@ import {
   Loader2,
   Camera,
   Phone,
+  Palette,
 } from 'lucide-react'
 import type { Level } from '@/lib/types'
+import { ThemeSegmentedControl } from '@/components/theme-controls'
 
 const LEVEL_LABELS: Record<Level, string> = {
   principiante: 'Principiante',
@@ -454,6 +456,21 @@ export function ProfileScreen() {
             </SheetDescription>
           </SheetHeader>
           <div className="space-y-1 py-2">
+            <div className="rounded-xl border border-border/60 bg-secondary/30 p-4 space-y-3">
+              <div className="flex gap-3">
+                <Palette className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-foreground text-sm">Apariencia</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Elige tema claro, oscuro o el mismo que tu dispositivo. Se guarda en este
+                    navegador.
+                  </p>
+                  <div className="mt-3">
+                    <ThemeSegmentedControl />
+                  </div>
+                </div>
+              </div>
+            </div>
             <div className="flex gap-3 rounded-xl border border-border/60 bg-secondary/30 p-4">
               <Bell className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
               <div>

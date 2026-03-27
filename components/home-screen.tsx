@@ -6,6 +6,7 @@ import { BottomNav } from '@/components/bottom-nav'
 import { MatchCard } from '@/components/match-card'
 import { Button } from '@/components/ui/button'
 import { Target, Users, Shuffle, Sparkles, Bell } from 'lucide-react'
+import { ThemeMenuButton } from '@/components/theme-controls'
 import { MatchOpportunity, MatchType } from '@/lib/types'
 import { JoinRevueltaDialog } from '@/components/join-revuelta-dialog'
 import { JoinPlayersSearchDialog } from '@/components/join-players-search-dialog'
@@ -108,11 +109,12 @@ export function HomeScreen() {
               Encuentra tu partido perfecto
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
+            <ThemeMenuButton className="shrink-0" />
             <Button
               variant="ghost"
               size="icon"
-              className="relative"
+              className="relative shrink-0"
               type="button"
               onClick={() => {
                 setInitialMatchesTab('chats')

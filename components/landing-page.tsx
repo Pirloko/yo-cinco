@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button'
 import { useApp } from '@/lib/app-context'
 import { Target, Users, Shuffle, ChevronRight, MapPin } from 'lucide-react'
+import { ThemeMenuButton } from '@/components/theme-controls'
 
 export function LandingPage() {
   const { setCurrentScreen } = useApp()
@@ -17,13 +18,16 @@ export function LandingPage() {
           </div>
           <span className="font-bold text-xl text-foreground">Pichanga</span>
         </div>
-        <Button 
-          variant="ghost" 
-          className="text-muted-foreground hover:text-foreground"
-          onClick={() => setCurrentScreen('auth')}
-        >
-          Iniciar sesion
-        </Button>
+        <div className="flex items-center gap-1">
+          <ThemeMenuButton />
+          <Button
+            variant="ghost"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => setCurrentScreen('auth')}
+          >
+            Iniciar sesion
+          </Button>
+        </div>
       </header>
 
       {/* Hero Section */}

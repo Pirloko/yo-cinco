@@ -15,6 +15,7 @@ import {
 import { useApp } from '@/lib/app-context'
 import { Gender } from '@/lib/types'
 import { ArrowLeft, Mail, Lock, User, Phone } from 'lucide-react'
+import { ThemeMenuButton } from '@/components/theme-controls'
 import { JOIN_REGISTER_STORAGE_KEY } from '@/lib/team-invite-url'
 import { tryNavigateCreateAfterPlayerReady } from '@/lib/create-prefill'
 
@@ -173,6 +174,9 @@ export function AuthScreen() {
             <span className="text-primary-foreground font-bold">P</span>
           </div>
           <span className="font-bold text-lg text-foreground">Pichanga</span>
+        </div>
+        <div className="ml-auto flex items-center">
+          <ThemeMenuButton />
         </div>
       </header>
 

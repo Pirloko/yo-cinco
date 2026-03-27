@@ -35,8 +35,13 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const themeBootstrap = `(function(){var k='pichanga-theme';function setDark(on){document.documentElement.classList.toggle('dark',on);}try{var s=localStorage.getItem(k);if(s==='light')setDark(false);else if(s==='dark')setDark(true);else if(s==='system')setDark(window.matchMedia('(prefers-color-scheme: dark)').matches);else setDark(true);}catch(_){setDark(true);}})();`
+
   return (
-    <html lang="es" className="dark" suppressHydrationWarning>
+    <html lang="es" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+      </head>
       <body className="font-sans antialiased bg-background text-foreground">
         <Providers>{children}</Providers>
         <Analytics />

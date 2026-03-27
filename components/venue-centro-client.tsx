@@ -9,7 +9,24 @@ import { writeCreatePrefill } from '@/lib/create-prefill'
 import { computeDaySlots, WEEKDAY_SHORT_ES } from '@/lib/venue-slots'
 import type { SportsVenue, VenueCourt, VenueWeeklyHour } from '@/lib/types'
 import type { VenueReservationRow } from '@/lib/types'
-import { Calendar, Clock, ExternalLink, MapPin, Phone } from 'lucide-react'
+import {
+  persistPlayerLastNav,
+  readPlayerLastNav,
+  type PlayerNavId,
+} from '@/lib/player-nav-storage'
+import {
+  Calendar,
+  Clock,
+  ExternalLink,
+  Home,
+  LayoutList,
+  MapPin,
+  Phone,
+  PlusCircle,
+  Search,
+  User,
+  Users,
+} from 'lucide-react'
 
 function pad2(n: number) {
   return n.toString().padStart(2, '0')
@@ -115,7 +132,7 @@ export function VenueCentroClient({ venue, courts, weeklyHours }: Props) {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 pb-24">
       <div className="rounded-2xl border border-border bg-card/40 p-4 space-y-2 text-sm">
         {venue.address ? (
           <p className="flex items-start gap-2 text-muted-foreground">
@@ -228,7 +245,80 @@ export function VenueCentroClient({ venue, courts, weeklyHours }: Props) {
           </ul>
         )}
       </div>
+      <PublicAppBottomNav />
     </div>
+  )
+}
+
+function PublicAppBottomNav() {
+  const [activeId, setActiveId] = useState<PlayerNavId | null>(null)
+
+  useEffect(() => {
+    setActiveId(readPlayerLastNav())
+  }, [])
+
+  const navItems: Array<{
+    id: PlayerNavId
+    href: string
+    icon: typeof Home
+    label: string
+    isCreate?: boolean
+  }> = [
+    { id: 'home', href: '/?screen=home', icon: Home, label: 'Inicio' },
+    { id: 'explore', href: '/?screen=explore', icon: Search, label: 'Explorar' },
+    { id: 'matches', href: '/?screen=matches', icon: LayoutList, label: 'Partidos' },
+    {
+      id: 'create',
+      href: '/?screen=create',
+      icon: PlusCircle,
+      label: 'Crear',
+      isCreate: true,
+    },
+    { id: 'teams', href: '/?screen=teams', icon: Users, label: 'Equipos' },
+    { id: 'profile', href: '/?screen=profile', icon: User, label: 'Perfil' },
+  ]
+
+  return (
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background safe-area-inset-bottom">
+      <div className="mx-auto flex h-16 max-w-lg items-stretch justify-around px-0.5">
+        {navItems.map((item) => {
+          const Icon = item.icon
+          const isCreate = Boolean(item.isCreate)
+          const isActive = activeId === item.id
+          return (
+            <Link
+              key={item.id}
+              href={item.href}
+              onClick={() => {
+                persistPlayerLastNav(item.id)
+                setActiveId(item.id)
+              }}
+              className={`flex min-w-0 flex-1 flex-col items-center justify-center py-1 transition-colors ${
+                isCreate
+                  ? 'text-primary'
+                  : isActive
+                    ? 'text-primary'
+                    : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <div className={isCreate ? 'relative' : ''}>
+                {isCreate ? (
+                  <div className="absolute inset-0 scale-150 animate-pulse rounded-full bg-primary/20" />
+                ) : null}
+                <Icon className={isCreate ? 'h-6 w-6 sm:h-7 sm:w-7' : 'h-5 w-5 sm:h-6 sm:w-6'} />
+              </div>
+              <span
+                className={`mt-0.5 max-w-[64px] truncate text-center text-[10px] leading-tight sm:text-xs ${
+                  isCreate ? 'font-medium' : ''
+                }`}
+              >
+                {item.label}
+              </span>
+            </Link>
+          )
+        })}
+      </div>
+    </nav>
   )
 }
 

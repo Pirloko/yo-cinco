@@ -1,6 +1,7 @@
 'use client'
 
 import { useApp } from '@/lib/app-context'
+import { persistPlayerLastNav } from '@/lib/player-nav-storage'
 import { Home, Search, LayoutList, PlusCircle, Users, User } from 'lucide-react'
 
 type NavItem = 'home' | 'explore' | 'matches' | 'create' | 'teams' | 'profile'
@@ -39,7 +40,10 @@ export function BottomNav() {
             <button
               key={item.id}
               type="button"
-              onClick={() => setCurrentScreen(item.id)}
+              onClick={() => {
+                persistPlayerLastNav(item.id)
+                setCurrentScreen(item.id)
+              }}
               className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
                 isCreate
                   ? 'text-primary'
