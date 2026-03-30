@@ -45,7 +45,8 @@ export default function RootLayout({
       </head>
       <body className="font-sans antialiased bg-background text-foreground">
         <Providers>{children}</Providers>
-        <Analytics />
+        {/* Solo Vercel sirve /_vercel/insights — en Netlify provoca 404 en consola */}
+        {process.env.VERCEL === '1' ? <Analytics /> : null}
       </body>
     </html>
   )
