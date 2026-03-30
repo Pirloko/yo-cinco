@@ -15,14 +15,45 @@ const brandRound = Nunito({
   display: 'swap',
 })
 
+/** URL canónica para metadatos absolutos (OG / Twitter). Definir NEXT_PUBLIC_SITE_URL en el hosting. */
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ||
+  'https://www.sportmatch.cl'
+
+const title = 'SPORTMATCH - Encuentra tu partido'
+const description =
+  'SPORTMATCH: plataforma de matchmaking para fútbol amateur 6 vs 6. Encuentra rivales, jugadores y partidos abiertos en Rancagua.'
+
 export const metadata: Metadata = {
-  title: 'SPORTMATCH - Encuentra tu partido',
-  description:
-    'SPORTMATCH: plataforma de matchmaking para fútbol amateur 6 vs 6. Encuentra rivales, jugadores y partidos abiertos en Rancagua.',
+  metadataBase: new URL(siteUrl),
+  title,
+  description,
   generator: 'v0.app',
   icons: {
     icon: [{ url: '/sportmatch-logo.png', type: 'image/png' }],
     apple: '/sportmatch-logo.png',
+  },
+  openGraph: {
+    type: 'website',
+    locale: 'es_CL',
+    url: siteUrl,
+    siteName: 'SPORTMATCH',
+    title,
+    description,
+    images: [
+      {
+        url: '/sportmatch-logo.png',
+        width: 1181,
+        height: 1653,
+        alt: 'SPORTMATCH',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title,
+    description,
+    images: ['/sportmatch-logo.png'],
   },
 }
 
