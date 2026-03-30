@@ -16,7 +16,7 @@ export const SPORTS_VENUE_SELECT_WITH_GEO =
   '*,geo_city:geo_cities!city_id(id,name,slug,region_id)'
 
 export const TEAM_SELECT_WITH_GEO =
-  '*,geo_city:geo_cities!city_id(id,name,slug)'
+  '*,geo_city:geo_cities!city_id(id,name,slug,region_id)'
 
 function mapCountryRow(r: Record<string, unknown>): GeoCountry {
   return {

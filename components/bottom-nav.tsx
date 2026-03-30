@@ -1,5 +1,7 @@
 'use client'
 
+import { usePathname, useRouter } from 'next/navigation'
+
 import { useApp } from '@/lib/app-context'
 import { persistPlayerLastNav } from '@/lib/player-nav-storage'
 import { Home, Search, LayoutList, PlusCircle, Users, User } from 'lucide-react'
@@ -7,6 +9,8 @@ import { Home, Search, LayoutList, PlusCircle, Users, User } from 'lucide-react'
 type NavItem = 'home' | 'explore' | 'matches' | 'create' | 'teams' | 'profile'
 
 export function BottomNav() {
+  const pathname = usePathname()
+  const router = useRouter()
   const { currentScreen, setCurrentScreen, currentUser } = useApp()
 
   if (currentUser?.accountType === 'venue' || currentUser?.accountType === 'admin')
@@ -42,6 +46,9 @@ export function BottomNav() {
               type="button"
               onClick={() => {
                 persistPlayerLastNav(item.id)
+                if (pathname !== '/') {
+                  router.push('/')
+                }
                 setCurrentScreen(item.id)
               }}
               className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${

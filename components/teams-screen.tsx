@@ -46,6 +46,7 @@ import {
 import { fetchTeamPrivateSettings } from '@/lib/supabase/team-queries'
 import { teamInviteAbsoluteUrl } from '@/lib/team-invite-url'
 import { saveRivalTargetTeamId } from '@/lib/rival-prefill'
+import { TEAM_ROSTER_MAX } from '@/lib/team-roster'
 
 type TeamsView = 'list' | 'create' | 'detail' | 'invite'
 
@@ -422,7 +423,7 @@ export function TeamsScreen() {
       !isUserTeam &&
       !isMember &&
       team.gender === currentUser?.gender &&
-      team.members.length < 6 &&
+      team.members.length < TEAM_ROSTER_MAX &&
       !myJoin
     const canChallenge = !isUserTeam && myCaptainTeams.length > 0
 
@@ -463,7 +464,7 @@ export function TeamsScreen() {
                   {levelLabels[team.level]}
                 </Badge>
                 <span className="text-xs text-muted-foreground">
-                  {team.members.length}/6 jugadores
+                  {team.members.length}/{TEAM_ROSTER_MAX} jugadores
                 </span>
               </div>
               {team.description && (
@@ -880,7 +881,10 @@ export function TeamsScreen() {
     const isMember = isMemberOfTeam(team)
     const myJoin = myPendingJoinForTeam(team.id)
     const incomingJoin = pendingJoinForTeam(team.id)
-    const slotsAvailable = 6 - team.members.length
+    const slotsAvailable = Math.max(
+      0,
+      TEAM_ROSTER_MAX - team.members.length
+    )
     const logoSrc = team.logo
       ? `${team.logo}${team.logo.includes('?') ? '&' : '?'}cb=${logoCacheBust}`
       : null

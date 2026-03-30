@@ -67,7 +67,10 @@ function mapTeamRow(
   t: Record<string, unknown>,
   members: TeamMember[]
 ): Team {
-  const geo = t.geo_city as { name: string } | null | undefined
+  const geo = t.geo_city as {
+    name: string
+    region_id?: string
+  } | null | undefined
   return {
     id: t.id as string,
     name: t.name as string,
@@ -77,6 +80,7 @@ function mapTeamRow(
     members,
     cityId: (t.city_id as string) ?? '',
     city: geo?.name?.trim() || (t.city as string) || '',
+    cityRegionId: geo?.region_id ?? undefined,
     gender: t.gender as Gender,
     description: (t.description as string | null) ?? undefined,
     createdAt: new Date(t.created_at as string),

@@ -52,6 +52,7 @@ import {
   fetchTeamsWithMembers,
 } from '@/lib/supabase/team-queries'
 import { fetchParticipatingOpportunityIds } from '@/lib/supabase/message-queries'
+import { TEAM_ROSTER_MAX } from '@/lib/team-roster'
 import { fetchRivalChallengesForUser } from '@/lib/supabase/rival-challenge-queries'
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js'
 import {
@@ -100,7 +101,6 @@ type AppScreen =
   | 'home'
   | 'create'
   | 'explore'
-  | 'swipe'
   | 'matches'
   | 'chat'
   | 'matchDetails'
@@ -1711,8 +1711,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    if (team.members.length >= 6) {
-      toast.error('La plantilla ya está completa (6 jugadores).')
+    if (team.members.length >= TEAM_ROSTER_MAX) {
+      toast.error(
+        `La plantilla ya está completa (${TEAM_ROSTER_MAX} jugadores).`
+      )
       return
     }
 

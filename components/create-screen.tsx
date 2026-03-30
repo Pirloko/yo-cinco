@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo, type ReactNode } from 'react'
+import { useEffect, useState, useMemo, useRef, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { useApp } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
@@ -39,6 +39,7 @@ import { resolveCityIdFromLabel } from '@/lib/supabase/geo-queries'
 import { readCreatePrefill, clearCreatePrefill } from '@/lib/create-prefill'
 import { computeVenueAvailableSlots, labelForHm } from '@/lib/venue-slots'
 import { consumeRivalTargetTeamId } from '@/lib/rival-prefill'
+import { TEAM_ROSTER_MAX } from '@/lib/team-roster'
 import {
   ArrowLeft,
   ArrowRight,
@@ -57,6 +58,7 @@ import {
   ChevronRight,
   Search,
   Info,
+  Loader2,
 } from 'lucide-react'
 
 const CREATE_MATCH_GUIDELINES: string[] = [
@@ -110,6 +112,8 @@ export function CreateScreen() {
     playersNeeded: 6,
   })
   const [isSubmitted, setIsSubmitted] = useState(false)
+  const [isPublishing, setIsPublishing] = useState(false)
+  const submitLockRef = useRef(false)
   /** Revuelta: organizador cuenta como un cupo y elige arquero o campo. */
   const [creatorIsGoalkeeper, setCreatorIsGoalkeeper] = useState(false)
   /** Buscar jugadores: qué cupos ofrece (paso 3). */
@@ -395,104 +399,113 @@ export function CreateScreen() {
     if (!matchType || !currentUser) return
     if (matchType === 'players' && !playersSeekProfile) return
 
-    const dateTime = new Date(`${formData.date}T${formData.time}`)
+    if (submitLockRef.current) return
+    submitLockRef.current = true
+    setIsPublishing(true)
 
-    if (matchType === 'reserve') {
-      if (!linkedVenueId || !formData.date || !formData.time) return
-      const venue = sportsVenuesFromDb.find((v) => v.id === linkedVenueId)
-      const res = await reserveVenueOnly({
-        sportsVenueId: linkedVenueId,
-        startsAt: dateTime,
-        durationMinutes: venue?.slotDurationMinutes ?? 60,
-      })
-      if (!res.ok) {
-        if (res.code === 'no_court') {
-          setBookingNoCourt(true)
-          setVenueTimesRefreshKey((k) => k + 1)
+    try {
+      const dateTime = new Date(`${formData.date}T${formData.time}`)
+
+      if (matchType === 'reserve') {
+        if (!linkedVenueId || !formData.date || !formData.time) return
+        const venue = sportsVenuesFromDb.find((v) => v.id === linkedVenueId)
+        const res = await reserveVenueOnly({
+          sportsVenueId: linkedVenueId,
+          startsAt: dateTime,
+          durationMinutes: venue?.slotDurationMinutes ?? 60,
+        })
+        if (!res.ok) {
+          if (res.code === 'no_court') {
+            setBookingNoCourt(true)
+            setVenueTimesRefreshKey((k) => k + 1)
+          }
+          return
         }
+        setIsSubmitted(true)
         return
       }
+
+      // Rival challenge flow (direct or open)
+      if (matchType === 'rival' && selectedTeam) {
+        if (rivalMode === 'direct' && !selectedRivalTeam) return
+        await createRivalChallenge({
+          challengerTeam: selectedTeam,
+          mode: rivalMode,
+          challengedTeam: rivalMode === 'direct' ? selectedRivalTeam ?? undefined : undefined,
+          message: formData.description,
+          venue: formData.venue,
+          location: formData.location,
+          dateTime,
+          level: formData.level,
+        })
+      } else {
+        const linked =
+          sportsVenuesFromDb.find((x) => x.id === linkedVenueId) ??
+          sportsVenuesFromDb.find((x) => x.name === formData.venue.trim())
+        let matchCityId = currentUser.cityId
+        let matchLocationLabel = formData.location
+        if (linked) {
+          matchLocationLabel = linked.city
+          if (linked.cityId?.trim()) {
+            matchCityId = linked.cityId
+          } else if (linked.city?.trim() && isSupabaseConfigured()) {
+            const resolved = await resolveCityIdFromLabel(
+              createClient(),
+              linked.city
+            )
+            if (resolved) matchCityId = resolved
+          }
+        }
+        const autoTitle =
+          matchType === 'players'
+            ? `Faltan ${formData.playersNeeded} ${
+                formData.playersNeeded === 1 ? 'jugador' : 'jugadores'
+              }`
+            : matchType === 'open'
+              ? 'Revuelta'
+              : 'Partido'
+        const res = await addMatchOpportunity({
+          type: matchType,
+          title: formData.title.trim() || autoTitle,
+          description: formData.description,
+          teamName: formData.teamName || undefined,
+          venue: formData.venue,
+          location: matchLocationLabel,
+          cityId: matchCityId,
+          dateTime,
+          level: formData.level,
+          creatorId: currentUser.id,
+          creatorName: currentUser.name,
+          creatorPhoto: currentUser.photo,
+          playersNeeded: matchType === 'rival' ? undefined : formData.playersNeeded,
+          playersJoined: matchType === 'rival' ? undefined : 0,
+          gender: currentUser.gender,
+          status: 'pending',
+          creatorIsGoalkeeper:
+            matchType === 'open' ? creatorIsGoalkeeper : undefined,
+          playersSeekProfile:
+            matchType === 'players' && playersSeekProfile
+              ? playersSeekProfile
+              : undefined,
+          sportsVenueId: linked?.id,
+          bookCourtSlot:
+            linked && bookCourtSlot ? true : undefined,
+          courtSlotMinutes: linked?.slotDurationMinutes,
+        })
+        if (!res.ok) {
+          if (res.code === 'no_court') {
+            setBookingNoCourt(true)
+            setVenueTimesRefreshKey((k) => k + 1)
+          }
+          return
+        }
+      }
+
       setIsSubmitted(true)
-      return
+    } finally {
+      submitLockRef.current = false
+      setIsPublishing(false)
     }
-
-    // Rival challenge flow (direct or open)
-    if (matchType === 'rival' && selectedTeam) {
-      if (rivalMode === 'direct' && !selectedRivalTeam) return
-      await createRivalChallenge({
-        challengerTeam: selectedTeam,
-        mode: rivalMode,
-        challengedTeam: rivalMode === 'direct' ? selectedRivalTeam ?? undefined : undefined,
-        message: formData.description,
-        venue: formData.venue,
-        location: formData.location,
-        dateTime,
-        level: formData.level,
-      })
-    } else {
-      const linked =
-        sportsVenuesFromDb.find((x) => x.id === linkedVenueId) ??
-        sportsVenuesFromDb.find((x) => x.name === formData.venue.trim())
-      let matchCityId = currentUser.cityId
-      let matchLocationLabel = formData.location
-      if (linked) {
-        matchLocationLabel = linked.city
-        if (linked.cityId?.trim()) {
-          matchCityId = linked.cityId
-        } else if (linked.city?.trim() && isSupabaseConfigured()) {
-          const resolved = await resolveCityIdFromLabel(
-            createClient(),
-            linked.city
-          )
-          if (resolved) matchCityId = resolved
-        }
-      }
-      const autoTitle =
-        matchType === 'players'
-          ? `Faltan ${formData.playersNeeded} ${
-              formData.playersNeeded === 1 ? 'jugador' : 'jugadores'
-            }`
-          : matchType === 'open'
-            ? 'Revuelta'
-            : 'Partido'
-      const res = await addMatchOpportunity({
-        type: matchType,
-        title: formData.title.trim() || autoTitle,
-        description: formData.description,
-        teamName: formData.teamName || undefined,
-        venue: formData.venue,
-        location: matchLocationLabel,
-        cityId: matchCityId,
-        dateTime,
-        level: formData.level,
-        creatorId: currentUser.id,
-        creatorName: currentUser.name,
-        creatorPhoto: currentUser.photo,
-        playersNeeded: matchType === 'rival' ? undefined : formData.playersNeeded,
-        playersJoined: matchType === 'rival' ? undefined : 0,
-        gender: currentUser.gender,
-        status: 'pending',
-        creatorIsGoalkeeper:
-          matchType === 'open' ? creatorIsGoalkeeper : undefined,
-        playersSeekProfile:
-          matchType === 'players' && playersSeekProfile
-            ? playersSeekProfile
-            : undefined,
-        sportsVenueId: linked?.id,
-        bookCourtSlot:
-          linked && bookCourtSlot ? true : undefined,
-        courtSlotMinutes: linked?.slotDurationMinutes,
-      })
-      if (!res.ok) {
-        if (res.code === 'no_court') {
-          setBookingNoCourt(true)
-          setVenueTimesRefreshKey((k) => k + 1)
-        }
-        return
-      }
-    }
-
-    setIsSubmitted(true)
   }
 
   if (isSubmitted) {
@@ -704,7 +717,7 @@ export function CreateScreen() {
                             {levelLabels[team.level]}
                           </Badge>
                           <span className="text-xs text-muted-foreground">
-                            {team.members.length}/6 jugadores
+                            {team.members.length}/{TEAM_ROSTER_MAX} jugadores
                           </span>
                         </div>
                       </div>
@@ -810,7 +823,7 @@ export function CreateScreen() {
                                   {levelLabels[team.level]}
                                 </Badge>
                                 <span className="text-xs text-muted-foreground">
-                                  {team.members.length}/6 jugadores
+                                  {team.members.length}/{TEAM_ROSTER_MAX} jugadores
                                 </span>
                               </div>
                             </div>
@@ -1047,16 +1060,26 @@ export function CreateScreen() {
             <Button
               onClick={handleSubmit}
               disabled={
+                isPublishing ||
                 !formData.venue ||
                 !formData.date ||
                 !formData.time ||
                 !selectedVenueHasChosenTime ||
                 bookingNoCourt
               }
+              aria-busy={isPublishing}
               className="w-full h-14 mt-4 bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
             >
-              <Swords className="w-5 h-5 mr-2" />
-              {rivalMode === 'direct' ? 'Enviar desafío' : 'Publicar búsqueda de rival'}
+              {isPublishing ? (
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" aria-hidden />
+              ) : (
+                <Swords className="w-5 h-5 mr-2" />
+              )}
+              {isPublishing
+                ? 'Publicando…'
+                : rivalMode === 'direct'
+                  ? 'Enviar desafío'
+                  : 'Publicar búsqueda de rival'}
             </Button>
           </div>
         )}
@@ -1452,15 +1475,26 @@ export function CreateScreen() {
             <Button
               onClick={handleSubmit}
               disabled={
+                isPublishing ||
                 !formData.venue ||
                 !formData.date ||
                 !formData.time ||
                 !selectedVenueHasChosenTime ||
                 bookingNoCourt
               }
+              aria-busy={isPublishing}
               className="w-full h-14 mt-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              {matchType === 'players' ? 'Publicar búsqueda rápida' : 'Publicar'}
+              {isPublishing ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin shrink-0" aria-hidden />
+                  Publicando…
+                </>
+              ) : matchType === 'players' ? (
+                'Publicar búsqueda rápida'
+              ) : (
+                'Publicar'
+              )}
             </Button>
           </div>
         )}
@@ -1578,15 +1612,24 @@ export function CreateScreen() {
             <Button
               onClick={handleSubmit}
               disabled={
+                isPublishing ||
                 !linkedVenueId ||
                 !formData.date ||
                 !formData.time ||
                 !selectedVenueHasChosenTime ||
                 bookingNoCourt
               }
+              aria-busy={isPublishing}
               className="w-full h-14 mt-2 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              Reservar cancha
+              {isPublishing ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin shrink-0" aria-hidden />
+                  Reservando…
+                </>
+              ) : (
+                'Reservar cancha'
+              )}
             </Button>
           </div>
         )}

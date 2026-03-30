@@ -143,6 +143,8 @@ export interface Team {
   members: TeamMember[]
   cityId: string
   city: string
+  /** Región de la ciudad del equipo (`geo_cities.region_id`), fija al crear el equipo. */
+  cityRegionId?: string
   gender: Gender
   description?: string
   createdAt: Date

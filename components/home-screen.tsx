@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 
 import { useApp } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
 import { MatchCard } from '@/components/match-card'
 import { Button } from '@/components/ui/button'
-import { Target, Users, Shuffle, Sparkles, Bell } from 'lucide-react'
+import { Target, Users, Shuffle, Sparkles, Bell, ChevronRight } from 'lucide-react'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import { MatchOpportunity, MatchType } from '@/lib/types'
 import { JoinRevueltaDialog } from '@/components/join-revuelta-dialog'
@@ -16,6 +17,7 @@ import { RegionCityFilterSelect } from '@/components/region-city-filter'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 import { fetchGeoCitiesWithVenuesInRegion } from '@/lib/supabase/venue-queries'
 import { compareMatchOpportunitiesByFillUrgency } from '@/lib/match-spots'
+import { TEAM_ROSTER_MAX } from '@/lib/team-roster'
 
 type FilterType = 'all' | MatchType
 
@@ -229,45 +231,36 @@ export function HomeScreen() {
         </div>
       </div>
 
-      {/* Discover Teams Banner */}
-      <div className="px-4 mb-4">
-        <button 
-          type="button"
-          onClick={() => setCurrentScreen('teams')}
-          className="w-full p-4 bg-gradient-to-r from-primary/20 to-accent/20 rounded-2xl border border-primary/30 flex items-center justify-between group hover:border-primary/50 transition-all"
+      {/* Descubre equipos → pantalla /swipe */}
+      <div className="px-4 mb-6">
+        <Link
+          href="/swipe"
+          className="flex w-full items-center justify-between gap-3 rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/20 to-accent/20 p-4 text-left transition-all hover:border-primary/50 group"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-              <Sparkles className="w-6 h-6 text-primary" />
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/20">
+              <Sparkles className="h-6 w-6 text-primary" aria-hidden />
             </div>
-            <div className="text-left">
+            <div className="min-w-0">
               <p className="font-semibold text-foreground">Descubre equipos</p>
-              <p className="text-sm text-muted-foreground">Solicita unirte o desafía</p>
+              <p className="text-sm text-muted-foreground">
+                Solicita unirte o desafía
+              </p>
             </div>
           </div>
-          <div className="text-primary group-hover:translate-x-1 transition-transform">
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </div>
-        </button>
+          <ChevronRight
+            className="h-6 w-6 shrink-0 text-primary transition-transform group-hover:translate-x-0.5"
+            aria-hidden
+          />
+        </Link>
       </div>
 
       {/* Match Feed */}
       <div className="px-4 space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold text-foreground">
-              Oportunidades cerca de ti
-            </h2>
-            <button
-              type="button"
-              onClick={() => setCurrentScreen('explore')}
-              className="text-sm text-primary hover:underline shrink-0"
-            >
-              Ver todas
-            </button>
-          </div>
+          <h2 className="text-lg font-semibold text-foreground">
+            Oportunidades cerca de ti
+          </h2>
           <RegionCityFilterSelect
             cities={cityFilterOptions}
             value={cityFilter}
@@ -362,7 +355,9 @@ export function HomeScreen() {
                 }}
               >
                 <p className="font-medium text-foreground">{team.name}</p>
-                <p className="text-xs text-muted-foreground">{team.members.length}/6 jugadores</p>
+                <p className="text-xs text-muted-foreground">
+                  {team.members.length}/{TEAM_ROSTER_MAX} jugadores
+                </p>
               </button>
             ))}
             <Button
