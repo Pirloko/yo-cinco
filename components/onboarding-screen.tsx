@@ -12,7 +12,6 @@ import {
   ArrowRight,
   User,
   Calendar,
-  MapPin,
   Star,
   Clock,
   Camera,
@@ -22,6 +21,7 @@ import {
 } from 'lucide-react'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 import { uploadProfileAvatarFile } from '@/lib/supabase/profile-photo'
+import { GeoLocationSelect } from '@/components/geo-location-select'
 
 const POSITIONS: { value: Position; label: string }[] = [
   { value: 'portero', label: 'Portero' },
@@ -59,6 +59,7 @@ export function OnboardingScreen() {
     level: 'intermedio',
     availability: [],
     city: 'Rancagua',
+    cityId: '',
     photo: '',
   })
 
@@ -76,6 +77,7 @@ export function OnboardingScreen() {
       level: currentUser.level,
       availability: [...currentUser.availability],
       city: currentUser.city,
+      cityId: currentUser.cityId,
       photo: currentUser.photo || '',
     })
     setStep(1)
@@ -229,19 +231,17 @@ export function OnboardingScreen() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="city" className="text-foreground flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-primary" />
-                  Ciudad
-                </Label>
-                <Input
-                  id="city"
-                  placeholder="Tu ciudad"
-                  value={data.city}
-                  onChange={(e) => setData({ ...data, city: e.target.value })}
-                  className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
-                />
-              </div>
+              <GeoLocationSelect
+                cityId={data.cityId}
+                onChange={(next) =>
+                  setData({
+                    ...data,
+                    cityId: next.cityId,
+                    city: next.cityLabel,
+                  })
+                }
+                label="Ciudad / ubicación"
+              />
 
               <div className="space-y-2">
                 <Label htmlFor="whatsappPhone" className="text-foreground flex items-center gap-2">

@@ -26,17 +26,25 @@ import {
   User,
 } from './types'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import { getPublicSiteOrigin } from '@/lib/site-url'
 import {
   mapMatchOpportunityFromDb,
   DEFAULT_AVATAR,
   type MatchOpportunityRow,
 } from '@/lib/supabase/mappers'
 import { formatAuthError } from '@/lib/supabase/auth-errors'
+import { payOrganizerToastMessage } from '@/lib/court-pricing'
 import {
   fetchMatchOpportunities,
   fetchOtherProfiles,
   fetchProfileForUser,
 } from '@/lib/supabase/queries'
+import {
+  MATCH_OPPORTUNITY_SELECT_WITH_GEO,
+  TEAM_SELECT_WITH_GEO,
+  fetchDefaultCityId,
+  resolveCityIdFromLabel,
+} from '@/lib/supabase/geo-queries'
 import {
   fetchTeamInvitesForUser,
   fetchTeamJoinRequestsForUser,
@@ -482,8 +490,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     try {
       const supabase = createClient()
-      const origin =
-        typeof window !== 'undefined' ? window.location.origin : ''
+      const origin = getPublicSiteOrigin()
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -533,6 +540,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (currentUser.accountType !== 'player') return
     const supabase = createClient()
     const photo = data.photo || DEFAULT_AVATAR
+    let nextCityId = data.cityId?.trim()
+      ? data.cityId.trim()
+      : (await resolveCityIdFromLabel(supabase, data.city)) ?? currentUser.cityId
     const { error } = await supabase
       .from('profiles')
       .update({
@@ -543,6 +553,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         position: data.position,
         level: data.level,
         city: data.city,
+        city_id: nextCityId,
         availability: data.availability,
         photo_url: photo,
       })
@@ -553,14 +564,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    setCurrentUser({
-      ...currentUser,
-      ...data,
-      whatsappPhone: data.whatsappPhone.trim(),
-      photo,
-      email: currentUser.email,
-      createdAt: currentUser.createdAt,
-    })
+    const refreshed = await fetchProfileForUser(
+      supabase,
+      currentUser.id,
+      currentUser.email
+    )
+    if (refreshed) {
+      setCurrentUser(refreshed)
+    } else {
+      setCurrentUser({
+        ...currentUser,
+        ...data,
+        cityId: nextCityId,
+        whatsappPhone: data.whatsappPhone.trim(),
+        photo,
+        email: currentUser.email,
+        createdAt: currentUser.createdAt,
+      })
+    }
     if (onboardingSource === 'profile_edit') {
       setOnboardingSource('registration')
       toast.success('Perfil actualizado')
@@ -587,12 +608,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       180,
       Math.max(15, Math.round(data.slotDurationMinutes) || 60)
     )
+    let venueCityId = data.cityId.trim()
+    if (!venueCityId) {
+      venueCityId = (await fetchDefaultCityId(supabase)) ?? ''
+    }
+    if (!venueCityId) {
+      toast.error('No se pudo determinar la ciudad. Espera un momento e intenta de nuevo.')
+      return
+    }
     const { error: insErr } = await supabase.from('sports_venues').insert({
       owner_id: currentUser.id,
       name: data.name.trim(),
       address: data.address.trim(),
       phone: data.phone.trim(),
       city: data.city.trim() || 'Rancagua',
+      city_id: venueCityId,
       maps_url: data.mapsUrl?.trim() || null,
       slot_duration_minutes: slot,
     })
@@ -658,12 +688,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reservationId = resRpc as string
     }
 
+    const cityId = m.cityId || currentUser.cityId
     const insert: Record<string, unknown> = {
       type: m.type,
       title: m.title,
       description: m.description ?? null,
       location: m.location,
       venue: m.venue,
+      city_id: cityId,
       date_time: m.dateTime.toISOString(),
       level: m.level,
       creator_id: m.creatorId,
@@ -682,7 +714,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase
       .from('match_opportunities')
       .insert(insert)
-      .select('*')
+      .select(MATCH_OPPORTUNITY_SELECT_WITH_GEO)
       .single()
 
     if (error) {
@@ -930,7 +962,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setMatchOpportunities(matches)
     setSelectedChatOpportunityId(opportunityId)
     setCurrentScreen('chat')
-    toast.success('¡Te uniste al partido! Coordina aquí con el grupo.')
+    const joinedFresh = matches.find((m) => m.id === opportunityId)
+    const payLine = joinedFresh
+      ? payOrganizerToastMessage(joinedFresh)
+      : null
+    toast.success(
+      payLine
+        ? `¡Te uniste al partido! Coordina en el chat. ${payLine}`
+        : '¡Te uniste al partido! Coordina aquí con el grupo.'
+    )
   }
 
   const randomizeRevueltaTeams = async (
@@ -1148,7 +1188,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   const getFilteredMatches = (gender: Gender) => {
-    return matchOpportunities.filter((m) => m.gender === gender)
+    const userRegion = currentUser?.regionId
+    return matchOpportunities.filter((m) => {
+      if (m.gender !== gender) return false
+      if (!userRegion) return true
+      if (!m.cityRegionId) return true
+      return m.cityRegionId === userRegion
+    })
   }
 
   const getFilteredUsers = (gender: Gender) => {
@@ -1168,10 +1214,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         level: team.level,
         captain_id: team.captainId,
         city: team.city,
+        city_id: team.cityId,
         gender: team.gender,
         description: team.description ?? null,
       })
-      .select('*')
+      .select(TEAM_SELECT_WITH_GEO)
       .single()
 
     if (error) {
@@ -1378,6 +1425,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? `Desafío directo de ${payload.challengerTeam.name}`
         : `${payload.challengerTeam.name} está buscando rival`)
 
+    const rivalCityId =
+      (await resolveCityIdFromLabel(supabase, payload.location)) ??
+      currentUser.cityId
+
     const { data: oppData, error: oppErr } = await supabase
       .from('match_opportunities')
       .insert({
@@ -1386,6 +1437,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         description,
         location: payload.location,
         venue: payload.venue,
+        city_id: rivalCityId,
         date_time: payload.dateTime.toISOString(),
         level: payload.level,
         creator_id: currentUser.id,
@@ -1393,7 +1445,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         gender: currentUser.gender,
         status: 'pending',
       })
-      .select('*')
+      .select(MATCH_OPPORTUNITY_SELECT_WITH_GEO)
       .single()
 
     if (oppErr || !oppData) {

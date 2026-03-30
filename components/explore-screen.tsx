@@ -1,191 +1,193 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useApp } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
-import { MatchCard } from '@/components/match-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
-import { fetchSportsVenuesList } from '@/lib/supabase/venue-queries'
-import { Level, MatchOpportunity, MatchType, type SportsVenue } from '@/lib/types'
-import { JoinRevueltaDialog } from '@/components/join-revuelta-dialog'
-import { JoinPlayersSearchDialog } from '@/components/join-players-search-dialog'
-import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import {
-  Search,
-  SlidersHorizontal,
-  X,
-  Target,
-  Users,
-  Shuffle,
-  Star,
-  MapPin,
-  Building2,
-} from 'lucide-react'
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  fetchGeoCitiesWithVenuesInRegion,
+  fetchSportsVenuesInRegion,
+  fetchSportsVenuesList,
+  fetchVenueCourts,
+  fetchVenueReservationsRange,
+  fetchVenueWeeklyHours,
+} from '@/lib/supabase/venue-queries'
+import type { SportsVenue } from '@/lib/types'
+import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
+import { Search, X, MapPin, Building2, CalendarRange, Clock } from 'lucide-react'
+import { RegionCityFilterSelect } from '@/components/region-city-filter'
+import { findNextVenueSlot } from '@/lib/venue-slots'
+import { format } from 'date-fns'
+import { es } from 'date-fns/locale'
+import { writeCreatePrefill } from '@/lib/create-prefill'
+
+const HORIZON_OPTIONS = [
+  { days: 1, label: 'Hoy' },
+  { days: 3, label: '3 días' },
+  { days: 7, label: '7 días' },
+  { days: 14, label: '14 días' },
+] as const
+
+type AvailabilityRow = {
+  venueId: string
+  venueName: string
+  city: string
+  totalCourts: number
+  nextSlotAt: Date | null
+  freeCourtsAtNextSlot: number
+}
 
 export function ExploreScreen() {
-  const {
-    currentUser,
-    getFilteredMatches,
-    getUserTeams,
-    setCurrentScreen,
-    setSelectedMatchOpportunityId,
-    joinMatchOpportunity,
-    acceptRivalOpportunityWithTeam,
-    participatingOpportunityIds,
-  } = useApp()
-  const [joiningId, setJoiningId] = useState<string | null>(null)
-  const [revueltaJoinOpp, setRevueltaJoinOpp] = useState<MatchOpportunity | null>(
-    null
-  )
-  const [playersJoinOpp, setPlayersJoinOpp] = useState<MatchOpportunity | null>(
-    null
-  )
-  const [rivalPickOppId, setRivalPickOppId] = useState<string | null>(null)
+  const { currentUser, setCurrentScreen } = useApp()
   const [searchQuery, setSearchQuery] = useState('')
-  const [showFilters, setShowFilters] = useState(false)
-  const [filters, setFilters] = useState<{
-    types: MatchType[]
-    levels: Level[]
-  }>({
-    types: [],
-    levels: [],
-  })
   const [publicVenues, setPublicVenues] = useState<SportsVenue[]>([])
+  const [cityFilter, setCityFilter] = useState('')
+  const [cityFilterOptions, setCityFilterOptions] = useState<
+    Array<{ id: string; name: string }>
+  >([])
+  const [horizonDays, setHorizonDays] = useState(7)
+  const [availabilityRows, setAvailabilityRows] = useState<AvailabilityRow[]>([])
+  const [loadingAvailability, setLoadingAvailability] = useState(false)
+
+  useEffect(() => {
+    if (!currentUser?.regionId || !isSupabaseConfigured()) {
+      setCityFilterOptions([])
+      setCityFilter('')
+      return
+    }
+    void fetchGeoCitiesWithVenuesInRegion(
+      createClient(),
+      currentUser.regionId
+    ).then(setCityFilterOptions)
+  }, [currentUser?.regionId])
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return
     const supabase = createClient()
-    void fetchSportsVenuesList(supabase).then(setPublicVenues)
-  }, [])
-
-  const allMatches = currentUser
-    ? getFilteredMatches(currentUser.gender).filter(
-        (m) => m.status === 'pending' || m.status === 'confirmed'
-      )
-    : []
-
-  const midnight = new Date()
-  midnight.setHours(0, 0, 0, 0)
-  const visibleMatches = allMatches.filter(
-    (m) => m.dateTime.getTime() >= midnight.getTime()
-  )
-
-  const filteredMatches = visibleMatches.filter((match) => {
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      const matchesSearch = 
-        match.title.toLowerCase().includes(query) ||
-        match.venue.toLowerCase().includes(query) ||
-        match.teamName?.toLowerCase().includes(query) ||
-        match.location.toLowerCase().includes(query)
-      if (!matchesSearch) return false
-    }
-
-    // Type filter
-    if (filters.types.length > 0 && !filters.types.includes(match.type)) {
-      return false
-    }
-
-    // Level filter
-    if (filters.levels.length > 0 && !filters.levels.includes(match.level)) {
-      return false
-    }
-
-    return true
-  })
-
-  const toggleType = (type: MatchType) => {
-    if (filters.types.includes(type)) {
-      setFilters({ ...filters, types: filters.types.filter(t => t !== type) })
-    } else {
-      setFilters({ ...filters, types: [...filters.types, type] })
-    }
-  }
-
-  const toggleLevel = (level: Level) => {
-    if (filters.levels.includes(level)) {
-      setFilters({ ...filters, levels: filters.levels.filter(l => l !== level) })
-    } else {
-      setFilters({ ...filters, levels: [...filters.levels, level] })
-    }
-  }
-
-  const clearFilters = () => {
-    setFilters({ types: [], levels: [] })
-    setSearchQuery('')
-  }
-
-  const activeFilterCount = filters.types.length + filters.levels.length
-
-  const captainTeams = getUserTeams().filter((t) => t.captainId === currentUser?.id)
-
-  const handleJoin = async (
-    opportunityId: string,
-    isOwn: boolean,
-    type: MatchType
-  ) => {
-    if (isOwn) {
-      setSelectedMatchOpportunityId(opportunityId)
-      setCurrentScreen('matchDetails')
-      return
-    }
-
-    if (type === 'rival') {
-      if (captainTeams.length === 0) {
-        setCurrentScreen('teams')
-        return
-      }
-      if (captainTeams.length === 1) {
-        await acceptRivalOpportunityWithTeam(opportunityId, captainTeams[0].id)
+    void (async () => {
+      if (currentUser?.regionId) {
+        setPublicVenues(await fetchSportsVenuesInRegion(supabase, currentUser.regionId))
       } else {
-        setRivalPickOppId(opportunityId)
+        setPublicVenues(await fetchSportsVenuesList(supabase))
       }
+    })()
+  }, [currentUser?.regionId])
+
+  const displayedVenues = useMemo(() => {
+    let v = publicVenues
+    if (cityFilter) v = v.filter((x) => x.cityId === cityFilter)
+    const q = searchQuery.trim().toLowerCase()
+    if (q) {
+      v = v.filter(
+        (x) =>
+          x.name.toLowerCase().includes(q) || x.city.toLowerCase().includes(q)
+      )
+    }
+    return v
+  }, [publicVenues, cityFilter, searchQuery])
+
+  useEffect(() => {
+    if (!isSupabaseConfigured() || displayedVenues.length === 0) {
+      setAvailabilityRows([])
+      setLoadingAvailability(false)
       return
     }
+    let cancelled = false
+    setLoadingAvailability(true)
+    const now = new Date()
+    const to = new Date(now)
+    to.setDate(to.getDate() + horizonDays)
+    const supabase = createClient()
 
-    if (type === 'open') {
-      const m = filteredMatches.find((x) => x.id === opportunityId)
-      if (m) setRevueltaJoinOpp(m)
-      return
-    }
+    void (async () => {
+      const results = await Promise.all(
+        displayedVenues.map(async (venue) => {
+          const [courts, weeklyHours, reservations] = await Promise.all([
+            fetchVenueCourts(supabase, venue.id),
+            fetchVenueWeeklyHours(supabase, venue.id),
+            fetchVenueReservationsRange(
+              supabase,
+              venue.id,
+              new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+              to.toISOString()
+            ),
+          ])
+          const next = findNextVenueSlot({
+            slotDurationMinutes: venue.slotDurationMinutes,
+            courtsCount: courts.length,
+            weeklyHours,
+            reservations,
+            horizonDays,
+            now,
+          })
+          return {
+            venueId: venue.id,
+            venueName: venue.name,
+            city: venue.city,
+            totalCourts: courts.length,
+            nextSlotAt: next.nextSlotAt,
+            freeCourtsAtNextSlot: next.freeCourtsAtNextSlot,
+          } satisfies AvailabilityRow
+        })
+      )
+      if (cancelled) return
+      const withSlot = results.filter((r) => r.nextSlotAt != null) as Array<
+        AvailabilityRow & { nextSlotAt: Date }
+      >
+      const withoutSlot = results.filter((r) => r.nextSlotAt == null)
+      withSlot.sort(
+        (a, b) => a.nextSlotAt.getTime() - b.nextSlotAt.getTime()
+      )
+      setAvailabilityRows([...withSlot, ...withoutSlot])
+      setLoadingAvailability(false)
+    })()
 
-    if (type === 'players') {
-      const m = filteredMatches.find((x) => x.id === opportunityId)
-      if (m) setPlayersJoinOpp(m)
-      return
+    return () => {
+      cancelled = true
     }
+  }, [displayedVenues, horizonDays])
 
-    setJoiningId(opportunityId)
-    try {
-      await joinMatchOpportunity(opportunityId)
-    } finally {
-      setJoiningId(null)
-    }
+  const goToQuickCreate = (row: AvailabilityRow) => {
+    if (!row.nextSlotAt) return
+    writeCreatePrefill({
+      sportsVenueId: row.venueId,
+      venueLabel: row.venueName,
+      city: row.city,
+      date: format(row.nextSlotAt, 'yyyy-MM-dd'),
+      time: format(row.nextSlotAt, 'HH:mm'),
+      bookCourtSlot: true,
+    })
+    setCurrentScreen('create')
   }
 
   return (
     <div className="min-h-screen bg-background pb-20">
-      {/* Header */}
       <header className="sticky top-0 z-10 space-y-4 border-b border-border bg-background/95 p-4 backdrop-blur-sm">
-        <AppScreenBrandHeading title="Explorar" />
+        <AppScreenBrandHeading title="Explorar" subtitle="Centros deportivos y próximos horarios libres" />
 
-        {/* Search Bar */}
-        <div className="flex gap-2">
-          <div className="flex-1 relative">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
+          <div className="flex-1 relative min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
             <Input
-              placeholder="Buscar partidos, canchas..."
+              placeholder="Buscar centros..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
             />
             {searchQuery && (
               <button
+                type="button"
                 onClick={() => setSearchQuery('')}
                 className="absolute right-3 top-1/2 -translate-y-1/2"
               >
@@ -193,101 +195,41 @@ export function ExploreScreen() {
               </button>
             )}
           </div>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setShowFilters(!showFilters)}
-            className={`h-12 w-12 border-border relative ${showFilters ? 'bg-primary/10 border-primary' : ''}`}
-          >
-            <SlidersHorizontal className={`w-5 h-5 ${showFilters ? 'text-primary' : 'text-muted-foreground'}`} />
-            {activeFilterCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-primary text-primary-foreground text-xs rounded-full flex items-center justify-center">
-                {activeFilterCount}
-              </span>
-            )}
-          </Button>
-        </div>
-
-        {/* Filters Panel */}
-        {showFilters && (
-          <div className="space-y-4 pt-2">
-            {/* Type Filters */}
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-muted-foreground">Tipo de partido</p>
-              <div className="flex gap-2 flex-wrap">
-                <FilterChip
-                  icon={<Target className="w-4 h-4" />}
-                  label="Rivales"
-                  active={filters.types.includes('rival')}
-                  onClick={() => toggleType('rival')}
-                />
-                <FilterChip
-                  icon={<Users className="w-4 h-4" />}
-                  label="Jugadores"
-                  active={filters.types.includes('players')}
-                  onClick={() => toggleType('players')}
-                />
-                <FilterChip
-                  icon={<Shuffle className="w-4 h-4" />}
-                  label="Revueltas"
-                  active={filters.types.includes('open')}
-                  onClick={() => toggleType('open')}
-                />
-              </div>
-            </div>
-
-            {/* Level Filters */}
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-muted-foreground">Nivel</p>
-              <div className="flex gap-2 flex-wrap">
-                <FilterChip
-                  icon={<Star className="w-4 h-4" />}
-                  label="Principiante"
-                  active={filters.levels.includes('principiante')}
-                  onClick={() => toggleLevel('principiante')}
-                />
-                <FilterChip
-                  icon={<Star className="w-4 h-4" />}
-                  label="Intermedio"
-                  active={filters.levels.includes('intermedio')}
-                  onClick={() => toggleLevel('intermedio')}
-                />
-                <FilterChip
-                  icon={<Star className="w-4 h-4" />}
-                  label="Avanzado"
-                  active={filters.levels.includes('avanzado')}
-                  onClick={() => toggleLevel('avanzado')}
-                />
-                <FilterChip
-                  icon={<Star className="w-4 h-4" />}
-                  label="Competitivo"
-                  active={filters.levels.includes('competitivo')}
-                  onClick={() => toggleLevel('competitivo')}
-                />
-              </div>
-            </div>
-
-            {activeFilterCount > 0 && (
-              <Button
-                variant="ghost"
-                className="text-muted-foreground hover:text-foreground"
-                onClick={clearFilters}
-              >
-                Limpiar filtros
-              </Button>
-            )}
+          <RegionCityFilterSelect
+            className="sm:shrink-0"
+            cities={cityFilterOptions}
+            value={cityFilter}
+            onChange={setCityFilter}
+          />
+          <div className="flex items-center gap-2 sm:shrink-0">
+            <CalendarRange className="w-4 h-4 text-muted-foreground hidden sm:block" />
+            <Select
+              value={String(horizonDays)}
+              onValueChange={(v) => setHorizonDays(Number(v))}
+            >
+              <SelectTrigger className="h-12 w-full sm:w-[140px] bg-secondary border-border">
+                <SelectValue placeholder="Ventana" />
+              </SelectTrigger>
+              <SelectContent>
+                {HORIZON_OPTIONS.map((o) => (
+                  <SelectItem key={o.days} value={String(o.days)}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        )}
+        </div>
       </header>
 
-      {publicVenues.length > 0 ? (
-        <section className="px-4 pt-2 pb-1 space-y-2 border-b border-border/60">
+      {displayedVenues.length > 0 ? (
+        <section className="px-4 pt-4 pb-2 space-y-2">
           <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
             <Building2 className="w-4 h-4 text-primary" />
             Centros deportivos
           </h2>
-          <div className="flex gap-2 overflow-x-auto pb-3 -mx-1 px-1">
-            {publicVenues.map((v) => (
+          <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+            {displayedVenues.map((v) => (
               <Link key={v.id} href={`/centro/${v.id}`} className="shrink-0 w-[200px]">
                 <Card className="bg-card border-border hover:border-primary/40 transition-colors">
                   <CardContent className="p-3 space-y-1">
@@ -304,149 +246,103 @@ export function ExploreScreen() {
             ))}
           </div>
         </section>
-      ) : null}
-
-      {/* Results */}
-      <div className="p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {filteredMatches.length} {filteredMatches.length === 1 ? 'resultado' : 'resultados'}
-          </p>
-          {searchQuery && (
-            <div className="flex items-center gap-1 text-sm text-muted-foreground">
-              <MapPin className="w-4 h-4" />
-              <span>Rancagua</span>
-            </div>
-          )}
-        </div>
-
-        {filteredMatches.length > 0 ? (
-          <div className="space-y-4">
-            {filteredMatches.map((match) => (
-              <MatchCard
-                key={match.id}
-                match={match}
-                isOwn={currentUser?.id === match.creatorId}
-                isJoined={participatingOpportunityIds.includes(match.id)}
-                joining={joiningId === match.id}
-                onViewDetails={() => {
-                  setSelectedMatchOpportunityId(match.id)
-                  setCurrentScreen('matchDetails')
-                }}
-                currentUserId={currentUser?.id}
-                onJoin={() =>
-                  handleJoin(
-                    match.id,
-                    currentUser?.id === match.creatorId,
-                    match.type
-                  )
-                }
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mx-auto mb-4">
-              <Search className="w-8 h-8 text-muted-foreground" />
-            </div>
-            <p className="text-muted-foreground">
-              No encontramos partidos con estos filtros
-            </p>
-            <Button
-              variant="link"
-              className="text-primary mt-2"
-              onClick={clearFilters}
-            >
-              Limpiar filtros
-            </Button>
-          </div>
-        )}
-      </div>
-
-      <JoinRevueltaDialog
-        open={revueltaJoinOpp !== null}
-        onOpenChange={(open) => {
-          if (!open) setRevueltaJoinOpp(null)
-        }}
-        opportunity={revueltaJoinOpp}
-        onJoin={async (isGk) => {
-          if (!revueltaJoinOpp) return
-          await joinMatchOpportunity(revueltaJoinOpp.id, {
-            isGoalkeeper: isGk,
-          })
-        }}
-      />
-
-      <JoinPlayersSearchDialog
-        open={playersJoinOpp !== null}
-        onOpenChange={(open) => {
-          if (!open) setPlayersJoinOpp(null)
-        }}
-        opportunity={playersJoinOpp}
-        onJoin={async (isGk) => {
-          if (!playersJoinOpp) return
-          await joinMatchOpportunity(playersJoinOpp.id, {
-            isGoalkeeper: isGk,
-          })
-        }}
-      />
-
-      {rivalPickOppId && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end">
-          <div className="w-full rounded-t-2xl bg-card border-t border-border p-4 space-y-3">
-            <p className="font-semibold text-foreground">Selecciona tu equipo para desafiar</p>
-            {captainTeams.map((team) => (
-              <button
-                key={team.id}
-                type="button"
-                className="w-full text-left p-3 rounded-xl border border-border hover:border-primary/50"
-                onClick={() => {
-                  void acceptRivalOpportunityWithTeam(rivalPickOppId, team.id)
-                  setRivalPickOppId(null)
-                }}
-              >
-                <p className="font-medium text-foreground">{team.name}</p>
-                <p className="text-xs text-muted-foreground">{team.members.length}/6 jugadores</p>
-              </button>
-            ))}
-            <Button
-              variant="ghost"
-              className="w-full"
-              onClick={() => setRivalPickOppId(null)}
-            >
-              Cancelar
-            </Button>
-          </div>
+      ) : (
+        <div className="px-4 pt-6 text-center text-sm text-muted-foreground">
+          No hay centros que coincidan con tu búsqueda o ciudad.
         </div>
       )}
 
+      <section className="px-4 py-4 space-y-3">
+        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Clock className="w-4 h-4 text-primary" />
+          Próximos horarios disponibles
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          Ordenados del turno libre más cercano al más lejano (ventana:{' '}
+          {HORIZON_OPTIONS.find((o) => o.days === horizonDays)?.label ?? `${horizonDays} días`}).
+        </p>
+
+        {loadingAvailability && displayedVenues.length > 0 ? (
+          <p className="text-sm text-muted-foreground">Calculando disponibilidad…</p>
+        ) : availabilityRows.length === 0 && !loadingAvailability ? (
+          <p className="text-sm text-muted-foreground">
+            No hay datos de horarios para mostrar.
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-border">
+            <table className="w-full min-w-[320px] text-sm">
+              <thead>
+                <tr className="border-b border-border bg-secondary/40 text-left text-muted-foreground">
+                  <th className="px-3 py-2 font-medium">Centro</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">Canchas libres</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap">Próximo horario</th>
+                  <th className="px-3 py-2 font-medium whitespace-nowrap text-right">
+                    Acción
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {availabilityRows.map((row) => (
+                  <tr
+                    key={row.venueId}
+                    className="border-b border-border/80 last:border-0"
+                  >
+                    <td className="px-3 py-2.5 align-top">
+                      <Link
+                        href={`/centro/${row.venueId}`}
+                        className="font-medium text-foreground hover:text-primary hover:underline"
+                      >
+                        {row.venueName}
+                      </Link>
+                      <p className="text-xs text-muted-foreground mt-0.5">{row.city}</p>
+                    </td>
+                    <td className="px-3 py-2.5 align-top whitespace-nowrap">
+                      {row.totalCourts <= 0 ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : row.nextSlotAt == null ? (
+                        <span className="text-muted-foreground">Sin cupo</span>
+                      ) : (
+                        <span className="text-foreground">
+                          {row.freeCourtsAtNextSlot}/{row.totalCourts}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 align-top whitespace-nowrap text-muted-foreground">
+                      {row.nextSlotAt ? (
+                        <span className="text-foreground">
+                          {format(row.nextSlotAt, "EEE d MMM · HH:mm", {
+                            locale: es,
+                          })}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="px-3 py-2 align-middle text-right">
+                      {row.nextSlotAt ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={() => goToQuickCreate(row)}
+                        >
+                          Reservar
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" asChild className="shrink-0">
+                          <Link href={`/centro/${row.venueId}`}>Ver centro</Link>
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       <BottomNav />
     </div>
-  )
-}
-
-function FilterChip({
-  icon,
-  label,
-  active,
-  onClick,
-}: {
-  icon: React.ReactNode
-  label: string
-  active: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-2 px-3 py-2 rounded-full border transition-all ${
-        active
-          ? 'bg-primary text-primary-foreground border-primary'
-          : 'bg-secondary text-muted-foreground border-border hover:border-primary/50'
-      }`}
-    >
-      {icon}
-      <span className="text-sm">{label}</span>
-    </button>
   )
 }

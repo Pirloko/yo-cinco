@@ -36,6 +36,7 @@ import {
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { playersSeekProfileLabel } from '@/lib/players-seek-profile'
+import { MatchCourtPricingBlock } from '@/components/match-court-pricing'
 
 export function MatchDetailsScreen() {
   const {
@@ -406,6 +407,8 @@ export function MatchDetailsScreen() {
               </div>
             )}
           </div>
+
+          <MatchCourtPricingBlock opportunity={opportunity} />
 
           {reservationState ? (
             <div className="rounded-xl border border-border bg-secondary/30 p-3 space-y-2">

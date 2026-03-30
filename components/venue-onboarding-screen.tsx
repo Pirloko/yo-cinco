@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
+import { GeoLocationSelect } from '@/components/geo-location-select'
 import { useApp } from '@/lib/app-context'
 import { ArrowLeft, MapPin } from 'lucide-react'
 
@@ -15,6 +16,7 @@ export function VenueOnboardingScreen() {
     address: '',
     phone: '',
     city: 'Rancagua',
+    cityId: '',
     mapsUrl: '',
     slotDurationMinutes: 60,
   })
@@ -30,6 +32,7 @@ export function VenueOnboardingScreen() {
         address: form.address.trim(),
         phone: form.phone.trim(),
         city: form.city.trim() || 'Rancagua',
+        cityId: form.cityId,
         mapsUrl: form.mapsUrl.trim() || null,
         slotDurationMinutes: Math.min(
           180,
@@ -90,15 +93,17 @@ export function VenueOnboardingScreen() {
               className="bg-secondary border-border"
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="v-city">Ciudad</Label>
-            <Input
-              id="v-city"
-              value={form.city}
-              onChange={(e) => setForm({ ...form, city: e.target.value })}
-              className="bg-secondary border-border"
-            />
-          </div>
+          <GeoLocationSelect
+            cityId={form.cityId}
+            onChange={(next) =>
+              setForm({
+                ...form,
+                cityId: next.cityId,
+                city: next.cityLabel,
+              })
+            }
+            label="Ubicación del centro"
+          />
           <div className="space-y-2">
             <Label htmlFor="v-phone">Teléfono</Label>
             <Input

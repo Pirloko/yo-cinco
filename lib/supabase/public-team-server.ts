@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import type { Gender, Level, Position } from '@/lib/types'
 import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
+import { TEAM_SELECT_WITH_GEO } from '@/lib/supabase/geo-queries'
 import { isValidTeamInviteId } from '@/lib/team-invite-url'
 
 export type PublicTeamMemberRow = {
@@ -19,6 +20,7 @@ export type PublicTeamSnapshot = {
   name: string
   logo?: string
   description?: string
+  cityId: string
   city: string
   level: Level
   gender: Gender
@@ -30,12 +32,14 @@ function mapSnapshot(
   team: Record<string, unknown>,
   members: PublicTeamMemberRow[]
 ): PublicTeamSnapshot {
+  const geo = team.geo_city as { name?: string } | null | undefined
   return {
     id: team.id as string,
     name: team.name as string,
     logo: (team.logo_url as string | null) ?? undefined,
     description: (team.description as string | null) ?? undefined,
-    city: team.city as string,
+    cityId: (team.city_id as string) ?? '',
+    city: geo?.name?.trim() || (team.city as string) || '',
     level: team.level as Level,
     gender: team.gender as Gender,
     captainId: team.captain_id as string,
@@ -61,7 +65,7 @@ export async function fetchPublicTeamSnapshot(
     })
     const { data: team, error: teamErr } = await admin
       .from('teams')
-      .select('*')
+      .select(TEAM_SELECT_WITH_GEO)
       .eq('id', teamId)
       .maybeSingle()
 
@@ -122,7 +126,7 @@ export async function fetchPublicTeamSnapshot(
 
   const { data: team, error: teamErr } = await supabase
     .from('teams')
-    .select('*')
+    .select(TEAM_SELECT_WITH_GEO)
     .eq('id', teamId)
     .maybeSingle()
 

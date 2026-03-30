@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, useMemo, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { useApp } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
@@ -24,7 +24,9 @@ import {
   Team,
   type PlayersSeekProfile,
   type SportsVenue,
+  type VenueCourt,
 } from '@/lib/types'
+import { venueCourtPricingHint } from '@/lib/court-pricing'
 import { TIME_SLOT_OPTIONS } from '@/lib/time-slot-options'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 import {
@@ -33,7 +35,9 @@ import {
   fetchVenueReservationsRange,
   fetchVenueWeeklyHours,
 } from '@/lib/supabase/venue-queries'
+import { resolveCityIdFromLabel } from '@/lib/supabase/geo-queries'
 import { readCreatePrefill, clearCreatePrefill } from '@/lib/create-prefill'
+import { computeVenueAvailableSlots, labelForHm } from '@/lib/venue-slots'
 import { consumeRivalTargetTeamId } from '@/lib/rival-prefill'
 import {
   ArrowLeft,
@@ -125,6 +129,24 @@ export function CreateScreen() {
   const [loadingAlternativeVenues, setLoadingAlternativeVenues] = useState(false)
   const [bookingNoCourt, setBookingNoCourt] = useState(false)
   const [venueTimesRefreshKey, setVenueTimesRefreshKey] = useState(0)
+  const [venueCourtsHint, setVenueCourtsHint] = useState<VenueCourt[]>([])
+
+  useEffect(() => {
+    if (!linkedVenueId || !isSupabaseConfigured()) {
+      setVenueCourtsHint([])
+      return
+    }
+    void fetchVenueCourts(createClient(), linkedVenueId).then(setVenueCourtsHint)
+  }, [linkedVenueId])
+
+  const venuePricingHintText = useMemo(() => {
+    if (!linkedVenueId || venueCourtsHint.length === 0) return null
+    const v = sportsVenuesFromDb.find((x) => x.id === linkedVenueId)
+    return venueCourtPricingHint(
+      venueCourtsHint,
+      v?.slotDurationMinutes ?? 60
+    )
+  }, [linkedVenueId, venueCourtsHint, sportsVenuesFromDb])
 
   useEffect(() => {
     const pre = readCreatePrefill()
@@ -411,6 +433,20 @@ export function CreateScreen() {
       const linked =
         sportsVenuesFromDb.find((x) => x.id === linkedVenueId) ??
         sportsVenuesFromDb.find((x) => x.name === formData.venue.trim())
+      let matchCityId = currentUser.cityId
+      let matchLocationLabel = formData.location
+      if (linked) {
+        matchLocationLabel = linked.city
+        if (linked.cityId?.trim()) {
+          matchCityId = linked.cityId
+        } else if (linked.city?.trim() && isSupabaseConfigured()) {
+          const resolved = await resolveCityIdFromLabel(
+            createClient(),
+            linked.city
+          )
+          if (resolved) matchCityId = resolved
+        }
+      }
       const autoTitle =
         matchType === 'players'
           ? `Faltan ${formData.playersNeeded} ${
@@ -425,7 +461,8 @@ export function CreateScreen() {
         description: formData.description,
         teamName: formData.teamName || undefined,
         venue: formData.venue,
-        location: formData.location,
+        location: matchLocationLabel,
+        cityId: matchCityId,
         dateTime,
         level: formData.level,
         creatorId: currentUser.id,
@@ -1294,6 +1331,11 @@ export function CreateScreen() {
                 bookCourtSlot={bookCourtSlot}
                 onBookCourtSlotChange={setBookCourtSlot}
               />
+              {linkedVenueId && bookCourtSlot && venuePricingHintText ? (
+                <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100/95">
+                  {venuePricingHintText}
+                </div>
+              ) : null}
 
               {/* Date and Time */}
               <div className="grid grid-cols-2 gap-4">
@@ -1454,6 +1496,11 @@ export function CreateScreen() {
                 }}
                 showBookCheckbox={false}
               />
+              {linkedVenueId && venuePricingHintText ? (
+                <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100/95">
+                  {venuePricingHintText}
+                </div>
+              ) : null}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label className="text-foreground flex items-center gap-2">
@@ -1681,74 +1728,6 @@ function HoraSlotSelect({
       ) : null}
     </div>
   )
-}
-
-function hmToMinutes(hm: string): number {
-  const [h, m] = hm.split(':').map((n) => Number(n))
-  return h * 60 + m
-}
-
-function minutesToHm(total: number): string {
-  const h = Math.floor(total / 60)
-  const m = total % 60
-  const hh = String(h).padStart(2, '0')
-  const mm = String(m).padStart(2, '0')
-  return `${hh}:${mm}`
-}
-
-function labelForHm(hm: string): string {
-  const byPreset = TIME_SLOT_OPTIONS.find((t) => t.value === hm)
-  if (byPreset) return byPreset.label
-  const [hhRaw, mmRaw] = hm.split(':')
-  const hh = Number(hhRaw)
-  const mm = Number(mmRaw)
-  const suffix = hh >= 12 ? 'p. m.' : 'a. m.'
-  const h12 = hh % 12 === 0 ? 12 : hh % 12
-  return `${String(h12).padStart(2, '0')}:${String(mm).padStart(2, '0')} ${suffix}`
-}
-
-function computeVenueAvailableSlots({
-  dayStart,
-  openTime,
-  closeTime,
-  slotDurationMinutes,
-  courtsCount,
-  reservations,
-}: {
-  dayStart: Date
-  openTime: string
-  closeTime: string
-  slotDurationMinutes: number
-  courtsCount: number
-  reservations: Array<{ courtId: string; startsAt: Date; endsAt: Date }>
-}): Array<{ value: string; label: string }> {
-  if (courtsCount <= 0) return []
-  const openMin = hmToMinutes(openTime)
-  const closeMin = hmToMinutes(closeTime)
-  if (openMin >= closeMin) return []
-
-  const out: Array<{ value: string; label: string }> = []
-  for (
-    let startMin = openMin;
-    startMin + slotDurationMinutes <= closeMin;
-    startMin += slotDurationMinutes
-  ) {
-    const slotStart = new Date(dayStart)
-    slotStart.setHours(0, startMin, 0, 0)
-    const slotEnd = new Date(slotStart.getTime() + slotDurationMinutes * 60000)
-
-    const busyCourts = new Set<string>()
-    for (const r of reservations) {
-      if (r.startsAt < slotEnd && r.endsAt > slotStart) {
-        busyCourts.add(r.courtId)
-      }
-    }
-    if (busyCourts.size < courtsCount) {
-      const hm = minutesToHm(startMin)
-      out.push({ value: hm, label: labelForHm(hm) })
-    }
-  }
-  return out
 }
 
 function TypeCard({

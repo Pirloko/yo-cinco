@@ -14,6 +14,13 @@ import { parsePlayersSeekProfile } from '@/lib/players-seek-profile'
 const DEFAULT_AVATAR =
   'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face'
 
+export type ProfileGeoCityEmbed = {
+  id: string
+  name: string
+  slug: string
+  region_id?: string
+}
+
 export type ProfileRow = {
   id: string
   name: string
@@ -22,6 +29,8 @@ export type ProfileRow = {
   position: Position
   level: Level
   city: string
+  city_id: string
+  geo_city?: ProfileGeoCityEmbed | null
   availability: string[]
   photo_url: string
   bio: string | null
@@ -31,6 +40,7 @@ export type ProfileRow = {
 }
 
 export function profileRowToUser(row: ProfileRow, email: string): User {
+  const displayCity = row.geo_city?.name?.trim() || row.city
   return {
     id: row.id,
     email,
@@ -39,7 +49,9 @@ export function profileRowToUser(row: ProfileRow, email: string): User {
     gender: row.gender,
     position: row.position,
     level: row.level,
-    city: row.city,
+    cityId: row.city_id ?? '',
+    city: displayCity,
+    regionId: row.geo_city?.region_id ?? undefined,
     availability: row.availability ?? [],
     photo: row.photo_url || DEFAULT_AVATAR,
     bio: row.bio ?? undefined,
@@ -54,6 +66,13 @@ export function profileRowToUser(row: ProfileRow, email: string): User {
   }
 }
 
+export type MatchOpportunityGeoCityEmbed = {
+  id: string
+  name: string
+  slug: string
+  region_id?: string
+}
+
 export type MatchOpportunityRow = {
   id: string
   type: MatchType
@@ -61,6 +80,8 @@ export type MatchOpportunityRow = {
   description: string | null
   location: string
   venue: string
+  city_id: string
+  geo_city?: MatchOpportunityGeoCityEmbed | null
   date_time: string
   level: Level
   creator_id: string
@@ -89,7 +110,13 @@ export type CreatorSnippet = {
 
 export function mapMatchOpportunityFromDb(
   row: MatchOpportunityRow,
-  creator: CreatorSnippet | null
+  creator: CreatorSnippet | null,
+  venueReservation?: {
+    starts_at: string
+    ends_at: string
+    price_per_hour: number | null
+    currency: string | null
+  } | null
 ): MatchOpportunity {
   const c = creator ?? {
     id: row.creator_id,
@@ -101,7 +128,9 @@ export function mapMatchOpportunityFromDb(
     type: row.type,
     title: row.title,
     description: row.description ?? undefined,
-    location: row.location,
+    cityId: row.city_id ?? '',
+    cityRegionId: row.geo_city?.region_id ?? undefined,
+    location: row.geo_city?.name?.trim() || row.location,
     venue: row.venue,
     dateTime: new Date(row.date_time),
     level: row.level,
@@ -128,6 +157,17 @@ export function mapMatchOpportunityFromDb(
       parseRevueltaLineup(row.revuelta_lineup) ?? undefined,
     sportsVenueId: row.sports_venue_id ?? undefined,
     venueReservationId: row.venue_reservation_id ?? undefined,
+    venueReservationPricing:
+      venueReservation === undefined
+        ? undefined
+        : venueReservation === null
+          ? null
+          : {
+              pricePerHour: venueReservation.price_per_hour,
+              startsAt: new Date(venueReservation.starts_at),
+              endsAt: new Date(venueReservation.ends_at),
+              currency: venueReservation.currency?.trim() || 'CLP',
+            },
   }
 }
 

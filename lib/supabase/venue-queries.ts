@@ -5,8 +5,12 @@ import type {
   VenueReservationRow,
   VenueWeeklyHour,
 } from '@/lib/types'
+import { SPORTS_VENUE_SELECT_WITH_GEO } from '@/lib/supabase/geo-queries'
+
+type VenueGeoCityEmbed = { id: string; name: string; slug: string }
 
 export function mapVenueRow(r: Record<string, unknown>): SportsVenue {
+  const geo = r.geo_city as VenueGeoCityEmbed | null | undefined
   return {
     id: r.id as string,
     ownerId: r.owner_id as string,
@@ -14,7 +18,8 @@ export function mapVenueRow(r: Record<string, unknown>): SportsVenue {
     address: (r.address as string) ?? '',
     mapsUrl: (r.maps_url as string | null) ?? null,
     phone: (r.phone as string) ?? '',
-    city: (r.city as string) ?? 'Rancagua',
+    cityId: (r.city_id as string) ?? '',
+    city: geo?.name?.trim() || (r.city as string) || 'Rancagua',
     slotDurationMinutes: (r.slot_duration_minutes as number) ?? 60,
     createdAt: new Date(r.created_at as string),
   }
@@ -25,7 +30,54 @@ export async function fetchSportsVenuesList(
 ): Promise<SportsVenue[]> {
   const { data, error } = await supabase
     .from('sports_venues')
-    .select('*')
+    .select(SPORTS_VENUE_SELECT_WITH_GEO)
+    .order('name', { ascending: true })
+  if (error || !data?.length) return []
+  return data.map((r) => mapVenueRow(r as Record<string, unknown>))
+}
+
+/** Ciudades de la región donde existe al menos un `sports_venues` (opciones de filtro). */
+export async function fetchGeoCitiesWithVenuesInRegion(
+  supabase: SupabaseClient,
+  regionId: string
+): Promise<Array<{ id: string; name: string }>> {
+  const { data: cities, error: cErr } = await supabase
+    .from('geo_cities')
+    .select('id, name')
+    .eq('region_id', regionId)
+    .eq('is_active', true)
+    .order('name', { ascending: true })
+  if (cErr || !cities?.length) return []
+  const cityIds = cities.map((c) => c.id as string)
+  const { data: used, error: uErr } = await supabase
+    .from('sports_venues')
+    .select('city_id')
+    .in('city_id', cityIds)
+  if (uErr || !used?.length) return []
+  const withVenue = new Set(
+    used.map((r) => r.city_id as string).filter(Boolean)
+  )
+  return cities
+    .filter((c) => withVenue.has(c.id as string))
+    .map((c) => ({ id: c.id as string, name: c.name as string }))
+}
+
+/** Centros deportivos cuya ciudad pertenece a la región. */
+export async function fetchSportsVenuesInRegion(
+  supabase: SupabaseClient,
+  regionId: string
+): Promise<SportsVenue[]> {
+  const { data: cities } = await supabase
+    .from('geo_cities')
+    .select('id')
+    .eq('region_id', regionId)
+    .eq('is_active', true)
+  const ids = cities?.map((c) => c.id as string) ?? []
+  if (ids.length === 0) return []
+  const { data, error } = await supabase
+    .from('sports_venues')
+    .select(SPORTS_VENUE_SELECT_WITH_GEO)
+    .in('city_id', ids)
     .order('name', { ascending: true })
   if (error || !data?.length) return []
   return data.map((r) => mapVenueRow(r as Record<string, unknown>))
@@ -37,7 +89,7 @@ export async function fetchVenueById(
 ): Promise<SportsVenue | null> {
   const { data, error } = await supabase
     .from('sports_venues')
-    .select('*')
+    .select(SPORTS_VENUE_SELECT_WITH_GEO)
     .eq('id', venueId)
     .maybeSingle()
   if (error || !data) return null
@@ -50,7 +102,7 @@ export async function fetchVenueForOwner(
 ): Promise<SportsVenue | null> {
   const { data, error } = await supabase
     .from('sports_venues')
-    .select('*')
+    .select(SPORTS_VENUE_SELECT_WITH_GEO)
     .eq('owner_id', ownerId)
     .maybeSingle()
   if (error || !data) return null
@@ -73,6 +125,8 @@ export async function fetchVenueCourts(
     venueId: r.venue_id as string,
     name: r.name as string,
     sortOrder: (r.sort_order as number) ?? 0,
+    pricePerHour:
+      r.price_per_hour != null ? (r.price_per_hour as number) : null,
   }))
 }
 
@@ -136,13 +190,16 @@ export async function fetchPlayerUpcomingVenueReservationsOnly(
   const venueIds = [...new Set(courts.map((c) => c.venue_id as string))]
   const { data: venues } = await supabase
     .from('sports_venues')
-    .select('id, name, city')
+    .select(SPORTS_VENUE_SELECT_WITH_GEO)
     .in('id', venueIds)
   const venueMap = new Map((venues ?? []).map((v) => [v.id as string, v]))
 
   return rows.map((r) => {
     const c = courtMap.get(r.court_id as string)
     const v = c ? venueMap.get(c.venue_id as string) : undefined
+    const vRow = v as Record<string, unknown> | undefined
+    const venueCity =
+      vRow != null ? mapVenueRow(vRow).city : ''
     return {
       id: r.id as string,
       courtId: r.court_id as string,
@@ -154,7 +211,7 @@ export async function fetchPlayerUpcomingVenueReservationsOnly(
         (r.payment_status as VenueReservationRow['paymentStatus']) ?? undefined,
       courtName: (c?.name as string) ?? 'Cancha',
       venueName: (v?.name as string) ?? 'Centro',
-      venueCity: (v?.city as string) ?? '',
+      venueCity,
     }
   })
 }

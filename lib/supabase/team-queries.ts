@@ -10,13 +10,14 @@ import type {
   TeamPrivateSettings,
 } from '@/lib/types'
 import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
+import { TEAM_SELECT_WITH_GEO } from '@/lib/supabase/geo-queries'
 
 export async function fetchTeamsWithMembers(
   supabase: SupabaseClient
 ): Promise<Team[]> {
   const { data: teamRows, error } = await supabase
     .from('teams')
-    .select('*')
+    .select(TEAM_SELECT_WITH_GEO)
     .order('created_at', { ascending: false })
 
   if (error || !teamRows?.length) return []
@@ -66,6 +67,7 @@ function mapTeamRow(
   t: Record<string, unknown>,
   members: TeamMember[]
 ): Team {
+  const geo = t.geo_city as { name: string } | null | undefined
   return {
     id: t.id as string,
     name: t.name as string,
@@ -73,7 +75,8 @@ function mapTeamRow(
     level: t.level as Level,
     captainId: t.captain_id as string,
     members,
-    city: t.city as string,
+    cityId: (t.city_id as string) ?? '',
+    city: geo?.name?.trim() || (t.city as string) || '',
     gender: t.gender as Gender,
     description: (t.description as string | null) ?? undefined,
     createdAt: new Date(t.created_at as string),

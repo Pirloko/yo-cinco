@@ -247,6 +247,7 @@ export function TeamsScreen() {
         },
       ],
       city: currentUser.city,
+      cityId: currentUser.cityId,
       gender: currentUser.gender,
       description: teamDescription || undefined,
     })

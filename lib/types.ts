@@ -26,6 +26,30 @@ export type RivalResult = 'creator_team' | 'rival_team' | 'draw'
 
 export type AccountType = 'player' | 'venue' | 'admin'
 
+/** Catálogo geo (tablas `geo_*`). */
+export interface GeoCountry {
+  id: string
+  isoCode: string
+  name: string
+  isActive: boolean
+}
+
+export interface GeoRegion {
+  id: string
+  countryId: string
+  code: string
+  name: string
+  isActive: boolean
+}
+
+export interface GeoCity {
+  id: string
+  regionId: string
+  name: string
+  slug: string
+  isActive: boolean
+}
+
 export interface User {
   id: string
   email: string
@@ -34,7 +58,12 @@ export interface User {
   gender: Gender
   position: Position
   level: Level
+  /** FK `profiles.city_id` (filtros / lógica). */
+  cityId: string
+  /** Nombre para mostrar (viene del catálogo o columna `city` legada). */
   city: string
+  /** Región de `geo_cities.region_id` según la ciudad del perfil (filtros regionales). */
+  regionId?: string
   availability: string[]
   photo: string
   bio?: string
@@ -51,6 +80,7 @@ export interface SportsVenue {
   address: string
   mapsUrl: string | null
   phone: string
+  cityId: string
   city: string
   slotDurationMinutes: number
   createdAt: Date
@@ -61,6 +91,8 @@ export interface VenueCourt {
   venueId: string
   name: string
   sortOrder: number
+  /** Precio por hora en CLP (opcional). */
+  pricePerHour?: number | null
 }
 
 export interface VenueWeeklyHour {
@@ -109,6 +141,7 @@ export interface Team {
   level: Level
   captainId: string
   members: TeamMember[]
+  cityId: string
   city: string
   gender: Gender
   description?: string
@@ -172,6 +205,10 @@ export interface MatchOpportunity {
   type: MatchType
   title: string
   description?: string
+  /** FK `match_opportunities.city_id`. */
+  cityId: string
+  /** Región de la ciudad del partido (`geo_cities.region_id`). */
+  cityRegionId?: string
   location: string
   venue: string
   /** Centro deportivo vinculado (opcional). */
@@ -190,6 +227,13 @@ export interface MatchOpportunity {
   gender: Gender
   status: MatchStatus
   createdAt: Date
+  /** Snapshot de la reserva de cancha (si existe) para total y reparto. */
+  venueReservationPricing?: {
+    pricePerHour: number | null
+    startsAt: Date
+    endsAt: Date
+    currency: string
+  } | null
   /** Cuando el organizador cerró el partido (inicio ventana 48 h para calificar). */
   finalizedAt?: Date
   rivalResult?: RivalResult
@@ -226,7 +270,10 @@ export interface OnboardingData {
   position: Position
   level: Level
   availability: string[]
+  /** Nombre legible (columna `city`). */
   city: string
+  /** FK `geo_cities.id`. */
+  cityId: string
   photo: string
 }
 
@@ -236,6 +283,7 @@ export interface VenueOnboardingData {
   address: string
   phone: string
   city: string
+  cityId: string
   mapsUrl: string | null
   slotDurationMinutes: number
 }

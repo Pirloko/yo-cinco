@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { JoinPayOrganizerNotice } from '@/components/match-court-pricing'
 
 type Props = {
   open: boolean
@@ -151,6 +152,7 @@ export function JoinPlayersSearchDialog({
             </p>
           )}
         </div>
+        <JoinPayOrganizerNotice opportunity={opportunity} />
         <DialogFooter className="flex-col gap-2 sm:flex-col">
           {rules.kind === 'legacy' && (
             <Button

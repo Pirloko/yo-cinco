@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { JoinPayOrganizerNotice } from '@/components/match-court-pricing'
 
 const MAX_GOALKEEPERS = 2
 
@@ -130,6 +131,7 @@ export function JoinRevueltaDialog({
           </p>
           <p className="text-foreground font-medium">{availabilityText}</p>
         </div>
+        <JoinPayOrganizerNotice opportunity={opportunity} />
         <DialogFooter className="flex-col gap-2 sm:flex-col">
           <Button
             type="button"

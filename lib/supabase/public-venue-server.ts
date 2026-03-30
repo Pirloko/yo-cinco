@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { isValidTeamInviteId } from '@/lib/team-invite-url'
+import { SPORTS_VENUE_SELECT_WITH_GEO } from '@/lib/supabase/geo-queries'
 import { mapVenueRow } from '@/lib/supabase/venue-queries'
 import type { SportsVenue, VenueCourt, VenueWeeklyHour } from '@/lib/types'
 
@@ -25,7 +26,7 @@ export async function fetchPublicVenuePageData(
 
   const { data: row, error: vErr } = await supabase
     .from('sports_venues')
-    .select('*')
+    .select(SPORTS_VENUE_SELECT_WITH_GEO)
     .eq('id', venueId)
     .maybeSingle()
 
@@ -52,6 +53,8 @@ export async function fetchPublicVenuePageData(
     venueId: r.venue_id as string,
     name: r.name as string,
     sortOrder: (r.sort_order as number) ?? 0,
+    pricePerHour:
+      r.price_per_hour != null ? (r.price_per_hour as number) : null,
   }))
 
   const weeklyHours: VenueWeeklyHour[] = (hoursRaw ?? []).map((r) => ({

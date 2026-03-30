@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchDefaultCityId } from '@/lib/supabase/geo-queries'
 import { requireAdmin } from '@/lib/supabase/require-admin'
 
 export async function POST(req: Request) {
@@ -15,6 +16,7 @@ export async function POST(req: Request) {
       password?: string
       venueName?: string
       city?: string
+      cityId?: string
       address?: string
       phone?: string
       mapsUrl?: string
@@ -37,6 +39,14 @@ export async function POST(req: Request) {
     }
 
     const admin = createAdminClient()
+    const defaultCityId = await fetchDefaultCityId(admin)
+    if (!defaultCityId) {
+      return NextResponse.json(
+        { error: 'No hay ciudad por defecto en el catálogo geo (ej. Rancagua).' },
+        { status: 500 }
+      )
+    }
+    const resolvedCityId = body.cityId?.trim() || defaultCityId
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
       email,
       password,
@@ -56,6 +66,7 @@ export async function POST(req: Request) {
         id: userId,
         name: venueName,
         city: body.city?.trim() || 'Rancagua',
+        city_id: resolvedCityId,
         account_type: 'venue',
       },
       { onConflict: 'id' }
@@ -70,6 +81,7 @@ export async function POST(req: Request) {
       address: body.address?.trim() || '',
       phone: body.phone?.trim() || '',
       city: body.city?.trim() || 'Rancagua',
+      city_id: resolvedCityId,
       maps_url: body.mapsUrl?.trim() || null,
       slot_duration_minutes: 60,
     })

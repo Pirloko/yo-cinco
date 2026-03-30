@@ -10,6 +10,8 @@ import {
   fetchVenueWeeklyHours,
   fetchVenueReservationsRange,
 } from '@/lib/supabase/venue-queries'
+import { GeoLocationSelect } from '@/components/geo-location-select'
+import { resolveCityIdFromLabel } from '@/lib/supabase/geo-queries'
 import type { SportsVenue, VenueCourt, VenueWeeklyHour } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -76,6 +78,7 @@ export function VenueDashboardScreen() {
     mapsUrl: '',
     phone: '',
     city: '',
+    cityId: '',
     slotDurationMinutes: 60,
   })
 
@@ -120,6 +123,7 @@ export function VenueDashboardScreen() {
       mapsUrl: v.mapsUrl ?? '',
       phone: v.phone,
       city: v.city,
+      cityId: v.cityId,
       slotDurationMinutes: v.slotDurationMinutes,
     })
     const hb: Record<number, DayHours> = {}
@@ -293,12 +297,15 @@ export function VenueDashboardScreen() {
         manualForm.note.trim() ? `nota:${manualForm.note.trim()}` : '',
       ].filter(Boolean)
       const notes = noteParts.join(' | ')
+      const courtRow = courts.find((c) => c.id === manualForm.courtId)
       const payload: Record<string, unknown> = {
         court_id: manualForm.courtId,
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
         status: manualForm.status,
         payment_status: manualForm.status === 'confirmed' ? 'paid' : 'unpaid',
+        price_per_hour: courtRow?.pricePerHour ?? null,
+        currency: 'CLP',
         notes,
         booker_user_id: null,
         match_opportunity_id: null,
@@ -344,6 +351,12 @@ export function VenueDashboardScreen() {
   const saveProfile = async () => {
     if (!venue) return
     const supabase = createClient()
+    const cityLabel = profileForm.city.trim() || 'Rancagua'
+    let nextCityId = profileForm.cityId.trim()
+    if (!nextCityId) {
+      nextCityId =
+        (await resolveCityIdFromLabel(supabase, cityLabel)) ?? venue.cityId
+    }
     const { error } = await supabase
       .from('sports_venues')
       .update({
@@ -351,7 +364,8 @@ export function VenueDashboardScreen() {
         address: profileForm.address.trim(),
         maps_url: profileForm.mapsUrl.trim() || null,
         phone: profileForm.phone.trim(),
-        city: profileForm.city.trim() || 'Rancagua',
+        city: cityLabel,
+        city_id: nextCityId,
         slot_duration_minutes: Math.min(
           180,
           Math.max(15, Math.round(profileForm.slotDurationMinutes) || 60)
@@ -382,6 +396,28 @@ export function VenueDashboardScreen() {
     }
     setNewCourtName('')
     toast.success('Cancha agregada')
+    await reloadAll()
+  }
+
+  const saveCourtPrice = async (courtId: string, raw: string) => {
+    if (!venue) return
+    const trimmed = raw.trim()
+    const n = trimmed === '' ? null : Math.round(Number(trimmed))
+    if (n != null && (Number.isNaN(n) || n < 0)) {
+      toast.error('Precio inválido')
+      return
+    }
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('venue_courts')
+      .update({ price_per_hour: n })
+      .eq('id', courtId)
+      .eq('venue_id', venue.id)
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    toast.success('Precio guardado')
     await reloadAll()
   }
 
@@ -838,16 +874,17 @@ export function VenueDashboardScreen() {
                     className="bg-secondary border-border"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Ciudad</Label>
-                  <Input
-                    value={profileForm.city}
-                    onChange={(e) =>
-                      setProfileForm({ ...profileForm, city: e.target.value })
-                    }
-                    className="bg-secondary border-border"
-                  />
-                </div>
+                <GeoLocationSelect
+                  cityId={profileForm.cityId}
+                  onChange={(next) =>
+                    setProfileForm({
+                      ...profileForm,
+                      cityId: next.cityId,
+                      city: next.cityLabel,
+                    })
+                  }
+                  label="Ubicación"
+                />
                 <div className="space-y-2">
                   <Label>Duración de tramo (min)</Label>
                   <Input
@@ -887,20 +924,39 @@ export function VenueDashboardScreen() {
                   {courts.map((c) => (
                     <li
                       key={c.id}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2"
+                      className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg border border-border bg-card px-3 py-2"
                     >
-                      <span className="text-sm font-medium">{c.name}</span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => void removeCourt(c.id)}
-                        aria-label="Eliminar"
-                      >
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
+                      <span className="text-sm font-medium shrink-0">{c.name}</span>
+                      <div className="flex flex-1 flex-wrap items-center gap-2 justify-end">
+                        <Label className="text-xs text-muted-foreground whitespace-nowrap">
+                          $/hora (CLP)
+                        </Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1000}
+                          className="h-9 w-36 bg-secondary border-border"
+                          placeholder="Opcional"
+                          defaultValue={c.pricePerHour ?? ''}
+                          key={`${c.id}-${c.pricePerHour ?? 'x'}`}
+                          onBlur={(e) => void saveCourtPrice(c.id, e.target.value)}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => void removeCourt(c.id)}
+                          aria-label="Eliminar"
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      </div>
                     </li>
                   ))}
                 </ul>
+                <p className="text-xs text-muted-foreground">
+                  Ese valor se usa al reservar cancha (jugadores y centro) y para
+                  calcular el reparto entre jugadores.
+                </p>
               </div>
             )}
 

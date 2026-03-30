@@ -41,12 +41,16 @@ Sustituye la URL por la de tu repositorio.
 3. En **Site settings → Environment variables**, añade las mismas variables que en `.env.local`:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_SITE_URL` = la URL canónica del sitio en producción (ej. `https://tu-app.netlify.app`), **sin** `localhost`
 4. Si usas `SUPABASE_SERVICE_ROLE_KEY` en rutas de servidor, añádela solo en Netlify (nunca como `NEXT_PUBLIC_*`).
 5. **Deploy site**. Tras cada push a `main`, Netlify volverá a construir y desplegar.
 
 ### Dominio y Supabase
 
-- En Supabase → **Authentication** → **URL configuration**, añade la URL de producción de Netlify (y `http://localhost:3000` para desarrollo) en **Site URL** y **Redirect URLs** si usas enlaces de invitación o auth por email.
+- En Supabase → **Authentication** → **URL configuration**:
+  - **Site URL**: la URL de producción (no dejes solo `http://localhost:3000` o tras OAuth te devolverá a localhost).
+  - **Redirect URLs**: incluye `https://tu-dominio/**`, `https://tu-dominio`, y para desarrollo `http://localhost:3000/**` (Google OAuth exige que el `redirect_to` coincida con una entrada permitida).
+- Si el login con Google te manda a `localhost` estando en producción, suele ser **Site URL** en localhost o falta la URL de producción en **Redirect URLs**; revisa también que `NEXT_PUBLIC_SITE_URL` en Netlify sea la URL real.
 
 ## Scripts
 

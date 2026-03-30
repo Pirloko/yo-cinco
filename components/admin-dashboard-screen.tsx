@@ -9,6 +9,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { CalendarDays, LogOut, RefreshCw, Trophy } from 'lucide-react'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
+import { GeoLocationSelect } from '@/components/geo-location-select'
+import { AdminGeoCatalogPanel } from '@/components/admin-geo-catalog-panel'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 
@@ -67,6 +69,7 @@ export function AdminDashboardScreen() {
     password: '',
     venueName: '',
     city: 'Rancagua',
+    cityId: '',
     address: '',
     phone: '',
     mapsUrl: '',
@@ -146,6 +149,8 @@ export function AdminDashboardScreen() {
         email: '',
         password: '',
         venueName: '',
+        city: 'Rancagua',
+        cityId: '',
         address: '',
         phone: '',
         mapsUrl: '',
@@ -351,11 +356,19 @@ export function AdminDashboardScreen() {
               value={form.venueName}
               onChange={(v) => setForm((f) => ({ ...f, venueName: v }))}
             />
-            <Field
-              label="Ciudad"
-              value={form.city}
-              onChange={(v) => setForm((f) => ({ ...f, city: v }))}
-            />
+            <div className="md:col-span-2">
+              <GeoLocationSelect
+                cityId={form.cityId}
+                onChange={(next) =>
+                  setForm((f) => ({
+                    ...f,
+                    cityId: next.cityId,
+                    city: next.cityLabel,
+                  }))
+                }
+                label="Ubicación del centro"
+              />
+            </div>
             <Field
               label="Dirección"
               value={form.address}
@@ -383,6 +396,8 @@ export function AdminDashboardScreen() {
           </Button>
         </CardContent>
       </Card>
+
+      <AdminGeoCatalogPanel />
       </div>
     </div>
   )

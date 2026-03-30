@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 
 import { useApp } from '@/lib/app-context'
@@ -12,6 +12,10 @@ import { ThemeMenuButton } from '@/components/theme-controls'
 import { MatchOpportunity, MatchType } from '@/lib/types'
 import { JoinRevueltaDialog } from '@/components/join-revuelta-dialog'
 import { JoinPlayersSearchDialog } from '@/components/join-players-search-dialog'
+import { RegionCityFilterSelect } from '@/components/region-city-filter'
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import { fetchGeoCitiesWithVenuesInRegion } from '@/lib/supabase/venue-queries'
+import { compareMatchOpportunitiesByFillUrgency } from '@/lib/match-spots'
 
 type FilterType = 'all' | MatchType
 
@@ -36,6 +40,22 @@ export function HomeScreen() {
   )
   const [rivalPickOppId, setRivalPickOppId] = useState<string | null>(null)
   const [activeFilter, setActiveFilter] = useState<FilterType>('all')
+  const [cityFilter, setCityFilter] = useState('')
+  const [cityFilterOptions, setCityFilterOptions] = useState<
+    Array<{ id: string; name: string }>
+  >([])
+
+  useEffect(() => {
+    if (!currentUser?.regionId || !isSupabaseConfigured()) {
+      setCityFilterOptions([])
+      setCityFilter('')
+      return
+    }
+    void fetchGeoCitiesWithVenuesInRegion(
+      createClient(),
+      currentUser.regionId
+    ).then(setCityFilterOptions)
+  }, [currentUser?.regionId])
 
   const matches = currentUser
     ? getFilteredMatches(currentUser.gender).filter(
@@ -47,10 +67,21 @@ export function HomeScreen() {
   midnight.setHours(0, 0, 0, 0)
 
   const visibleMatches = matches.filter((m) => m.dateTime.getTime() >= midnight.getTime())
-  
-  const filteredMatches = activeFilter === 'all' 
-    ? visibleMatches
-    : visibleMatches.filter((m) => m.type === activeFilter)
+
+  const byCity =
+    cityFilter === ''
+      ? visibleMatches
+      : visibleMatches.filter((m) => m.cityId === cityFilter)
+
+  const filteredMatches =
+    activeFilter === 'all'
+      ? byCity
+      : byCity.filter((m) => m.type === activeFilter)
+
+  const sortedFeedMatches = useMemo(
+    () => [...filteredMatches].sort(compareMatchOpportunitiesByFillUrgency),
+    [filteredMatches]
+  )
 
   const captainTeams = getUserTeams().filter((t) => t.captainId === currentUser?.id)
 
@@ -79,13 +110,13 @@ export function HomeScreen() {
     }
 
     if (type === 'open') {
-      const m = filteredMatches.find((x) => x.id === opportunityId)
+      const m = sortedFeedMatches.find((x) => x.id === opportunityId)
       if (m) setRevueltaJoinOpp(m)
       return
     }
 
     if (type === 'players') {
-      const m = filteredMatches.find((x) => x.id === opportunityId)
+      const m = sortedFeedMatches.find((x) => x.id === opportunityId)
       if (m) setPlayersJoinOpp(m)
       return
     }
@@ -224,21 +255,29 @@ export function HomeScreen() {
 
       {/* Match Feed */}
       <div className="px-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">
-            Oportunidades cerca de ti
-          </h2>
-          <button 
-            onClick={() => setCurrentScreen('explore')}
-            className="text-sm text-primary hover:underline"
-          >
-            Ver todas
-          </button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-lg font-semibold text-foreground">
+              Oportunidades cerca de ti
+            </h2>
+            <button
+              type="button"
+              onClick={() => setCurrentScreen('explore')}
+              className="text-sm text-primary hover:underline shrink-0"
+            >
+              Ver todas
+            </button>
+          </div>
+          <RegionCityFilterSelect
+            cities={cityFilterOptions}
+            value={cityFilter}
+            onChange={setCityFilter}
+          />
         </div>
 
-        {filteredMatches.length > 0 ? (
+        {sortedFeedMatches.length > 0 ? (
           <div className="space-y-4">
-            {filteredMatches.map((match) => (
+            {sortedFeedMatches.map((match) => (
               <MatchCard
                 key={match.id}
                 match={match}
@@ -250,6 +289,7 @@ export function HomeScreen() {
                   setCurrentScreen('matchDetails')
                 }}
                 currentUserId={currentUser?.id}
+                showHomeFeedUrgency
                 onJoin={() =>
                   handleJoin(
                     match.id,

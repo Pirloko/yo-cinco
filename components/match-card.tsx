@@ -1,11 +1,25 @@
 'use client'
 
 import { MatchOpportunity } from '@/lib/types'
+import {
+  matchFillUrgencyMessage,
+  matchSpotsRemaining,
+} from '@/lib/match-spots'
+import { shortCourtPricingLine } from '@/lib/court-pricing'
 import { playersSeekProfileLabel } from '@/lib/players-seek-profile'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { RevueltaInviteActions } from '@/components/revuelta-invite-actions'
-import { MapPin, Calendar, Users, Target, Shuffle, Clock, Loader2 } from 'lucide-react'
+import {
+  MapPin,
+  Calendar,
+  Users,
+  Target,
+  Shuffle,
+  Clock,
+  Loader2,
+  Flame,
+} from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
@@ -21,6 +35,8 @@ interface MatchCardProps {
   onViewDetails?: () => void
   /** Para mostrar invitación a revuelta: organizador o ya unido al partido. */
   currentUserId?: string
+  /** Inicio: priorizar partidos casi llenos (banner si quedan 1–3 cupos). */
+  showHomeFeedUrgency?: boolean
 }
 
 export function MatchCard({
@@ -32,6 +48,7 @@ export function MatchCard({
   joining = false,
   onViewDetails,
   currentUserId,
+  showHomeFeedUrgency = false,
 }: MatchCardProps) {
   const getTypeIcon = () => {
     switch (match.type) {
@@ -95,7 +112,20 @@ export function MatchCard({
     else onAction?.()
   }
 
+  const priceLine = shortCourtPricingLine(match)
+
   const actionDisabled = joining || (isJoined && !isOwn)
+  const spotsLeft = matchSpotsRemaining(match)
+  const urgencyMsg =
+    showHomeFeedUrgency &&
+    spotsLeft != null &&
+    spotsLeft >= 1 &&
+    spotsLeft <= 3 &&
+    !isOwn &&
+    !isJoined
+      ? matchFillUrgencyMessage(spotsLeft)
+      : null
+
   const actionLabel = isOwn
     ? 'Gestionar'
     : isJoined
@@ -129,6 +159,23 @@ export function MatchCard({
         </div>
       </div>
 
+      {urgencyMsg ? (
+        <div className="px-4 py-2.5 border-b border-amber-500/30 bg-amber-500/10 flex gap-2 items-start">
+          <Flame className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" aria-hidden />
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="text-sm font-medium text-amber-100">{urgencyMsg}</p>
+            <button
+              type="button"
+              onClick={handleAction}
+              disabled={actionDisabled}
+              className="text-xs font-semibold text-amber-300 underline underline-offset-2 hover:text-amber-200 disabled:opacity-50"
+            >
+              Unirte ahora
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Content */}
       <div className="p-4 space-y-4">
         {/* Title and Team */}
@@ -156,6 +203,11 @@ export function MatchCard({
             <MapPin className="w-4 h-4 text-primary" />
             <span>{match.venue}, {match.location}</span>
           </div>
+          {priceLine ? (
+            <p className="text-xs text-amber-100/90 bg-amber-500/10 border border-amber-500/25 rounded-lg px-2 py-1.5">
+              {priceLine}
+            </p>
+          ) : null}
           {match.playersNeeded && (
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">

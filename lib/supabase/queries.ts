@@ -8,6 +8,10 @@ import {
   type MatchOpportunityRow,
   type ProfileRow,
 } from '@/lib/supabase/mappers'
+import {
+  MATCH_OPPORTUNITY_SELECT_WITH_GEO,
+  PROFILE_SELECT_WITH_GEO,
+} from '@/lib/supabase/geo-queries'
 
 export async function fetchProfileForUser(
   supabase: SupabaseClient,
@@ -16,7 +20,7 @@ export async function fetchProfileForUser(
 ): Promise<User | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('*')
+    .select(PROFILE_SELECT_WITH_GEO)
     .eq('id', userId)
     .maybeSingle()
 
@@ -29,7 +33,7 @@ export async function fetchMatchOpportunities(
 ): Promise<MatchOpportunity[]> {
   const { data: opps, error } = await supabase
     .from('match_opportunities')
-    .select('*')
+    .select(MATCH_OPPORTUNITY_SELECT_WITH_GEO)
     .order('date_time', { ascending: true })
 
   if (error || !opps?.length) return []
@@ -60,13 +64,48 @@ export async function fetchMatchOpportunities(
     joinedByOpportunity.set(oid, (joinedByOpportunity.get(oid) ?? 0) + 1)
   }
 
+  const resIds = [
+    ...new Set(
+      rows
+        .map((r) => r.venue_reservation_id)
+        .filter((id): id is string => Boolean(id))
+    ),
+  ]
+  const reservationById = new Map<
+    string,
+    {
+      starts_at: string
+      ends_at: string
+      price_per_hour: number | null
+      currency: string | null
+    }
+  >()
+  if (resIds.length > 0) {
+    const { data: resvRows } = await supabase
+      .from('venue_reservations')
+      .select('id, starts_at, ends_at, price_per_hour, currency')
+      .in('id', resIds)
+    for (const rv of resvRows ?? []) {
+      reservationById.set(rv.id as string, {
+        starts_at: rv.starts_at as string,
+        ends_at: rv.ends_at as string,
+        price_per_hour: (rv.price_per_hour as number | null) ?? null,
+        currency: (rv.currency as string | null) ?? null,
+      })
+    }
+  }
+
   return rows.map((row) => {
     const joined = joinedByOpportunity.get(row.id)
     const withSafeJoined: MatchOpportunityRow =
       joined === undefined ? row : { ...row, players_joined: joined }
+    const resId = row.venue_reservation_id
+    const vr =
+      resId != null ? reservationById.get(resId) ?? null : undefined
     return mapMatchOpportunityFromDb(
       withSafeJoined,
-      byId.get(row.creator_id) ?? null
+      byId.get(row.creator_id) ?? null,
+      vr === undefined ? undefined : vr
     )
   })
 }
@@ -83,7 +122,7 @@ export async function fetchOtherProfiles(
 ): Promise<User[]> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('*')
+    .select(PROFILE_SELECT_WITH_GEO)
     .eq('gender', gender)
     .eq('account_type', 'player')
     .neq('id', currentUserId)

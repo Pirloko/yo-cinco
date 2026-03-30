@@ -18,6 +18,7 @@ import {
   type RatingSummary,
 } from '@/lib/supabase/rating-queries'
 import type { MatchOpportunity, MatchesHubTab, RivalResult } from '@/lib/types'
+import { shortCourtPricingLine } from '@/lib/court-pricing'
 import {
   Calendar,
   MapPin,
@@ -413,6 +414,7 @@ export function MatchesScreen() {
                 }
 
                 const match = item.match
+                const courtPriceLine = shortCourtPricingLine(match)
                 const isCreator =
                   !!currentUser && currentUser.id === match.creatorId
                 const canChat =
@@ -495,6 +497,11 @@ export function MatchesScreen() {
                           <MapPin className="w-4 h-4 text-primary shrink-0" />
                           <span className="truncate">{match.venue}</span>
                         </span>
+                        {courtPriceLine ? (
+                          <span className="w-full text-xs text-amber-100/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1.5">
+                            {courtPriceLine}
+                          </span>
+                        ) : null}
                       </div>
 
                       <div className="flex gap-2 pt-1">
