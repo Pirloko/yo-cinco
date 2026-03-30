@@ -116,7 +116,12 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* Flotación suave para logohome.png (auth, landing, cabeceras) */
+/* Nunito: variable inyectada en <body> (next/font) */
+.font-brand-round {
+  font-family: var(--font-brand-round), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Flotación suave para logos oficiales (logohome hero / sportmatch cabeceras) */
 @keyframes sportmatch-float {
   0%,
   100% {
@@ -148,6 +153,82 @@
 @media (prefers-reduced-motion: reduce) {
   .animate-float-logo,
   .animate-float-logo-sm {
+    animation: none;
+  }
+}
+
+/* Wordmark curvo (SVG textPath): entrada + balanceo + gradiente y trazo en movimiento */
+@keyframes arch-wordmark-enter {
+  from {
+    opacity: 0;
+    transform: translateY(22px) scale(0.94);
+    filter: blur(12px) drop-shadow(0 6px 20px oklch(0.72 0.19 142 / 0.12));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0) drop-shadow(0 10px 32px oklch(0.72 0.19 142 / 0.28));
+  }
+}
+
+@keyframes arch-wordmark-sway {
+  0%,
+  100% {
+    transform: rotate(-2.2deg);
+  }
+  50% {
+    transform: rotate(2.2deg);
+  }
+}
+
+@keyframes arch-gradient-shift {
+  0%,
+  100% {
+    transform: translateX(-18%);
+  }
+  50% {
+    transform: translateX(18%);
+  }
+}
+
+.arch-wordmark-wrap {
+  transform-origin: 50% 80%;
+  animation: arch-wordmark-enter 1.15s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+
+.arch-wordmark-svg {
+  transform-origin: 50% 55%;
+  animation: arch-wordmark-sway 4.2s ease-in-out infinite;
+}
+
+.arch-wordmark__gradient {
+  transform-origin: center;
+  animation: arch-gradient-shift 5.8s ease-in-out infinite;
+}
+
+.arch-wordmark__text {
+  font-size: 27px;
+}
+
+@media (min-width: 768px) {
+  .arch-wordmark__text {
+    font-size: 31px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arch-wordmark-wrap {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+
+  .arch-wordmark-svg {
+    animation: none;
+  }
+
+  .arch-wordmark__gradient {
     animation: none;
   }
 }

@@ -37,7 +37,7 @@ export function AppScreenBrandHeading({
             aria-hidden
           />
           <Image
-            src="/logohome.png"
+            src="/sportmatch-logo.png"
             alt="SPORTMATCH"
             width={160}
             height={160}

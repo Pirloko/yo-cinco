@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 import Image from 'next/image'
 
 import { Button } from '@/components/ui/button'
@@ -20,8 +20,13 @@ export function LandingPage() {
         aria-hidden
       />
 
-      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border/60 bg-background/80 px-4 py-3 backdrop-blur-md md:px-8 md:py-4">
-        <BrandMark size="md" />
+      <header className="sticky top-0 z-20 flex min-h-[4.5rem] items-center justify-between border-b border-border/60 bg-background/80 px-4 py-2 backdrop-blur-md md:min-h-[5.5rem] md:px-8 md:py-3">
+        <BrandMark
+          size="md"
+          showLogo
+          wordmarkTypography
+          textClassName="text-foreground dark:text-white"
+        />
         <div className="flex items-center gap-1">
           <ThemeMenuButton />
           <Button
@@ -67,8 +72,8 @@ export function LandingPage() {
           </div>
         </section>
 
-        {/* Imagen central: logo 3D pin + cancha (logohome) */}
-        <section className="relative mx-auto w-full max-w-3xl flex-shrink-0 px-4 pb-4 md:pb-8">
+        {/* Logo oficial + aviso apps (siempre debajo de logohome.png) */}
+        <section className="relative mx-auto w-full max-w-3xl flex-shrink-0 px-4 pb-6 md:pb-10">
           <div className="animate-float-logo relative mx-auto w-full max-w-[min(100%,520px)]">
             <div
               className="pointer-events-none absolute left-1/2 top-[45%] -z-0 h-[min(70vw,420px)] w-[min(90vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/20 blur-3xl dark:bg-primary/35"
@@ -85,8 +90,11 @@ export function LandingPage() {
                 priority
                 loading="eager"
               />
+              <CurvedArchWordmark />
             </div>
           </div>
+
+          <MobileStoresBelowLogo />
         </section>
 
         {/* Tarjetas */}
@@ -137,6 +145,111 @@ export function LandingPage() {
           </p>
         </div>
       </footer>
+    </div>
+  )
+}
+
+/**
+ * Wordmark curvo (arco “sonrisa”) con texto sobre trazo SVG — referencia tipo lettering deportivo.
+ */
+function CurvedArchWordmark() {
+  const raw = useId()
+  const sid = raw.replace(/[^a-zA-Z0-9]/g, '') || 'sm'
+  const pathId = `sportmatch-arch-${sid}`
+  const gradId = `sportmatch-grad-${sid}`
+
+  return (
+    <div
+      className="arch-wordmark-wrap mx-auto -mt-4 w-full max-w-[min(100%,400px)] px-1 md:-mt-6 md:max-w-[420px]"
+      aria-label="SportMatch"
+      role="img"
+    >
+      <svg
+        className="arch-wordmark-svg w-full overflow-visible"
+        viewBox="0 0 440 108"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden
+      >
+        <defs>
+          <path id={pathId} d="M 18 82 Q 220 4 422 82" />
+          <linearGradient
+            id={gradId}
+            className="arch-wordmark__gradient"
+            x1="0%"
+            y1="0%"
+            x2="100%"
+            y2="0%"
+          >
+            <stop offset="0%" stopColor="var(--primary)" />
+            <stop offset="48%" stopColor="var(--accent)" />
+            <stop offset="100%" stopColor="var(--primary)" />
+          </linearGradient>
+        </defs>
+
+        <text
+          className="arch-wordmark__text font-brand-round font-extrabold"
+          fill={`url(#${gradId})`}
+          letterSpacing="0.06em"
+        >
+          <textPath href={`#${pathId}`} startOffset="50%" textAnchor="middle">
+            SportMatch
+          </textPath>
+        </text>
+      </svg>
+    </div>
+  )
+}
+
+/**
+ * Debajo de logohome.png: aviso de tiendas (solo informativo, sin enlaces).
+ * Diseño: dos “píldoras” horizontales estilo fila de descargas, tono suave.
+ */
+function MobileStoresBelowLogo() {
+  return (
+    <div
+      className="mx-auto mt-8 w-full max-w-lg select-none"
+      role="region"
+      aria-label="Aplicaciones móviles próximamente en App Store y Google Play"
+    >
+      <p className="mb-5 text-center text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">
+        Apps móviles
+      </p>
+      <ul className="flex flex-col items-center gap-6 sm:flex-row sm:justify-center sm:gap-10">
+        <li className="flex flex-col items-center gap-2">
+          <span className="rounded-md bg-muted px-2.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+            Próximamente
+          </span>
+          {/* Badges oficiales Apple (negro claro / blanco oscuro, guías App Store) */}
+          <Image
+            src="/badge-app-store.svg"
+            alt="Descarga en App Store"
+            width={180}
+            height={60}
+            className="h-14 w-auto max-w-[min(100%,240px)] object-contain object-left dark:hidden"
+          />
+          <Image
+            src="/badge-app-store-white.svg"
+            alt="Descarga en App Store"
+            width={180}
+            height={60}
+            className="hidden h-14 w-auto max-w-[min(100%,240px)] object-contain object-left dark:block"
+          />
+        </li>
+        <li className="flex flex-col items-center gap-2">
+          <span className="rounded-md bg-muted px-2.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+            Próximamente
+          </span>
+          {/* Badge oficial Google Play */}
+          <Image
+            src="/badge-google-play.png"
+            alt="Disponible en Google Play"
+            width={646}
+            height={250}
+            className="h-14 w-auto max-w-[min(100%,240px)] object-contain object-left opacity-95"
+          />
+        </li>
+      </ul>
     </div>
   )
 }
