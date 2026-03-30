@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '@/lib/app-context'
+import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { BottomNav } from '@/components/bottom-nav'
 import { Badge } from '@/components/ui/badge'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
@@ -269,10 +270,10 @@ export function MatchesScreen() {
     <div className="min-h-screen bg-background pb-20">
       <header className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border">
         <div className="p-4 pb-2">
-          <h1 className="text-2xl font-bold text-foreground">Partidos</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Próximos partidos, chats del grupo e historial
-          </p>
+          <AppScreenBrandHeading
+            title="Partidos"
+            subtitle="Próximos partidos, chats del grupo e historial"
+          />
         </div>
 
         <div className="flex border-b border-border">

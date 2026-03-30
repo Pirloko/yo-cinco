@@ -13,11 +13,11 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { venueId } = await params
   if (!isValidTeamInviteId(venueId)) {
-    return { title: 'Centro — Pichanga' }
+    return { title: 'Centro — SPORTMATCH' }
   }
   const data = await fetchPublicVenuePageData(venueId)
   return {
-    title: data ? `${data.venue.name} — Pichanga` : 'Centro — Pichanga',
+    title: data ? `${data.venue.name} — SPORTMATCH` : 'Centro — SPORTMATCH',
     description: data
       ? `Reserva y partidos en ${data.venue.name}, ${data.venue.city}.`
       : undefined,
@@ -44,7 +44,7 @@ export default async function CentroPublicPage({
           href="/"
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          ← Pichanga
+          ← SPORTMATCH
         </Link>
       </header>
 

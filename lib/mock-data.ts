@@ -143,7 +143,7 @@ export const mockMatches: MatchOpportunity[] = [
   {
     id: '3',
     type: 'open',
-    title: 'Pichanga abierta domingo',
+    title: 'Partido abierto domingo',
     description: 'Revuelta para todos los niveles, vengan a pasarla bien',
     location: 'Rancagua',
     venue: 'Cancha Municipal Sur',
@@ -198,7 +198,7 @@ export const mockMatches: MatchOpportunity[] = [
     id: '6',
     type: 'open',
     title: 'Partido mixto casual',
-    description: 'Pichanga relajada, todos bienvenidos',
+    description: 'Partido relajado, todos bienvenidos',
     location: 'Rancagua',
     venue: 'Parque O\'Higgins',
     dateTime: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000),

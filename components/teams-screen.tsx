@@ -8,6 +8,7 @@ import {
   deleteTeamLogoFile,
   uploadTeamLogoFile,
 } from '@/lib/supabase/team-logos'
+import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { BottomNav } from './bottom-nav'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -383,7 +384,7 @@ export function TeamsScreen() {
       if (navigator.share) {
         await navigator.share({
           title: `Únete a ${team.name}`,
-          text: `Te invitan a ${team.name} en Pichanga.`,
+          text: `Te invitan a ${team.name} en SPORTMATCH.`,
           url,
         })
       } else {
@@ -399,7 +400,7 @@ export function TeamsScreen() {
     const url = getTeamInviteUrl(team)
     if (!url) return
     const text = encodeURIComponent(
-      `¡Te invito a unirte a ${team.name} en Pichanga! ${url}`
+      `¡Te invito a unirte a ${team.name} en SPORTMATCH! ${url}`
     )
     window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer')
   }
@@ -1499,9 +1500,9 @@ export function TeamsScreen() {
   return (
     <div className="flex flex-col min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-lg border-b border-border">
+      <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur-lg">
         <div className="px-4 py-4">
-          <h1 className="text-xl font-bold text-foreground">Equipos</h1>
+          <AppScreenBrandHeading title="Equipos" titleClassName="text-xl" />
         </div>
       </header>
 

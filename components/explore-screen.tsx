@@ -13,6 +13,7 @@ import { fetchSportsVenuesList } from '@/lib/supabase/venue-queries'
 import { Level, MatchOpportunity, MatchType, type SportsVenue } from '@/lib/types'
 import { JoinRevueltaDialog } from '@/components/join-revuelta-dialog'
 import { JoinPlayersSearchDialog } from '@/components/join-players-search-dialog'
+import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import {
   Search,
   SlidersHorizontal,
@@ -170,9 +171,9 @@ export function ExploreScreen() {
   return (
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
-      <header className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border p-4 space-y-4">
-        <h1 className="text-2xl font-bold text-foreground">Explorar</h1>
-        
+      <header className="sticky top-0 z-10 space-y-4 border-b border-border bg-background/95 p-4 backdrop-blur-sm">
+        <AppScreenBrandHeading title="Explorar" />
+
         {/* Search Bar */}
         <div className="flex gap-2">
           <div className="flex-1 relative">

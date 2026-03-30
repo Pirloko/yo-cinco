@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
+
 import { useApp } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
 import { MatchCard } from '@/components/match-card'
@@ -98,18 +100,36 @@ export function HomeScreen() {
 
   return (
     <div className="min-h-screen bg-background pb-20">
-      {/* Header */}
-      <header className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border">
-        <div className="flex items-center justify-between p-4">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">
-              Hola, {currentUser?.name?.split(' ')[0] || 'Jugador'}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Encuentra tu partido perfecto
-            </p>
+      {/* Header: logo + saludo en fila; acciones a la derecha */}
+      <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur-sm">
+        <div className="flex items-center justify-between gap-3 p-4">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="relative shrink-0 animate-float-logo-sm">
+              <div
+                className="pointer-events-none absolute inset-0 -z-10 scale-125 rounded-2xl bg-primary/20 blur-xl dark:bg-primary/30"
+                aria-hidden
+              />
+              <Image
+                src="/logohome.png"
+                alt="SPORTMATCH"
+                width={160}
+                height={160}
+                className="h-12 w-12 object-contain drop-shadow-[0_0_16px_oklch(0.72_0.19_142_/_0.3)] md:h-14 md:w-14"
+                sizes="56px"
+                priority
+                loading="eager"
+              />
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-xl font-bold text-foreground md:text-2xl">
+                Hola, {currentUser?.name?.split(' ')[0] || 'Jugador'}
+              </h1>
+              <p className="truncate text-sm text-muted-foreground">
+                Encuentra tu partido perfecto
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-1 sm:gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <ThemeMenuButton className="shrink-0" />
             <Button
               variant="ghost"

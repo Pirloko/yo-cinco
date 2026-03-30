@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useRef } from 'react'
 import { useApp } from '@/lib/app-context'
+import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -240,15 +241,13 @@ export function ProfileScreen() {
           className="absolute inset-0 bg-gradient-to-br from-primary/25 via-background to-accent/15"
           aria-hidden
         />
-        <div className="relative flex items-center justify-between px-4 pt-12 pb-8 sm:pt-14">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Perfil
-            </p>
-            <h1 className="text-2xl font-bold text-foreground tracking-tight">
-              Hola, {currentUser.name.split(' ')[0] || 'Jugador'}
-            </h1>
-          </div>
+        <div className="relative flex items-center justify-between gap-3 px-4 pt-12 pb-8 sm:pt-14">
+          <AppScreenBrandHeading
+            className="min-w-0 flex-1"
+            eyebrow="Perfil"
+            title={`Hola, ${currentUser.name.split(' ')[0] || 'Jugador'}`}
+            titleClassName="text-2xl font-bold tracking-tight"
+          />
           <Button
             type="button"
             variant="secondary"
@@ -444,7 +443,7 @@ export function ProfileScreen() {
       </div>
 
       <p className="text-center mt-6 text-xs text-muted-foreground">
-        Pichanga v1.0.0
+        SPORTMATCH v1.0.0
       </p>
 
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
@@ -494,7 +493,7 @@ export function ProfileScreen() {
               <div>
                 <p className="font-medium text-foreground text-sm">Acerca de</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Pichanga — encuentra rivales, jugadores y revueltas en tu ciudad.
+                  SPORTMATCH — encuentra rivales, jugadores y revueltas en tu ciudad.
                 </p>
               </div>
             </div>

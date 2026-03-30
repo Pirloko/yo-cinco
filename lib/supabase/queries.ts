@@ -73,7 +73,7 @@ export async function fetchMatchOpportunities(
 
 /** Email no expuesto por RLS para terceros; placeholder para la UI. */
 function placeholderEmail(id: string) {
-  return `jugador-${id.slice(0, 8)}@pichanga.local`
+  return `jugador-${id.slice(0, 8)}@sportmatch.local`
 }
 
 export async function fetchOtherProfiles(

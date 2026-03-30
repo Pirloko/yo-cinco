@@ -1,27 +1,11 @@
 import { NextResponse } from 'next/server'
-import { createClient as createServerClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 
-async function requireAdmin() {
-  const supabase = await createServerClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return { ok: false as const, error: 'No autenticado' }
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('account_type')
-    .eq('id', user.id)
-    .maybeSingle()
-  if (!profile || profile.account_type !== 'admin') {
-    return { ok: false as const, error: 'No autorizado' }
-  }
-  return { ok: true as const, userId: user.id }
-}
+import { createAdminClient } from '@/lib/supabase/admin'
+import { requireAdmin } from '@/lib/supabase/require-admin'
 
 export async function POST(req: Request) {
   try {
-    const auth = await requireAdmin()
+    const auth = await requireAdmin(req)
     if (!auth.ok) {
       return NextResponse.json({ error: auth.error }, { status: 403 })
     }

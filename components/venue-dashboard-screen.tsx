@@ -27,6 +27,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { WEEKDAY_SHORT_ES } from '@/lib/venue-slots'
+import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { ThemeMenuButton } from '@/components/theme-controls'
 
 type DayHours = { open: string; close: string } | null
@@ -463,17 +464,17 @@ export function VenueDashboardScreen() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col pb-8">
-      <header className="sticky top-0 z-10 bg-background/95 border-b border-border px-4 py-3 flex items-center justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <h1 className="font-bold text-foreground truncate">
-            {venue?.name ?? 'Mi centro'}
-          </h1>
-          <p className="text-xs text-muted-foreground">Cuenta centro deportivo</p>
-        </div>
-        <div className="flex items-center gap-0.5 shrink-0">
+      <header className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-border bg-background/95 px-4 py-3 backdrop-blur-sm">
+        <AppScreenBrandHeading
+          className="min-w-0 flex-1"
+          title={venue?.name ?? 'Mi centro'}
+          subtitle="Cuenta centro deportivo"
+          titleClassName="text-lg md:text-xl"
+        />
+        <div className="flex shrink-0 items-center gap-0.5">
           <ThemeMenuButton />
           <Button variant="ghost" size="sm" onClick={() => void logout()}>
-            <LogOut className="w-4 h-4 mr-1" />
+            <LogOut className="mr-1 h-4 w-4" />
             Salir
           </Button>
         </div>
@@ -693,7 +694,9 @@ export function VenueDashboardScreen() {
                                 })}
                               </p>
                               {(r.matchOpportunityId || r.bookerUserId) ? (() => {
-                                const m = matchById.get(r.matchOpportunityId)
+                                const m = r.matchOpportunityId
+                                  ? matchById.get(r.matchOpportunityId)
+                                  : undefined
                                 const org = m
                                   ? organizerById.get(m.creatorId)
                                   : r.bookerUserId

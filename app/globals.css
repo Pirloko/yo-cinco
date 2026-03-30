@@ -116,6 +116,42 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* Flotación suave para logohome.png (auth, landing, cabeceras) */
+@keyframes sportmatch-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes sportmatch-float-sm {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.animate-float-logo {
+  animation: sportmatch-float 3.5s ease-in-out infinite;
+}
+
+.animate-float-logo-sm {
+  animation: sportmatch-float-sm 3.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float-logo,
+  .animate-float-logo-sm {
+    animation: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

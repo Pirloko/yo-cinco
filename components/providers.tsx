@@ -9,7 +9,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       attribute="class"
       defaultTheme="dark"
       enableSystem
-      storageKey="pichanga-theme"
+      storageKey="sportmatch-theme"
       disableTransitionOnChange
     >
       {children}

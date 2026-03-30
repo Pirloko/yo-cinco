@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { useApp } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
+import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -500,25 +501,28 @@ export function CreateScreen() {
   return (
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
-      <header className="flex items-center gap-4 p-4 border-b border-border">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleBack}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </Button>
-        <div className="flex-1">
-          <h1 className="text-lg font-semibold text-foreground">Crear partido</h1>
-          <p className="text-sm text-muted-foreground">
-            {matchType === 'rival'
+      <header className="border-b border-border p-4">
+        <AppScreenBrandHeading
+          before={
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleBack}
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          }
+          title="Crear partido"
+          subtitle={
+            matchType === 'rival'
               ? `Paso ${step} de 4`
               : matchType
                 ? `Paso ${step} de ${totalStepsForFlow}`
-                : 'Paso 1'}
-          </p>
-        </div>
+                : 'Paso 1'
+          }
+          titleClassName="text-lg font-semibold"
+        />
       </header>
 
       <main className="p-4">
@@ -1149,7 +1153,7 @@ export function CreateScreen() {
                   <div className="space-y-2">
                     <Label className="text-foreground">Titulo</Label>
                     <Input
-                      placeholder="Ej: Pichanga domingo en la tarde"
+                      placeholder="Ej: Partido domingo en la tarde"
                       value={formData.title}
                       onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                       className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"

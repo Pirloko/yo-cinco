@@ -8,7 +8,9 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { CalendarDays, LogOut, RefreshCw, Trophy } from 'lucide-react'
+import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { ThemeMenuButton } from '@/components/theme-controls'
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 
 type AdminMetrics = {
   range: RangeKey
@@ -73,7 +75,20 @@ export function AdminDashboardScreen() {
   const loadMetrics = async (nextRange = range) => {
     setLoading(true)
     try {
-      const r = await fetch(`/api/admin/metrics?range=${nextRange}`, { method: 'GET' })
+      const authHeaders: Record<string, string> = {}
+      if (isSupabaseConfigured()) {
+        const supabase = createClient()
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          authHeaders.Authorization = `Bearer ${session.access_token}`
+        }
+      }
+      const r = await fetch(`/api/admin/metrics?range=${nextRange}`, {
+        method: 'GET',
+        headers: authHeaders,
+      })
       const json = (await r.json()) as AdminMetrics & { error?: string }
       if (!r.ok) {
         throw new Error(json.error ?? 'No se pudo cargar métricas')
@@ -104,9 +119,21 @@ export function AdminDashboardScreen() {
     }
     setCreating(true)
     try {
+      const authHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      if (isSupabaseConfigured()) {
+        const supabase = createClient()
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          authHeaders.Authorization = `Bearer ${session.access_token}`
+        }
+      }
       const r = await fetch('/api/admin/create-venue-user', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify(form),
       })
       const json = (await r.json()) as { ok?: boolean; error?: string }
@@ -148,23 +175,23 @@ export function AdminDashboardScreen() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 space-y-4">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Panel Admin</h1>
-          <p className="text-sm text-muted-foreground">
-            Métricas de reservas y alta rápida de centros deportivos.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="min-h-screen bg-background">
+      <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur-sm">
+        <AppScreenBrandHeading
+          className="min-w-0 flex-1"
+          title="Panel Admin"
+          subtitle="Métricas de reservas y alta rápida de centros deportivos."
+        />
+        <div className="flex shrink-0 items-center gap-2">
           <ThemeMenuButton />
           <Button variant="outline" onClick={() => void logout()}>
-            <LogOut className="w-4 h-4 mr-1.5" />
+            <LogOut className="mr-1.5 h-4 w-4" />
             Salir
           </Button>
         </div>
       </header>
 
+      <div className="space-y-4 p-4">
       <Card className="bg-card border-border">
         <CardContent className="p-4 space-y-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -356,6 +383,7 @@ export function AdminDashboardScreen() {
           </Button>
         </CardContent>
       </Card>
+      </div>
     </div>
   )
 }

@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { useApp } from '@/lib/app-context'
-import { ArrowLeft, Building2, MapPin } from 'lucide-react'
+import { ArrowLeft, MapPin } from 'lucide-react'
 
 export function VenueOnboardingScreen() {
   const { logout, completeVenueOnboarding } = useApp()
@@ -42,29 +43,24 @@ export function VenueOnboardingScreen() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="flex items-center gap-3 p-4 border-b border-border">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => void logout()}
-          aria-label="Cerrar sesión"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </Button>
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-9 h-9 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
-            <Building2 className="w-5 h-5 text-primary" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="font-semibold text-foreground truncate">
-              Alta de centro
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              Datos públicos de tu recinto
-            </p>
-          </div>
-        </div>
+      <header className="border-b border-border p-4">
+        <AppScreenBrandHeading
+          before={
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => void logout()}
+              aria-label="Cerrar sesión"
+              className="shrink-0"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          }
+          title="Alta de centro"
+          subtitle="Datos públicos de tu recinto"
+          titleClassName="text-lg font-semibold"
+        />
       </header>
 
       <main className="flex-1 p-4 max-w-md mx-auto w-full">

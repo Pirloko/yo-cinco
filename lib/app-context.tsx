@@ -137,6 +137,8 @@ interface AppContextType {
     isVenue?: boolean
     isAdmin?: boolean
   }>
+  /** OAuth: redirige al proveedor; al volver a `/` la sesión se detecta en URL. */
+  loginWithGoogle: () => Promise<{ ok: boolean; error?: string }>
   logout: () => Promise<void>
   completeOnboarding: (data: OnboardingData) => Promise<void>
   /** Primera configuración del centro (`sports_venues`) para cuentas venue. */
@@ -466,6 +468,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { ok: false, error: msg }
     }
   }
+
+  const loginWithGoogle = useCallback(async (): Promise<{
+    ok: boolean
+    error?: string
+  }> => {
+    if (!isSupabaseConfigured()) {
+      return {
+        ok: false,
+        error:
+          'Configura NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en .env.local',
+      }
+    }
+    try {
+      const supabase = createClient()
+      const origin =
+        typeof window !== 'undefined' ? window.location.origin : ''
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${origin}/`,
+        },
+      })
+      if (error) return { ok: false, error: formatAuthError(error) }
+      return { ok: true }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Error de conexión'
+      return { ok: false, error: msg }
+    }
+  }, [])
 
   const logout = async () => {
     try {
@@ -2001,6 +2032,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [authLoading, currentUser, currentScreen])
 
+  /**
+   * Tras OAuth (o recarga en `/`) la pantalla vuelve a `landing` con sesión ya activa:
+   * enviamos al jugador al home u onboarding como en el login por email.
+   */
+  useEffect(() => {
+    if (authLoading || !currentUser) return
+    if (currentUser.accountType !== 'player') return
+    if (currentScreen !== 'landing' && currentScreen !== 'auth') return
+    if (needsOnboardingProfile(currentUser)) {
+      setOnboardingSource('registration')
+      setCurrentScreen('onboarding')
+      return
+    }
+    if (tryNavigateCreateAfterPlayerReady()) {
+      setCurrentScreen('create')
+      return
+    }
+    setCurrentScreen('home')
+  }, [authLoading, currentUser, currentScreen])
+
   /** Tras sesión + perfil listo: deep link equipo (prioridad) o detalle de revuelta */
   useEffect(() => {
     if (authLoading || !currentUser) return
@@ -2115,6 +2166,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setCurrentUser,
         isAuthenticated,
         login,
+        loginWithGoogle,
         logout,
         completeOnboarding,
         completeVenueOnboarding,

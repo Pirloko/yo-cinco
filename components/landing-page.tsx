@@ -1,23 +1,27 @@
 'use client'
 
+import type { ReactNode } from 'react'
+import Image from 'next/image'
+
 import { Button } from '@/components/ui/button'
 import { useApp } from '@/lib/app-context'
-import { Target, Users, Shuffle, ChevronRight, MapPin } from 'lucide-react'
+import { Target, Users, Shuffle, ChevronRight } from 'lucide-react'
 import { ThemeMenuButton } from '@/components/theme-controls'
+import { BrandMark } from '@/components/brand-mark'
 
 export function LandingPage() {
   const { setCurrentScreen } = useApp()
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="flex items-center justify-between p-4 md:p-6">
-        <div className="flex items-center gap-2">
-          <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-xl">P</span>
-          </div>
-          <span className="font-bold text-xl text-foreground">Pichanga</span>
-        </div>
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
+      {/* Fondo suave: oscuro = casi negro con matiz; claro = blanco roto */}
+      <div
+        className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(ellipse_120%_80%_at_50%_-20%,oklch(0.72_0.19_142_/_0.12),transparent_55%)] dark:bg-[radial-gradient(ellipse_100%_60%_at_50%_-10%,oklch(0.72_0.19_142_/_0.18),transparent_50%)]"
+        aria-hidden
+      />
+
+      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border/60 bg-background/80 px-4 py-3 backdrop-blur-md md:px-8 md:py-4">
+        <BrandMark size="md" />
         <div className="flex items-center gap-1">
           <ThemeMenuButton />
           <Button
@@ -25,102 +29,111 @@ export function LandingPage() {
             className="text-muted-foreground hover:text-foreground"
             onClick={() => setCurrentScreen('auth')}
           >
-            Iniciar sesion
+            Iniciar sesión
           </Button>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <main className="flex-1 flex flex-col items-center justify-center px-4 pb-16">
-        <div className="max-w-4xl mx-auto text-center space-y-8">
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-secondary border border-border">
-            <MapPin className="w-4 h-4 text-primary" />
-            <span className="text-sm text-muted-foreground">Rancagua, Chile</span>
-          </div>
-
-          {/* Main Headline */}
-          <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight text-balance">
-            <span className="text-foreground">Encuentra tu</span>
-            <br />
-            <span className="text-primary">partido hoy</span>
+      <main className="flex flex-1 flex-col">
+        {/* Hero: copy + CTAs */}
+        <section className="mx-auto w-full max-w-4xl px-4 pb-6 pt-10 text-center md:pt-14">
+          <h1 className="text-balance text-4xl font-bold tracking-tight text-foreground md:text-6xl lg:text-7xl">
+            <span className="block">Encuentra tu</span>
+            <span className="block text-primary">partido hoy</span>
           </h1>
 
-          <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto text-pretty">
-            La plataforma de matchmaking para futbol amateur 6 vs 6. 
-            Conecta con rivales, encuentra jugadores y unete a partidos abiertos.
+          <p className="mx-auto mt-6 max-w-2xl text-pretty text-base text-muted-foreground md:text-lg lg:text-xl">
+            La plataforma de matchmaking para fútbol amateur 6 vs 6. Conecta con
+            rivales, encuentra jugadores y únete a partidos abiertos.
           </p>
 
-          {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-            <Button 
-              size="lg" 
-              className="h-14 px-8 text-lg bg-primary text-primary-foreground hover:bg-primary/90"
+          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row sm:gap-5">
+            <Button
+              size="lg"
+              className="h-14 min-w-[200px] rounded-full px-10 text-base font-semibold shadow-lg shadow-primary/25 md:text-lg"
               onClick={() => setCurrentScreen('auth')}
             >
               Comenzar ahora
-              <ChevronRight className="w-5 h-5 ml-2" />
+              <ChevronRight className="ml-2 h-5 w-5" />
             </Button>
-            <Button 
-              size="lg" 
-              variant="outline" 
-              className="h-14 px-8 text-lg border-border text-foreground hover:bg-secondary"
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-14 min-w-[200px] rounded-full border-2 border-border bg-secondary/80 px-10 text-base font-medium text-foreground backdrop-blur-sm hover:bg-secondary md:text-lg"
               onClick={() => setCurrentScreen('auth')}
             >
               Ver partidos
             </Button>
           </div>
-        </div>
+        </section>
 
-        {/* Feature Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-16 max-w-4xl w-full px-4">
-          <FeatureCard
-            icon={<Target className="w-6 h-6" />}
-            title="Busca rival"
-            description="Tu equipo vs otro equipo. Programa partidos competitivos."
-          />
-          <FeatureCard
-            icon={<Users className="w-6 h-6" />}
-            title="Encuentra jugadores"
-            description="Te faltan jugadores? Completa tu equipo facilmente."
-          />
-          <FeatureCard
-            icon={<Shuffle className="w-6 h-6" />}
-            title="Revueltas abiertas"
-            description="Unete a partidos abiertos y conoce nuevos jugadores."
-          />
-        </div>
+        {/* Imagen central: logo 3D pin + cancha (logohome) */}
+        <section className="relative mx-auto w-full max-w-3xl flex-shrink-0 px-4 pb-4 md:pb-8">
+          <div className="animate-float-logo relative mx-auto w-full max-w-[min(100%,520px)]">
+            <div
+              className="pointer-events-none absolute left-1/2 top-[45%] -z-0 h-[min(70vw,420px)] w-[min(90vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/20 blur-3xl dark:bg-primary/35"
+              aria-hidden
+            />
+            <div className="relative z-10 mx-auto w-full">
+              <Image
+                src="/logohome.png"
+                alt="SPORTMATCH: ubicación y deportes"
+                width={1024}
+                height={1024}
+                className="h-auto w-full object-contain drop-shadow-[0_0_48px_oklch(0.72_0.19_142_/_0.25)] dark:drop-shadow-[0_0_64px_oklch(0.72_0.19_142_/_0.35)]"
+                sizes="(max-width: 768px) 100vw, 520px"
+                priority
+                loading="eager"
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* Tarjetas */}
+        <section className="mx-auto w-full max-w-5xl flex-1 px-4 pb-16 pt-6 md:pt-10">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-3 md:gap-6">
+            <FeatureCard
+              icon={<Target className="h-7 w-7" strokeWidth={2} />}
+              title="Busca rival"
+              description="Tu equipo vs otro equipo. Programa partidos competitivos."
+            />
+            <FeatureCard
+              icon={<Users className="h-7 w-7" strokeWidth={2} />}
+              title="Encuentra jugadores"
+              description="¿Te faltan jugadores? Completa tu equipo fácilmente."
+            />
+            <FeatureCard
+              icon={<Shuffle className="h-7 w-7" strokeWidth={2} />}
+              title="Revueltas abiertas"
+              description="Únete a partidos abiertos y conoce nuevos jugadores."
+            />
+          </div>
+        </section>
       </main>
 
-      {/* Stats Bar */}
-      <div className="border-t border-border bg-secondary/50 py-8">
-        <div className="max-w-4xl mx-auto grid grid-cols-3 gap-4 text-center px-4">
+      {/* Stats */}
+      <div className="border-t border-border bg-muted/30 py-10 dark:bg-secondary/40">
+        <div className="mx-auto grid max-w-4xl grid-cols-3 gap-6 px-4 text-center">
           <div>
-            <div className="text-2xl md:text-3xl font-bold text-accent">500+</div>
-            <div className="text-sm text-muted-foreground">Jugadores</div>
+            <div className="text-2xl font-bold text-accent md:text-3xl">500+</div>
+            <div className="mt-1 text-sm text-muted-foreground">Jugadores</div>
           </div>
           <div>
-            <div className="text-2xl md:text-3xl font-bold text-accent">120+</div>
-            <div className="text-sm text-muted-foreground">Partidos / mes</div>
+            <div className="text-2xl font-bold text-accent md:text-3xl">120+</div>
+            <div className="mt-1 text-sm text-muted-foreground">Partidos / mes</div>
           </div>
           <div>
-            <div className="text-2xl md:text-3xl font-bold text-accent">15</div>
-            <div className="text-sm text-muted-foreground">Canchas</div>
+            <div className="text-2xl font-bold text-accent md:text-3xl">15</div>
+            <div className="mt-1 text-sm text-muted-foreground">Canchas</div>
           </div>
         </div>
       </div>
 
-      {/* Footer */}
       <footer className="border-t border-border py-6 px-4">
-        <div className="max-w-4xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold">P</span>
-            </div>
-            <span className="font-semibold text-foreground">Pichanga</span>
-          </div>
+        <div className="mx-auto flex max-w-4xl flex-col items-center justify-between gap-4 md:flex-row">
+          <BrandMark size="sm" textClassName="font-semibold text-base" />
           <p className="text-sm text-muted-foreground">
-            2026 Pichanga. Hecho en Chile.
+            2026 SPORTMATCH. Hecho en Chile.
           </p>
         </div>
       </footer>
@@ -128,22 +141,22 @@ export function LandingPage() {
   )
 }
 
-function FeatureCard({ 
-  icon, 
-  title, 
-  description 
-}: { 
-  icon: React.ReactNode
+function FeatureCard({
+  icon,
+  title,
+  description,
+}: {
+  icon: ReactNode
   title: string
-  description: string 
+  description: string
 }) {
   return (
-    <div className="p-6 rounded-xl bg-card border border-border hover:border-primary/50 transition-colors">
-      <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center text-primary mb-4">
+    <div className="rounded-2xl border border-border bg-card p-6 shadow-sm transition-colors hover:border-primary/40 dark:shadow-none dark:hover:border-primary/50">
+      <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-primary/15 text-primary ring-1 ring-primary/20">
         {icon}
       </div>
-      <h3 className="font-semibold text-lg text-foreground mb-2">{title}</h3>
-      <p className="text-sm text-muted-foreground">{description}</p>
+      <h3 className="mb-2 text-lg font-semibold text-foreground">{title}</h3>
+      <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
     </div>
   )
 }

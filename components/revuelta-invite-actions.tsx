@@ -17,7 +17,7 @@ export function RevueltaInviteActions({ opportunity, className }: Props) {
       ? revueltaInviteAbsoluteUrl(opportunity.id, window.location.origin)
       : ''
 
-  const shareText = `¡Únete a la revuelta «${opportunity.title}» en Pichanga!`
+  const shareText = `¡Únete a la revuelta «${opportunity.title}» en SPORTMATCH!`
 
   const copyLink = async () => {
     if (!url) return

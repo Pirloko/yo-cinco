@@ -37,11 +37,11 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { opportunityId } = await params
   if (!isValidOpportunityInviteId(opportunityId)) {
-    return { title: 'Revuelta — Pichanga' }
+    return { title: 'Revuelta — SPORTMATCH' }
   }
   const snap = await fetchPublicRevueltaSnapshot(opportunityId)
   return {
-    title: snap ? `${snap.title} — Pichanga` : 'Revuelta — Pichanga',
+    title: snap ? `${snap.title} — SPORTMATCH` : 'Revuelta — SPORTMATCH',
     description: snap?.description,
   }
 }
@@ -76,7 +76,7 @@ export default async function RevueltaPublicPage({
           href={appRoot}
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          ← Pichanga
+          ← SPORTMATCH
         </Link>
       </header>
 

@@ -22,7 +22,7 @@ UPDATE public.profiles
 SET account_type = 'venue'
 WHERE id = (
   SELECT id FROM auth.users
-  WHERE lower(email) = lower('sanlorenzo@gmail.com')
+  WHERE lower(email) = lower('sandamian@gmail.com')
   LIMIT 1
 );
 

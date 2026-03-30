@@ -51,12 +51,12 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { teamId } = await params
   if (!isValidTeamInviteId(teamId)) {
-    return { title: 'Equipo — Pichanga' }
+    return { title: 'Equipo — SPORTMATCH' }
   }
   const team = await fetchPublicTeamSnapshot(teamId)
   return {
-    title: team ? `${team.name} — Pichanga` : 'Equipo — Pichanga',
-    description: team?.description ?? `Conoce al equipo ${team?.name ?? ''} en Pichanga.`,
+    title: team ? `${team.name} — SPORTMATCH` : 'Equipo — SPORTMATCH',
+    description: team?.description ?? `Conoce al equipo ${team?.name ?? ''} en SPORTMATCH.`,
   }
 }
 
@@ -85,7 +85,7 @@ export default async function EquipoPublicPage({
           href={appRoot}
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          ← Pichanga
+          ← SPORTMATCH
         </Link>
       </header>
 
