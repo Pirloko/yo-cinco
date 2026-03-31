@@ -11,6 +11,10 @@ import type {
 } from '@/lib/types'
 import { parseRevueltaLineup } from '@/lib/revuelta-lineup'
 import { parsePlayersSeekProfile } from '@/lib/players-seek-profile'
+import {
+  computeAgeFromBirthDate,
+  parseBirthDateLocal,
+} from '@/lib/age-birthday'
 
 const DEFAULT_AVATAR =
   'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face'
@@ -26,6 +30,7 @@ export type ProfileRow = {
   id: string
   name: string
   age: number
+  birth_date?: string | null
   gender: Gender
   position: Position
   level: Level
@@ -53,11 +58,17 @@ export type ProfileRow = {
 
 export function profileRowToUser(row: ProfileRow, email: string): User {
   const displayCity = row.geo_city?.name?.trim() || row.city
+  const birthDate = row.birth_date
+    ? parseBirthDateLocal(row.birth_date)
+    : undefined
+  const age =
+    birthDate != null ? computeAgeFromBirthDate(birthDate) : row.age
   return {
     id: row.id,
     email,
     name: row.name,
-    age: row.age,
+    age,
+    birthDate: birthDate ?? null,
     gender: row.gender,
     position: row.position,
     level: row.level,

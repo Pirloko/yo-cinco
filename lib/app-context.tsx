@@ -77,6 +77,11 @@ import {
   persistPlayerLastNav,
   type PlayerNavId,
 } from '@/lib/player-nav-storage'
+import {
+  computeAgeFromBirthDate,
+  isValidPlayerAgeFromBirthDate,
+  parseBirthDateLocal,
+} from '@/lib/age-birthday'
 
 function isTeamLimitReached(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
@@ -135,9 +140,15 @@ const PLAYER_NAV_SCREENS = new Set<AppScreen>([
   'profile',
 ])
 
+function effectivePlayerAge(u: User): number {
+  if (u.birthDate) return computeAgeFromBirthDate(u.birthDate)
+  return u.age
+}
+
 function needsOnboardingProfile(u: User): boolean {
   if (u.accountType !== 'player') return false
-  const demoIncomplete = u.name.trim().length < 2 || u.age < 16
+  const age = effectivePlayerAge(u)
+  const demoIncomplete = u.name.trim().length < 2 || age < 17
   /** Registro email marca esto al guardar WhatsApp + género; OAuth queda NULL hasta onboarding. */
   const essentialsMissing = !u.playerEssentialsCompletedAt
   return demoIncomplete || essentialsMissing
@@ -559,8 +570,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const completeOnboarding = async (data: OnboardingData) => {
     if (!currentUser || !isSupabaseConfigured()) return
     if (currentUser.accountType !== 'player') return
+    const photo = data.photo?.trim()
+    if (!photo || photo === DEFAULT_AVATAR) {
+      toast.error('Debes subir una foto de perfil para continuar.')
+      return
+    }
+    if (!data.birthDate || !isValidPlayerAgeFromBirthDate(data.birthDate)) {
+      toast.error(
+        'La fecha de nacimiento debe corresponder a una edad entre 17 y 60 años.'
+      )
+      return
+    }
     const supabase = createClient()
-    const photo = data.photo || DEFAULT_AVATAR
+    const birth = parseBirthDateLocal(data.birthDate)
     let nextCityId = data.cityId?.trim()
       ? data.cityId.trim()
       : (await resolveCityIdFromLabel(supabase, data.city)) ?? currentUser.cityId
@@ -568,7 +590,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .from('profiles')
       .update({
         name: data.name,
-        age: data.age,
+        birth_date: data.birthDate,
         ...(onboardingSource === 'profile_edit'
           ? {}
           : { gender: data.gender }),
@@ -598,10 +620,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } else {
       setCurrentUser({
         ...currentUser,
-        ...data,
+        name: data.name,
+        birthDate: birth,
+        age: computeAgeFromBirthDate(birth),
         gender:
           onboardingSource === 'profile_edit' ? currentUser.gender : data.gender,
+        position: data.position,
+        level: data.level,
+        city: data.city,
         cityId: nextCityId,
+        availability: data.availability,
         whatsappPhone: data.whatsappPhone.trim(),
         photo,
         playerEssentialsCompletedAt: new Date(),

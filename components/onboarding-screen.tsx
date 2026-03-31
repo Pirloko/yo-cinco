@@ -19,10 +19,69 @@ import {
   Loader2,
   ImagePlus,
   Phone,
+  Sparkles,
 } from 'lucide-react'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 import { uploadProfileAvatarFile } from '@/lib/supabase/profile-photo'
 import { GeoLocationSelect } from '@/components/geo-location-select'
+import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
+import {
+  isValidPlayerAgeFromBirthDate,
+  maxBirthDateForPlayers,
+  minBirthDateForPlayers,
+  toIsoDateLocal,
+} from '@/lib/age-birthday'
+
+/** Imágenes en `public/onboarding/` (servidas en producción con el mismo build). */
+const ONBOARDING_HERO_BY_STEP: Record<1 | 2 | 3, string> = {
+  1: '/onboarding/step-1.jpg',
+  2: '/onboarding/step-2.jpg',
+  3: '/onboarding/step-3.jpg',
+}
+
+const ONBOARDING_HERO_FALLBACK = ONBOARDING_HERO_BY_STEP[1]
+
+function OnboardingStepHero({
+  stepNum,
+  title,
+  subtitle,
+}: {
+  stepNum: 1 | 2 | 3
+  title: string
+  subtitle?: string
+}) {
+  const [src, setSrc] = useState(ONBOARDING_HERO_BY_STEP[stepNum])
+
+  useEffect(() => {
+    setSrc(ONBOARDING_HERO_BY_STEP[stepNum])
+  }, [stepNum])
+
+  return (
+    <div className="relative -mx-1 mb-6 h-40 sm:h-44 overflow-hidden rounded-2xl border border-border/60 shadow-sm">
+      <img
+        src={src}
+        alt=""
+        className="h-full w-full object-cover"
+        onError={() => {
+          if (src !== ONBOARDING_HERO_FALLBACK) {
+            setSrc(ONBOARDING_HERO_FALLBACK)
+          }
+        }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-background via-background/45 to-transparent" />
+      <div className="absolute bottom-3 left-4 right-4">
+        <p className="text-xs font-medium text-primary flex items-center gap-1">
+          <Sparkles className="w-3.5 h-3.5" />
+          Paso {stepNum} de 3
+        </p>
+        <h2 className="text-lg font-bold text-foreground mt-0.5 leading-tight">{title}</h2>
+        {subtitle ? (
+          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{subtitle}</p>
+        ) : null}
+      </div>
+    </div>
+  )
+}
 
 const POSITIONS: { value: Position; label: string }[] = [
   { value: 'portero', label: 'Portero' },
@@ -32,13 +91,18 @@ const POSITIONS: { value: Position; label: string }[] = [
 ]
 
 const LEVELS: { value: Level; label: string; description: string }[] = [
-  { value: 'principiante', label: 'Principiante', description: 'Recien empezando' },
+  { value: 'principiante', label: 'Principiante', description: 'Recién empezando' },
   { value: 'intermedio', label: 'Intermedio', description: 'Juego regularmente' },
   { value: 'avanzado', label: 'Avanzado', description: 'Tengo experiencia' },
   { value: 'competitivo', label: 'Competitivo', description: 'Nivel de torneo' },
 ]
 
 const DAYS = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo']
+
+function hasRealProfilePhoto(url: string): boolean {
+  const u = url?.trim()
+  return Boolean(u) && u !== DEFAULT_AVATAR
+}
 
 export function OnboardingScreen() {
   const {
@@ -53,7 +117,7 @@ export function OnboardingScreen() {
   const [step, setStep] = useState(1)
   const [data, setData] = useState<OnboardingData>({
     name: '',
-    age: 0,
+    birthDate: maxBirthDateForPlayers(),
     gender: currentUser?.gender || 'male',
     whatsappPhone: currentUser?.whatsappPhone || '',
     position: 'mediocampista',
@@ -64,14 +128,16 @@ export function OnboardingScreen() {
     photo: '',
   })
 
-  const totalSteps = 4
+  const totalSteps = 3
   const isEditMode = onboardingSource === 'profile_edit'
 
   useEffect(() => {
     if (!isEditMode || !currentUser) return
     setData({
       name: currentUser.name,
-      age: currentUser.age,
+      birthDate: currentUser.birthDate
+        ? toIsoDateLocal(currentUser.birthDate)
+        : maxBirthDateForPlayers(),
       gender: currentUser.gender,
       whatsappPhone: currentUser.whatsappPhone || '',
       position: currentUser.position,
@@ -79,7 +145,7 @@ export function OnboardingScreen() {
       availability: [...currentUser.availability],
       city: currentUser.city,
       cityId: currentUser.cityId,
-      photo: currentUser.photo || '',
+      photo: currentUser.photo && currentUser.photo !== DEFAULT_AVATAR ? currentUser.photo : '',
     })
     setStep(1)
   }, [isEditMode, currentUser?.id])
@@ -135,7 +201,10 @@ export function OnboardingScreen() {
   const toggleAvailability = (day: string) => {
     const dayLower = day.toLowerCase()
     if (data.availability.includes(dayLower)) {
-      setData({ ...data, availability: data.availability.filter(d => d !== dayLower) })
+      setData({
+        ...data,
+        availability: data.availability.filter((d) => d !== dayLower),
+      })
     } else {
       setData({ ...data, availability: [...data.availability, dayLower] })
     }
@@ -146,15 +215,13 @@ export function OnboardingScreen() {
       case 1:
         return (
           data.name.length >= 2 &&
-          data.age >= 16 &&
+          isValidPlayerAgeFromBirthDate(data.birthDate) &&
           data.whatsappPhone.trim().length >= 8
         )
       case 2:
         return true
       case 3:
-        return data.availability.length > 0
-      case 4:
-        return true
+        return data.availability.length > 0 && hasRealProfilePhoto(data.photo)
       default:
         return false
     }
@@ -162,10 +229,9 @@ export function OnboardingScreen() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
       <header className="flex items-center justify-between p-4">
-        <Button 
-          variant="ghost" 
+        <Button
+          variant="ghost"
           size="icon"
           onClick={handleBack}
           className="text-muted-foreground hover:text-foreground"
@@ -173,29 +239,30 @@ export function OnboardingScreen() {
           <ArrowLeft className="w-5 h-5" />
         </Button>
         <div className="flex items-center gap-2">
-          {Array.from({ length: totalSteps }).map((_, i) => (
-            <div
-              key={i}
-              className={`h-2 rounded-full transition-all ${
-                i < step ? 'w-8 bg-primary' : i === step ? 'w-8 bg-primary/50' : 'w-2 bg-border'
-              }`}
-            />
-          ))}
+          {Array.from({ length: totalSteps }).map((_, i) => {
+            const cur = step - 1
+            const seg =
+              i < cur ? 'w-8 bg-primary' : i === cur ? 'w-8 bg-primary/50' : 'w-2 bg-border'
+            return (
+              <div key={i} className={`h-2 rounded-full transition-all ${seg}`} />
+            )
+          })}
         </div>
         <div className="w-10" />
       </header>
 
-      {/* Content */}
       <main className="flex-1 flex flex-col p-4 max-w-md mx-auto w-full">
         {step === 1 && (
           <div className="flex-1 flex flex-col">
-            <div className="space-y-2 mb-8">
-              <h1 className="text-2xl font-bold text-foreground">
-                {isEditMode ? 'Editar datos' : 'Información básica'}
-              </h1>
-              <p className="text-muted-foreground">
+            <OnboardingStepHero
+              stepNum={1}
+              title={isEditMode ? 'Tus datos' : '¡Arma tu perfil!'}
+            />
+
+            <div className="space-y-2 mb-6">
+              <p className="text-sm text-muted-foreground">
                 {isEditMode
-                  ? 'Actualiza tu nombre, edad, ciudad y nivel'
+                  ? 'Nombre, fecha de nacimiento, WhatsApp y ciudad.'
                   : 'WhatsApp y género son obligatorios; solo verás partidos de tu mismo género.'}
               </p>
             </div>
@@ -204,11 +271,11 @@ export function OnboardingScreen() {
               <div className="space-y-2">
                 <Label htmlFor="name" className="text-foreground flex items-center gap-2">
                   <User className="w-4 h-4 text-primary" />
-                  Nombre
+                  Nombre o apodo (como te dicen en la cancha)
                 </Label>
                 <Input
                   id="name"
-                  placeholder="Tu nombre"
+                  placeholder="Ej: Pipa, Chino, Pancho..."
                   value={data.name}
                   onChange={(e) => setData({ ...data, name: e.target.value })}
                   className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
@@ -216,20 +283,22 @@ export function OnboardingScreen() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="age" className="text-foreground flex items-center gap-2">
+                <Label htmlFor="birthDate" className="text-foreground flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-primary" />
-                  Edad
+                  Fecha de nacimiento
                 </Label>
                 <Input
-                  id="age"
-                  type="number"
-                  placeholder="Tu edad"
-                  min={16}
-                  max={99}
-                  value={data.age || ''}
-                  onChange={(e) => setData({ ...data, age: parseInt(e.target.value) || 0 })}
-                  className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                  id="birthDate"
+                  type="date"
+                  min={minBirthDateForPlayers()}
+                  max={maxBirthDateForPlayers()}
+                  value={data.birthDate}
+                  onChange={(e) => setData({ ...data, birthDate: e.target.value })}
+                  className="h-12 bg-secondary border-border text-foreground"
                 />
+                <p className="text-xs text-muted-foreground">
+                  edad minima 17 años
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -279,8 +348,12 @@ export function OnboardingScreen() {
                             : 'border-border bg-secondary hover:border-muted-foreground'
                         }`}
                       >
-                        <User className={`w-6 h-6 ${data.gender === 'male' ? 'text-primary' : 'text-muted-foreground'}`} />
-                        <span className={`font-medium ${data.gender === 'male' ? 'text-primary' : 'text-foreground'}`}>
+                        <User
+                          className={`w-6 h-6 ${data.gender === 'male' ? 'text-primary' : 'text-muted-foreground'}`}
+                        />
+                        <span
+                          className={`font-medium ${data.gender === 'male' ? 'text-primary' : 'text-foreground'}`}
+                        >
                           Masculino
                         </span>
                       </button>
@@ -293,8 +366,12 @@ export function OnboardingScreen() {
                             : 'border-border bg-secondary hover:border-muted-foreground'
                         }`}
                       >
-                        <User className={`w-6 h-6 ${data.gender === 'female' ? 'text-primary' : 'text-muted-foreground'}`} />
-                        <span className={`font-medium ${data.gender === 'female' ? 'text-primary' : 'text-foreground'}`}>
+                        <User
+                          className={`w-6 h-6 ${data.gender === 'female' ? 'text-primary' : 'text-muted-foreground'}`}
+                        />
+                        <span
+                          className={`font-medium ${data.gender === 'female' ? 'text-primary' : 'text-foreground'}`}
+                        >
                           Femenino
                         </span>
                       </button>
@@ -317,7 +394,19 @@ export function OnboardingScreen() {
                 }
                 label="Ciudad / ubicación"
               />
+            </div>
+          </div>
+        )}
 
+        {step === 2 && (
+          <div className="flex-1 flex flex-col">
+            <OnboardingStepHero
+              stepNum={2}
+              title="Nivel de juego y tu posición"
+              subtitle="Así otros jugadores saben qué esperar en la cancha."
+            />
+
+            <div className="space-y-8 flex-1">
               <div className="space-y-3">
                 <Label className="text-foreground flex items-center gap-2">
                   <Star className="w-4 h-4 text-primary" />
@@ -335,34 +424,23 @@ export function OnboardingScreen() {
                           : 'border-border bg-secondary hover:border-muted-foreground'
                       }`}
                     >
-                      <span className={`font-medium block ${
-                        data.level === lvl.value ? 'text-primary' : 'text-foreground'
-                      }`}>
+                      <span
+                        className={`font-medium block ${
+                          data.level === lvl.value ? 'text-primary' : 'text-foreground'
+                        }`}
+                      >
                         {lvl.label}
                       </span>
-                      <span className="text-sm text-muted-foreground">
-                        {lvl.description}
-                      </span>
+                      <span className="text-sm text-muted-foreground">{lvl.description}</span>
                     </button>
                   ))}
                 </div>
               </div>
-            </div>
-          </div>
-        )}
 
-        {step === 2 && (
-          <div className="flex-1 flex flex-col">
-            <div className="space-y-2 mb-8">
-              <h1 className="text-2xl font-bold text-foreground">Tu posición</h1>
-              <p className="text-muted-foreground">¿Dónde te ubicas en la cancha?</p>
-            </div>
-
-            <div className="space-y-6 flex-1">
               <div className="space-y-3">
                 <Label className="text-foreground flex items-center gap-2">
                   <User className="w-4 h-4 text-primary" />
-                  Posición
+                  Posición en cancha
                 </Label>
                 <div className="grid grid-cols-2 gap-3">
                   {POSITIONS.map((pos) => (
@@ -376,9 +454,11 @@ export function OnboardingScreen() {
                           : 'border-border bg-secondary hover:border-muted-foreground'
                       }`}
                     >
-                      <span className={`font-medium ${
-                        data.position === pos.value ? 'text-primary' : 'text-foreground'
-                      }`}>
+                      <span
+                        className={`font-medium ${
+                          data.position === pos.value ? 'text-primary' : 'text-foreground'
+                        }`}
+                      >
                         {pos.label}
                       </span>
                     </button>
@@ -391,125 +471,118 @@ export function OnboardingScreen() {
 
         {step === 3 && (
           <div className="flex-1 flex flex-col">
-            <div className="space-y-2 mb-8">
-              <h1 className="text-2xl font-bold text-foreground">Disponibilidad</h1>
-              <p className="text-muted-foreground">Cuando puedes jugar?</p>
-            </div>
-
-            <div className="space-y-3 flex-1">
-              <Label className="text-foreground flex items-center gap-2">
-                <Clock className="w-4 h-4 text-primary" />
-                Dias disponibles
-              </Label>
-              <div className="grid grid-cols-2 gap-3">
-                {DAYS.map((day) => (
-                  <button
-                    key={day}
-                    type="button"
-                    onClick={() => toggleAvailability(day)}
-                    className={`p-4 rounded-xl border-2 transition-all text-center ${
-                      data.availability.includes(day.toLowerCase())
-                        ? 'border-primary bg-primary/10'
-                        : 'border-border bg-secondary hover:border-muted-foreground'
-                    }`}
-                  >
-                    <span className={`font-medium ${
-                      data.availability.includes(day.toLowerCase()) ? 'text-primary' : 'text-foreground'
-                    }`}>
-                      {day}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {step === 4 && (
-          <div className="flex-1 flex flex-col">
-            <div className="space-y-2 mb-8">
-              <h1 className="text-2xl font-bold text-foreground">Foto de perfil</h1>
-              <p className="text-muted-foreground">
-                Sube una imagen tuya (JPG, PNG, WebP o GIF, máx. 2 MB). Opcional:
-                puedes saltar este paso y añadirla después desde Perfil.
-              </p>
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              className="sr-only"
-              onChange={(ev) => void handleProfilePhotoFile(ev)}
+            <OnboardingStepHero
+              stepNum={3}
+              title="Disponibilidad y foto de perfil"
+              subtitle="Elige cuándo puedes jugar y sube una foto (obligatoria)."
             />
 
-            <div className="flex-1 flex flex-col items-center justify-center gap-4">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={photoUploading}
-                className="relative rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-60"
-              >
-                <div className="w-40 h-40 rounded-full bg-secondary border-2 border-dashed border-border flex items-center justify-center overflow-hidden">
-                  {photoUploading ? (
-                    <Loader2 className="w-10 h-10 text-primary animate-spin" />
-                  ) : data.photo ? (
-                    <img
-                      src={data.photo}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <Camera className="w-12 h-12 text-muted-foreground" />
+            <div className="space-y-8 flex-1">
+              <div className="space-y-3">
+                <Label className="text-foreground flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-primary" />
+                  Días disponibles
+                </Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {DAYS.map((day) => (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => toggleAvailability(day)}
+                      className={`p-4 rounded-xl border-2 transition-all text-center ${
+                        data.availability.includes(day.toLowerCase())
+                          ? 'border-primary bg-primary/10'
+                          : 'border-border bg-secondary hover:border-muted-foreground'
+                      }`}
+                    >
+                      <span
+                        className={`font-medium ${
+                          data.availability.includes(day.toLowerCase())
+                            ? 'text-primary'
+                            : 'text-foreground'
+                        }`}
+                      >
+                        {day}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <Label className="text-foreground flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-primary" />
+                  Foto de perfil (obligatoria)
+                </Label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="sr-only"
+                  onChange={(ev) => void handleProfilePhotoFile(ev)}
+                />
+                <div className="flex flex-col items-center gap-4">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={photoUploading}
+                    className="relative rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-60"
+                  >
+                    <div className="w-36 h-36 rounded-full bg-secondary border-2 border-dashed border-border flex items-center justify-center overflow-hidden">
+                      {photoUploading ? (
+                        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                      ) : hasRealProfilePhoto(data.photo) ? (
+                        <img
+                          src={data.photo}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Camera className="w-12 h-12 text-muted-foreground" />
+                      )}
+                    </div>
+                    <span className="absolute bottom-1 right-1 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-4 ring-card">
+                      <ImagePlus className="w-5 h-5" />
+                    </span>
+                  </button>
+                  <Button
+                    type="button"
+                    variant="default"
+                    className="w-full max-w-xs"
+                    disabled={photoUploading}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {photoUploading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Subiendo…
+                      </>
+                    ) : (
+                      <>
+                        <ImagePlus className="w-4 h-4 mr-2" />
+                        Elegir foto
+                      </>
+                    )}
+                  </Button>
+                  {!hasRealProfilePhoto(data.photo) && (
+                    <p className="text-xs text-center text-amber-600 dark:text-amber-400 px-1">
+                      Sube la foto de tu ídolo o una foto de perfil tuya.
+                    </p>
                   )}
                 </div>
-                <span className="absolute bottom-1 right-1 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-4 ring-card">
-                  <ImagePlus className="w-5 h-5" />
-                </span>
-              </button>
-
-              <div className="flex flex-col w-full gap-2 max-w-xs">
-                <Button
-                  type="button"
-                  variant="default"
-                  className="w-full"
-                  disabled={photoUploading}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {photoUploading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Subiendo…
-                    </>
-                  ) : (
-                    <>
-                      <ImagePlus className="w-4 h-4 mr-2" />
-                      Elegir foto
-                    </>
-                  )}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full border-border text-foreground hover:bg-secondary"
-                  disabled={photoUploading}
-                  onClick={() =>
-                    setData({
-                      ...data,
-                      photo:
-                        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face',
-                    })
-                  }
-                >
-                  Usar foto de ejemplo
-                </Button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Bottom Button */}
-        <div className="pt-6">
+        <div className="pt-6 space-y-3">
+          {step === totalSteps && (
+            <p className="text-center text-sm font-semibold text-primary">
+              {canProceed()
+                ? 'Cancha lista, ahora si: vamos a jugar con todo!'
+                : 'Activa tus dias y tu foto para salir a la cancha'}
+            </p>
+          )}
           <Button
             onClick={handleNext}
             disabled={!canProceed()}

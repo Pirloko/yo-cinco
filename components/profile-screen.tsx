@@ -36,6 +36,10 @@ import {
 } from 'lucide-react'
 import type { Level } from '@/lib/types'
 import { getOrganizerTierProgress } from '@/lib/organizer-level'
+import {
+  computeAgeFromBirthDate,
+  isBirthdayToday,
+} from '@/lib/age-birthday'
 import { ThemeSegmentedControl } from '@/components/theme-controls'
 
 const LEVEL_LABELS: Record<Level, string> = {
@@ -115,6 +119,19 @@ export function ProfileScreen() {
     const n = currentUser?.statsOrganizedCompleted ?? 0
     return getOrganizerTierProgress(n)
   }, [currentUser?.statsOrganizedCompleted])
+
+  const displayAge = useMemo(() => {
+    if (!currentUser) return 0
+    if (currentUser.birthDate) {
+      return computeAgeFromBirthDate(currentUser.birthDate)
+    }
+    return currentUser.age
+  }, [currentUser])
+
+  const isBirthday = useMemo(() => {
+    if (!currentUser?.birthDate) return false
+    return isBirthdayToday(currentUser.birthDate)
+  }, [currentUser?.birthDate])
 
   const statItems = [
     {
@@ -320,6 +337,18 @@ export function ProfileScreen() {
               Cambiar foto
             </Button>
 
+            {isBirthday && (
+              <div className="mb-3 w-full max-w-sm mx-auto rounded-xl border border-primary/35 bg-gradient-to-br from-primary/15 to-primary/5 px-4 py-3 text-center shadow-sm">
+                <p className="text-sm font-semibold text-primary">
+                  ¡Feliz cumpleaños,{' '}
+                  {currentUser.name.trim().split(/\s+/)[0] || 'crack'}!
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Que tengas un gran día en la cancha.
+                </p>
+              </div>
+            )}
+
             <h2 className="text-xl font-bold text-foreground text-center">
               {currentUser.name}
             </h2>
@@ -345,12 +374,12 @@ export function ProfileScreen() {
               >
                 {getPositionLabel() || 'Mediocampista'}
               </Badge>
-              {currentUser.age > 0 && (
+              {displayAge > 0 && (
                 <Badge
                   variant="secondary"
                   className="bg-secondary/80 text-foreground border border-border/60"
                 >
-                  {currentUser.age} años
+                  {displayAge} años
                 </Badge>
               )}
             </div>

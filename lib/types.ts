@@ -69,6 +69,8 @@ export interface User {
   regionId?: string
   availability: string[]
   photo: string
+  /** Si existe, la edad mostrada se calcula desde aquí (cumple cada año). */
+  birthDate?: Date | null
   bio?: string
   whatsappPhone?: string
   /** Confirmación de WhatsApp + género (OAuth debe pasar por onboarding). */
@@ -322,7 +324,8 @@ export interface Message {
 
 export interface OnboardingData {
   name: string
-  age: number
+  /** YYYY-MM-DD; edad 16–60 años según fecha. */
+  birthDate: string
   gender: Gender
   whatsappPhone: string
   position: Position
