@@ -579,7 +579,7 @@ export function OnboardingScreen() {
           {step === totalSteps && (
             <p className="text-center text-sm font-semibold text-primary">
               {canProceed()
-                ? 'Cancha lista, ahora si: vamos a jugar con todo!'
+                ? 'perfil listo, vamos a jugar!'
                 : 'Activa tus dias y tu foto para salir a la cancha'}
             </p>
           )}
