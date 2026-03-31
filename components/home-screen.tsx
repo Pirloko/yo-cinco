@@ -8,7 +8,14 @@ import { useApp } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
 import { MatchCard } from '@/components/match-card'
 import { Button } from '@/components/ui/button'
-import { Target, Users, Shuffle, Sparkles, Bell, ChevronRight } from 'lucide-react'
+import {
+  Target,
+  Users,
+  Shuffle,
+  Sparkles,
+  Bell,
+  ChevronRight,
+} from 'lucide-react'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import { MatchOpportunity, MatchType } from '@/lib/types'
 import { JoinRevueltaDialog } from '@/components/join-revuelta-dialog'
@@ -294,20 +301,16 @@ export function HomeScreen() {
             ))}
           </div>
         ) : (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mx-auto mb-4">
-              <Sparkles className="w-8 h-8 text-muted-foreground" />
-            </div>
-            <p className="text-muted-foreground">
-              No hay partidos disponibles con este filtro
-            </p>
-            <Button 
-              variant="link" 
-              className="text-primary mt-2"
-              onClick={() => setActiveFilter('all')}
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-emerald-950/50 bg-black/25 px-6 py-14 text-center dark:border-emerald-900/45 dark:bg-black/40">
+            <div
+              className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-emerald-900/45 bg-black/35 text-[2.25rem] leading-none dark:border-emerald-800/50 dark:bg-black/50"
+              aria-hidden
             >
-              Ver todos los partidos
-            </Button>
+              ⚽
+            </div>
+            <p className="text-base font-bold text-foreground">
+              No hay partidos disponibles
+            </p>
           </div>
         )}
       </div>
