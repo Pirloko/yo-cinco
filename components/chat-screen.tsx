@@ -44,6 +44,7 @@ export function ChatScreen() {
     rivalChallenges,
     submitRivalCaptainVote,
     finalizeRivalOrganizerOverride,
+    openPublicProfile,
   } = useApp()
 
   const opportunity = selectedChatOpportunityId
@@ -189,6 +190,10 @@ export function ChatScreen() {
     }
     if (!chatMessagingOpen) {
       toast.info('Este chat ya está cerrado; no se pueden enviar mensajes.')
+      return
+    }
+    if (currentUser.modBannedAt || (currentUser.modSuspendedUntil && currentUser.modSuspendedUntil > new Date())) {
+      toast.error('Tu cuenta está restringida y solo puedes visualizar contenido por ahora.')
       return
     }
 
@@ -351,19 +356,25 @@ export function ChatScreen() {
                   {participants.map((p) => (
                     <div key={p.id} className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2 min-w-0">
-                        <img
-                          src={p.photo}
-                          alt={p.name}
-                          className="w-7 h-7 rounded-full object-cover border border-border"
-                        />
-                        <span className="text-sm text-foreground truncate">
-                          {p.name}
-                          {(opportunity?.type === 'open' ||
-                            opportunity?.type === 'players') &&
-                          p.isGoalkeeper
-                            ? ' 🧤'
-                            : ''}
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => openPublicProfile(p.id)}
+                          className="flex items-center gap-2 min-w-0 text-left"
+                        >
+                          <img
+                            src={p.photo}
+                            alt={p.name}
+                            className="w-7 h-7 rounded-full object-cover border border-border"
+                          />
+                          <span className="text-sm text-foreground truncate hover:underline">
+                            {p.name}
+                            {(opportunity?.type === 'open' ||
+                              opportunity?.type === 'players') &&
+                            p.isGoalkeeper
+                              ? ' 🧤'
+                              : ''}
+                          </span>
+                        </button>
                       </div>
                       <span className="text-[11px] text-muted-foreground capitalize">
                         {p.status === 'creator' ? 'Organizador' : p.status}

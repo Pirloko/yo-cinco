@@ -81,9 +81,36 @@ export interface User {
   statsOrganizedCompleted?: number
   /** Victorias del equipo del organizador al organizar. */
   statsOrganizerWins?: number
+  /** Moderación/sanciones (solo lectura; nunca exponer WhatsApp en perfiles públicos). */
+  modYellowCards?: number
+  modRedCards?: number
+  modSuspendedUntil?: Date
+  modBannedAt?: Date
+  modBanReason?: string
   createdAt: Date
   /** Por defecto jugador; `venue` solo vía administración en Supabase. */
   accountType?: AccountType
+}
+
+/** Perfil público de un jugador (vista para terceros; sin teléfono/email). */
+export type PublicPlayerProfile = {
+  id: string
+  name: string
+  photo: string
+  cityId: string
+  city: string
+  level: Level
+  position: Position
+  availability: string[]
+  statsPlayerWins: number
+  statsPlayerDraws: number
+  statsPlayerLosses: number
+  statsOrganizedCompleted: number
+  statsOrganizerWins: number
+  modYellowCards: number
+  modRedCards: number
+  modSuspendedUntil: Date | null
+  modBannedAt: Date | null
 }
 
 export interface SportsVenue {

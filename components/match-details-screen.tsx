@@ -56,6 +56,7 @@ export function MatchDetailsScreen() {
     rivalChallenges,
     submitRivalCaptainVote,
     finalizeRivalOrganizerOverride,
+    openPublicProfile,
   } = useApp()
 
   const opportunity = selectedMatchOpportunityId
@@ -558,18 +559,24 @@ export function MatchDetailsScreen() {
               {participants.map((p) => (
                 <div key={p.id} className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 min-w-0">
-                    <img
-                      src={p.photo}
-                      alt={p.name}
-                      className="w-8 h-8 rounded-full object-cover border border-border"
-                    />
-                    <span className="text-sm text-foreground truncate">
-                      {p.name}
-                      {(opportunity.type === 'open' || opportunity.type === 'players') &&
-                      p.isGoalkeeper
-                        ? ' 🧤'
-                        : ''}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => openPublicProfile(p.id)}
+                      className="flex items-center gap-2 min-w-0 text-left"
+                    >
+                      <img
+                        src={p.photo}
+                        alt={p.name}
+                        className="w-8 h-8 rounded-full object-cover border border-border"
+                      />
+                      <span className="text-sm text-foreground truncate hover:underline">
+                        {p.name}
+                        {(opportunity.type === 'open' || opportunity.type === 'players') &&
+                        p.isGoalkeeper
+                          ? ' 🧤'
+                          : ''}
+                      </span>
+                    </button>
                   </div>
                   <Badge variant="secondary" className="capitalize text-xs">
                     {p.status === 'creator'

@@ -15,6 +15,7 @@ import { TeamsScreen } from '@/components/teams-screen'
 import { VenueDashboardScreen } from '@/components/venue-dashboard-screen'
 import { VenueOnboardingScreen } from '@/components/venue-onboarding-screen'
 import { AdminDashboardScreen } from '@/components/admin-dashboard-screen'
+import { PublicPlayerProfileSheet } from '@/components/public-player-profile-sheet'
 
 function AppContent() {
   const { authLoading, currentScreen } = useApp()
@@ -32,35 +33,110 @@ function AppContent() {
 
   switch (currentScreen) {
     case 'landing':
-      return <LandingPage />
+      return (
+        <>
+          <LandingPage />
+          <PublicPlayerProfileSheet />
+        </>
+      )
     case 'auth':
-      return <AuthScreen />
+      return (
+        <>
+          <AuthScreen />
+          <PublicPlayerProfileSheet />
+        </>
+      )
     case 'onboarding':
-      return <OnboardingScreen />
+      return (
+        <>
+          <OnboardingScreen />
+          <PublicPlayerProfileSheet />
+        </>
+      )
     case 'home':
-      return <HomeScreen />
+      return (
+        <>
+          <HomeScreen />
+          <PublicPlayerProfileSheet />
+        </>
+      )
     case 'create':
-      return <CreateScreen />
+      return (
+        <>
+          <CreateScreen />
+          <PublicPlayerProfileSheet />
+        </>
+      )
     case 'explore':
-      return <ExploreScreen />
+      return (
+        <>
+          <ExploreScreen />
+          <PublicPlayerProfileSheet />
+        </>
+      )
     case 'matches':
-      return <MatchesScreen />
+      return (
+        <>
+          <MatchesScreen />
+          <PublicPlayerProfileSheet />
+        </>
+      )
     case 'chat':
-      return <ChatScreen />
+      return (
+        <>
+          <ChatScreen />
+          <PublicPlayerProfileSheet />
+        </>
+      )
     case 'matchDetails':
-      return <MatchDetailsScreen />
+      return (
+        <>
+          <MatchDetailsScreen />
+          <PublicPlayerProfileSheet />
+        </>
+      )
     case 'profile':
-      return <ProfileScreen />
+      return (
+        <>
+          <ProfileScreen />
+          <PublicPlayerProfileSheet />
+        </>
+      )
     case 'teams':
-      return <TeamsScreen />
+      return (
+        <>
+          <TeamsScreen />
+          <PublicPlayerProfileSheet />
+        </>
+      )
     case 'venueOnboarding':
-      return <VenueOnboardingScreen />
+      return (
+        <>
+          <VenueOnboardingScreen />
+          <PublicPlayerProfileSheet />
+        </>
+      )
     case 'venueDashboard':
-      return <VenueDashboardScreen />
+      return (
+        <>
+          <VenueDashboardScreen />
+          <PublicPlayerProfileSheet />
+        </>
+      )
     case 'adminDashboard':
-      return <AdminDashboardScreen />
+      return (
+        <>
+          <AdminDashboardScreen />
+          <PublicPlayerProfileSheet />
+        </>
+      )
     default:
-      return <LandingPage />
+      return (
+        <>
+          <LandingPage />
+          <PublicPlayerProfileSheet />
+        </>
+      )
   }
 }
 

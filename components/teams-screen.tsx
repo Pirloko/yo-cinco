@@ -92,6 +92,7 @@ export function TeamsScreen() {
     teamsDetailFocusTeamId,
     setTeamsDetailFocusTeamId,
     setCurrentScreen,
+    openPublicProfile,
   } = useApp()
   
   const [view, setView] = useState<TeamsView>('list')
@@ -1384,14 +1385,27 @@ export function TeamsScreen() {
                 <Card key={member.id} className="bg-card border-border">
                   <CardContent className="p-3">
                     <div className="flex items-center gap-3">
-                      <img
-                        src={member.photo}
-                        alt={member.name}
-                        className="w-12 h-12 rounded-full object-cover"
-                      />
+                      <button
+                        type="button"
+                        onClick={() => openPublicProfile(member.id)}
+                        className="shrink-0"
+                        aria-label={`Ver perfil de ${member.name}`}
+                      >
+                        <img
+                          src={member.photo}
+                          alt={member.name}
+                          className="w-12 h-12 rounded-full object-cover border border-border"
+                        />
+                      </button>
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <p className="font-medium text-foreground">{member.name}</p>
+                          <button
+                            type="button"
+                            onClick={() => openPublicProfile(member.id)}
+                            className="font-medium text-foreground hover:underline text-left"
+                          >
+                            {member.name}
+                          </button>
                           {team.captainId === member.id && (
                             <Crown className="w-4 h-4 text-accent" />
                           )}

@@ -42,6 +42,11 @@ export type ProfileRow = {
   stats_player_losses?: number | null
   stats_organized_completed?: number | null
   stats_organizer_wins?: number | null
+  mod_yellow_cards?: number | null
+  mod_red_cards?: number | null
+  mod_suspended_until?: string | null
+  mod_banned_at?: string | null
+  mod_ban_reason?: string | null
   created_at: string
   account_type?: 'player' | 'venue' | 'admin' | null
 }
@@ -71,6 +76,11 @@ export function profileRowToUser(row: ProfileRow, email: string): User {
     statsPlayerLosses: row.stats_player_losses ?? 0,
     statsOrganizedCompleted: row.stats_organized_completed ?? 0,
     statsOrganizerWins: row.stats_organizer_wins ?? 0,
+    modYellowCards: row.mod_yellow_cards ?? 0,
+    modRedCards: row.mod_red_cards ?? 0,
+    modSuspendedUntil: row.mod_suspended_until ? new Date(row.mod_suspended_until) : undefined,
+    modBannedAt: row.mod_banned_at ? new Date(row.mod_banned_at) : undefined,
+    modBanReason: row.mod_ban_reason ?? undefined,
     createdAt: new Date(row.created_at),
     accountType:
       row.account_type === 'venue'

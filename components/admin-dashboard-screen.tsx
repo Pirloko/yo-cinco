@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useApp } from '@/lib/app-context'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ import { GeoLocationSelect } from '@/components/geo-location-select'
 import { AdminGeoCatalogPanel } from '@/components/admin-geo-catalog-panel'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import { Textarea } from '@/components/ui/textarea'
 
 type AdminMetrics = {
   range: RangeKey
@@ -64,6 +65,25 @@ export function AdminDashboardScreen() {
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null)
   const [range, setRange] = useState<RangeKey>('month')
   const [creating, setCreating] = useState(false)
+  const [reports, setReports] = useState<
+    Array<{
+      id: string
+      reporter_id: string
+      reported_user_id: string
+      context_type: string
+      context_id: string | null
+      reason: string
+      details: string | null
+      status: string
+      created_at: string
+    }>
+  >([])
+  const [reportsLoading, setReportsLoading] = useState(false)
+  const [reportsStatus, setReportsStatus] = useState<'pending' | 'all'>('pending')
+  const [modNoteByReportId, setModNoteByReportId] = useState<Record<string, string>>(
+    {}
+  )
+  const [sanctionBusyId, setSanctionBusyId] = useState<string | null>(null)
   const [form, setForm] = useState({
     email: '',
     password: '',
@@ -74,6 +94,137 @@ export function AdminDashboardScreen() {
     phone: '',
     mapsUrl: '',
   })
+
+  const buildAdminAuthHeaders = useCallback(async () => {
+    const h: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (isSupabaseConfigured()) {
+      const supabase = createClient()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        h.Authorization = `Bearer ${session.access_token}`
+      }
+    }
+    return h
+  }, [])
+
+  const loadReports = useCallback(async () => {
+    if (!currentUser || currentUser.accountType !== 'admin') return
+    setReportsLoading(true)
+    try {
+      const headers = await buildAdminAuthHeaders()
+      const r = await fetch(`/api/admin/reports?status=${reportsStatus}`, {
+        method: 'GET',
+        headers,
+      })
+      const json = (await r.json()) as { reports?: any[]; error?: string }
+      if (!r.ok) {
+        toast.error(json.error ?? 'No se pudieron cargar reportes.')
+        return
+      }
+      setReports((json.reports ?? []) as any)
+    } finally {
+      setReportsLoading(false)
+    }
+  }, [buildAdminAuthHeaders, currentUser, reportsStatus])
+
+  useEffect(() => {
+    void loadReports()
+  }, [loadReports])
+
+  const updateReportStatus = useCallback(
+    async (
+      action: 'markReviewed' | 'dismiss' | 'actionTaken',
+      reportId: string
+    ) => {
+      const headers = await buildAdminAuthHeaders()
+      const r = await fetch('/api/admin/reports', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action,
+          reportId,
+          resolution: modNoteByReportId[reportId] ?? null,
+        }),
+      })
+      const json = (await r.json()) as { ok?: boolean; error?: string }
+      if (!r.ok || !json.ok) {
+        toast.error(json.error ?? 'Error al actualizar reporte.')
+        return false
+      }
+      return true
+    },
+    [buildAdminAuthHeaders, modNoteByReportId]
+  )
+
+  const applyCard = useCallback(
+    async (userId: string, card: 'yellow' | 'red', reportId: string) => {
+      setSanctionBusyId(reportId)
+      try {
+        const headers = await buildAdminAuthHeaders()
+        const r = await fetch('/api/admin/sanctions', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ action: 'applyCard', userId, card }),
+        })
+        const json = (await r.json()) as { ok?: boolean; error?: string }
+        if (!r.ok || !json.ok) {
+          toast.error(json.error ?? 'Error al aplicar sanción.')
+          return
+        }
+        toast.success(card === 'yellow' ? 'Tarjeta amarilla aplicada.' : 'Tarjeta roja aplicada.')
+        await updateReportStatus('actionTaken', reportId)
+        void loadReports()
+      } finally {
+        setSanctionBusyId(null)
+      }
+    },
+    [buildAdminAuthHeaders, loadReports, updateReportStatus]
+  )
+
+  const banUser = useCallback(
+    async (userId: string, reportId: string) => {
+      setSanctionBusyId(reportId)
+      try {
+        const headers = await buildAdminAuthHeaders()
+        const r = await fetch('/api/admin/sanctions', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            action: 'ban',
+            userId,
+            reason: modNoteByReportId[reportId] ?? null,
+          }),
+        })
+        const json = (await r.json()) as { ok?: boolean; error?: string }
+        if (!r.ok || !json.ok) {
+          toast.error(json.error ?? 'Error al banear.')
+          return
+        }
+        toast.success('Usuario baneado.')
+        await updateReportStatus('actionTaken', reportId)
+        void loadReports()
+      } finally {
+        setSanctionBusyId(null)
+      }
+    },
+    [buildAdminAuthHeaders, loadReports, modNoteByReportId, updateReportStatus]
+  )
+
+  const dismissReport = useCallback(
+    async (reportId: string) => {
+      setSanctionBusyId(reportId)
+      try {
+        const ok = await updateReportStatus('dismiss', reportId)
+        if (ok) toast.success('Reporte descartado.')
+        void loadReports()
+      } finally {
+        setSanctionBusyId(null)
+      }
+    },
+    [loadReports, updateReportStatus]
+  )
 
   const loadMetrics = async (nextRange = range) => {
     setLoading(true)
@@ -394,6 +545,142 @@ export function AdminDashboardScreen() {
           >
             {creating ? 'Creando...' : 'Crear usuario centro'}
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-card border-border">
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Moderación</p>
+              <p className="text-xs text-muted-foreground">
+                Reportes de jugadores y sanciones (amarillas/rojas/baneo).
+              </p>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                type="button"
+                variant={reportsStatus === 'pending' ? 'default' : 'secondary'}
+                size="sm"
+                onClick={() => setReportsStatus('pending')}
+              >
+                Pendientes
+              </Button>
+              <Button
+                type="button"
+                variant={reportsStatus === 'all' ? 'default' : 'secondary'}
+                size="sm"
+                onClick={() => setReportsStatus('all')}
+              >
+                Todos
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void loadReports()}
+                disabled={reportsLoading}
+              >
+                {reportsLoading ? 'Cargando…' : 'Actualizar'}
+              </Button>
+            </div>
+          </div>
+
+          {reports.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {reportsLoading ? 'Cargando…' : 'Sin reportes.'}
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {reports.map((r) => (
+                <div
+                  key={r.id}
+                  className="rounded-xl border border-border bg-secondary/10 p-4 space-y-3"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-semibold text-foreground">
+                        Reporte · {r.reason}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Estado:{' '}
+                        <span className="text-foreground">{r.status}</span> ·{' '}
+                        {new Date(r.created_at).toLocaleString('es-CL')}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Reportado:{' '}
+                        <span className="text-foreground">{r.reported_user_id}</span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Reportante:{' '}
+                        <span className="text-foreground">{r.reporter_id}</span>
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={sanctionBusyId === r.id}
+                        onClick={() => void applyCard(r.reported_user_id, 'yellow', r.id)}
+                      >
+                        Amarilla
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={sanctionBusyId === r.id}
+                        onClick={() => void applyCard(r.reported_user_id, 'red', r.id)}
+                      >
+                        Roja (3 días)
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        disabled={sanctionBusyId === r.id}
+                        onClick={() => void banUser(r.reported_user_id, r.id)}
+                      >
+                        Banear
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={sanctionBusyId === r.id}
+                        onClick={() => void dismissReport(r.id)}
+                      >
+                        Descartar
+                      </Button>
+                    </div>
+                  </div>
+
+                  {r.details ? (
+                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                      {r.details}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">
+                      Sin detalle adicional.
+                    </p>
+                  )}
+
+                  <Textarea
+                    value={modNoteByReportId[r.id] ?? ''}
+                    onChange={(e) =>
+                      setModNoteByReportId((prev) => ({
+                        ...prev,
+                        [r.id]: e.target.value,
+                      }))
+                    }
+                    placeholder="Nota/resolución admin (opcional)."
+                    className="bg-background border-border min-h-[72px]"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -95,6 +95,21 @@ function getAuthUserEmail(u: SupabaseAuthUser): string | undefined {
   return undefined
 }
 
+function isUserReadOnly(u: User | null): { readonly: boolean; reason: string } {
+  if (!u) return { readonly: false, reason: '' }
+  if (u.modBannedAt) return { readonly: true, reason: 'Cuenta baneada.' }
+  if (u.modSuspendedUntil && u.modSuspendedUntil.getTime() > Date.now()) {
+    return { readonly: true, reason: 'Cuenta suspendida temporalmente.' }
+  }
+  return { readonly: false, reason: '' }
+}
+
+function toastReadOnly(reason?: string) {
+  toast.error(
+    reason?.trim() || 'Tu cuenta está restringida y solo puedes visualizar contenido.'
+  )
+}
+
 type AppScreen =
   | 'landing'
   | 'auth'
@@ -279,6 +294,10 @@ interface AppContextType {
   setSelectedChatOpportunityId: (id: string | null) => void
   selectedMatchOpportunityId: string | null
   setSelectedMatchOpportunityId: (id: string | null) => void
+  /** Perfil público (sheet) del jugador seleccionado por tap/click. */
+  publicProfileUserId: string | null
+  openPublicProfile: (userId: string) => void
+  closePublicProfile: () => void
   /** Al navegar a Partidos (ej. campana), abrir esta pestaña una vez. */
   initialMatchesTab: MatchesHubTab | null
   setInitialMatchesTab: (tab: MatchesHubTab | null) => void
@@ -312,6 +331,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [selectedMatchOpportunityId, setSelectedMatchOpportunityId] = useState<
     string | null
   >(null)
+  const [publicProfileUserId, setPublicProfileUserId] = useState<string | null>(
+    null
+  )
   const [initialMatchesTab, setInitialMatchesTab] =
     useState<MatchesHubTab | null>(null)
   const [teamsDetailFocusTeamId, setTeamsDetailFocusTeamId] = useState<
@@ -660,6 +682,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!currentUser || !isSupabaseConfigured()) {
       return { ok: false as const, error: 'Sesión no disponible.' }
     }
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return { ok: false as const, error: ro.reason || 'Cuenta restringida.' }
+    }
     const supabase = createClient()
 
     let reservationId: string | null = null
@@ -777,6 +804,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!currentUser || !isSupabaseConfigured()) {
       return { ok: false as const, error: 'Sesión no disponible.' }
     }
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return { ok: false as const, error: ro.reason || 'Cuenta restringida.' }
+    }
     const supabase = createClient()
     const end = new Date(startsAt.getTime() + durationMinutes * 60 * 1000)
     const { error } = await supabase.rpc('book_venue_slot', {
@@ -805,6 +837,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     options?: { isGoalkeeper?: boolean }
   ) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const supabase = createClient()
     const opp = matchOpportunities.find((m) => m.id === opportunityId)
     if (opp?.creatorId === currentUser.id) {
@@ -984,6 +1021,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     colorHexB: string
   ) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const hexOk = (s: string) => /^#[0-9A-Fa-f]{6}$/.test(s.trim())
     if (!hexOk(colorHexA) || !hexOk(colorHexB)) {
       toast.error('Color de camiseta no válido.')
@@ -1081,6 +1123,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     vote: RivalResult
   ) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const supabase = createClient()
     const { error } = await supabase.rpc('submit_rival_captain_vote', {
       p_opportunity_id: opportunityId,
@@ -1139,6 +1186,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       | { kind: 'revuelta'; revueltaResult: RevueltaResult }
   ) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const opp = matchOpportunities.find((m) => m.id === opportunityId)
     if (!opp || opp.creatorId !== currentUser.id) {
       toast.error('Solo el organizador puede finalizar el partido.')
@@ -1211,6 +1263,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     reason: string
   ) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const opp = matchOpportunities.find((m) => m.id === opportunityId)
     if (!opp || opp.creatorId !== currentUser.id) {
       toast.error('Solo el organizador puede suspender el partido.')
@@ -1259,6 +1316,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   ) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const { error } = await createClient()
       .from('match_opportunity_ratings')
       .insert({
@@ -1295,6 +1357,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const createTeam = async (team: Omit<Team, 'id' | 'createdAt'>) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const supabase = createClient()
     const { data: teamRow, error } = await supabase
       .from('teams')
@@ -1361,6 +1428,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   ) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const supabase = createClient()
     const row: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
@@ -1402,6 +1474,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteTeam = async (teamId: string) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const supabase = createClient()
     const team = teams.find((t) => t.id === teamId)
     if (!team || team.captainId !== currentUser.id) {
@@ -1420,6 +1497,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const leaveTeam = async (teamId: string) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const supabase = createClient()
     const team = teams.find((t) => t.id === teamId)
     if (team?.captainId === currentUser.id) {
@@ -1451,6 +1533,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     payload: { whatsappInviteUrl?: string | null; rulesText?: string | null }
   ): Promise<TeamPrivateSettings | null> => {
     if (!currentUser || !isSupabaseConfigured()) return null
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return null
+    }
     const supabase = createClient()
     const team = teams.find((t) => t.id === teamId)
     if (!team || team.captainId !== currentUser.id) return null
@@ -1504,6 +1591,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     level: Level
   }) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const supabase = createClient()
     const title =
       payload.mode === 'direct' && payload.challengedTeam
@@ -1588,6 +1680,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     myTeamId?: string
   ) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const supabase = createClient()
     const challenge = rivalChallenges.find((c) => c.id === challengeId)
     if (!challenge || challenge.status !== 'pending') {
@@ -1677,6 +1774,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     myTeamId: string
   ) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const challenge = rivalChallenges.find(
       (c) => c.opportunityId === opportunityId && c.status === 'pending'
     )
@@ -1689,6 +1791,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const inviteToTeam = async (teamId: string, userId: string) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const supabase = createClient()
     const { error } = await supabase.from('team_invites').insert({
       team_id: teamId,
@@ -1710,6 +1817,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const respondToInvite = async (inviteId: string, accept: boolean) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const supabase = createClient()
     const invite = teamInvites.find((i) => i.id === inviteId)
     if (!invite) return
@@ -1759,6 +1871,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const requestToJoinTeam = async (teamId: string) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const supabase = createClient()
     const { error } = await supabase.from('team_join_requests').insert({
       team_id: teamId,
@@ -1780,6 +1897,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const respondToJoinRequest = async (requestId: string, accept: boolean) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const supabase = createClient()
     const req = teamJoinRequests.find((r) => r.id === requestId)
     if (!req || req.status !== 'pending') return
@@ -1855,6 +1977,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const cancelJoinRequest = async (requestId: string) => {
     if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
     const supabase = createClient()
     const req = teamJoinRequests.find((r) => r.id === requestId)
     if (!req || req.requesterId !== currentUser.id || req.status !== 'pending')
@@ -2300,6 +2427,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [currentUser, refreshAppData])
 
+  const openPublicProfile = (userId: string) => {
+    const id = userId?.trim()
+    if (!id) return
+    if (currentUser?.id && id === currentUser.id) {
+      setCurrentScreen('profile')
+      return
+    }
+    setPublicProfileUserId(id)
+  }
+
+  const closePublicProfile = () => setPublicProfileUserId(null)
+
   return (
     <AppContext.Provider
       value={{
@@ -2356,6 +2495,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSelectedChatOpportunityId,
         selectedMatchOpportunityId,
         setSelectedMatchOpportunityId,
+        publicProfileUserId,
+        openPublicProfile,
+        closePublicProfile,
         initialMatchesTab,
         setInitialMatchesTab,
         teamsDetailFocusTeamId,

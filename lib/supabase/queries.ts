@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Gender } from '@/lib/types'
-import type { MatchOpportunity, User } from '@/lib/types'
+import type { MatchOpportunity, PublicPlayerProfile, User } from '@/lib/types'
 import {
   mapMatchOpportunityFromDb,
   profileRowToUser,
@@ -40,6 +40,36 @@ export async function fetchOrganizerCompletedCount(
     .maybeSingle()
   if (error || !data) return 0
   return Math.max(0, (data.stats_organized_completed as number) ?? 0)
+}
+
+export async function fetchPublicPlayerProfile(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<PublicPlayerProfile | null> {
+  const { data, error } = await supabase.rpc('fetch_public_player_profile', {
+    p_user_id: userId,
+  })
+  if (error || !data || !Array.isArray(data) || data.length === 0) return null
+  const r = data[0] as any
+  return {
+    id: r.id as string,
+    name: (r.name as string) ?? 'Jugador',
+    photo: (r.photo_url as string) ?? '',
+    cityId: (r.city_id as string) ?? '',
+    city: (r.city as string) ?? '',
+    level: r.level,
+    position: r.position,
+    availability: (r.availability as string[]) ?? [],
+    statsPlayerWins: (r.stats_player_wins as number) ?? 0,
+    statsPlayerDraws: (r.stats_player_draws as number) ?? 0,
+    statsPlayerLosses: (r.stats_player_losses as number) ?? 0,
+    statsOrganizedCompleted: (r.stats_organized_completed as number) ?? 0,
+    statsOrganizerWins: (r.stats_organizer_wins as number) ?? 0,
+    modYellowCards: (r.mod_yellow_cards as number) ?? 0,
+    modRedCards: (r.mod_red_cards as number) ?? 0,
+    modSuspendedUntil: r.mod_suspended_until ? new Date(r.mod_suspended_until) : null,
+    modBannedAt: r.mod_banned_at ? new Date(r.mod_banned_at) : null,
+  }
 }
 
 export async function fetchMatchOpportunities(
