@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import { toast } from 'sonner'
 import { useApp } from '@/lib/app-context'
@@ -36,6 +36,8 @@ import {
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { playersSeekProfileLabel } from '@/lib/players-seek-profile'
 import { MatchCourtPricingBlock } from '@/components/match-court-pricing'
+import { getOrganizerTier } from '@/lib/organizer-level'
+import { fetchOrganizerCompletedCount } from '@/lib/supabase/queries'
 
 export function MatchDetailsScreen() {
   const {
@@ -51,11 +53,22 @@ export function MatchDetailsScreen() {
     finalizeMatchOpportunity,
     suspendMatchOpportunity,
     submitMatchRating,
+    rivalChallenges,
+    submitRivalCaptainVote,
+    finalizeRivalOrganizerOverride,
   } = useApp()
 
   const opportunity = selectedMatchOpportunityId
     ? matchOpportunities.find((m) => m.id === selectedMatchOpportunityId)
     : undefined
+
+  const rivalChallengeForOpp = useMemo(
+    () =>
+      opportunity
+        ? rivalChallenges.find((c) => c.opportunityId === opportunity.id) ?? null
+        : null,
+    [rivalChallenges, opportunity?.id]
+  )
 
   const [participants, setParticipants] = useState<OpportunityParticipantRow[]>([])
   const [loadingParticipants, setLoadingParticipants] = useState(false)
@@ -80,6 +93,9 @@ export function MatchDetailsScreen() {
     name: string
     phone: string | null
   } | null>(null)
+  const [organizerOrganizedCount, setOrganizerOrganizedCount] = useState<number | null>(
+    null
+  )
 
   const loadParticipants = useCallback(async () => {
     if (!selectedMatchOpportunityId || !currentUser || !isSupabaseConfigured()) {
@@ -136,6 +152,33 @@ export function MatchDetailsScreen() {
     void loadMyRating()
     void loadRatingsOverview()
   }, [loadParticipants, loadMyRating, loadRatingsOverview])
+
+  useEffect(() => {
+    if (!opportunity || !isSupabaseConfigured()) {
+      setOrganizerOrganizedCount(null)
+      return
+    }
+    if (currentUser?.id === opportunity.creatorId) {
+      setOrganizerOrganizedCount(currentUser.statsOrganizedCompleted ?? 0)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const n = await fetchOrganizerCompletedCount(
+        createClient(),
+        opportunity.creatorId
+      )
+      if (!cancelled) setOrganizerOrganizedCount(n)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    opportunity?.id,
+    opportunity?.creatorId,
+    currentUser?.id,
+    currentUser?.statsOrganizedCompleted,
+  ])
 
   useEffect(() => {
     if (!opportunity?.venueReservationId || !currentUser || !isSupabaseConfigured()) {
@@ -482,10 +525,19 @@ export function MatchDetailsScreen() {
               </div>
             )}
 
-          <div className="flex items-center gap-2 text-sm">
-            <Shield className="w-4 h-4 text-primary" />
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <Shield className="w-4 h-4 text-primary shrink-0" />
             <span className="text-muted-foreground">Organizador:</span>
             <span className="text-foreground font-medium">{opportunity.creatorName}</span>
+            {organizerOrganizedCount !== null && (
+              <Badge
+                variant="secondary"
+                className="text-[10px] font-normal border-primary/25 bg-primary/10 text-primary"
+                title={`${organizerOrganizedCount} partidos organizados finalizados`}
+              >
+                {getOrganizerTier(organizerOrganizedCount).label}
+              </Badge>
+            )}
           </div>
           {opportunity.status === 'cancelled' && opportunity.suspendedReason && (
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
@@ -665,6 +717,7 @@ export function MatchDetailsScreen() {
 
       <MatchCompletionPanel
         opportunity={opportunity}
+        rivalChallenge={rivalChallengeForOpp}
         currentUserId={currentUser.id}
         isConfirmedParticipant={isParticipant}
         myRating={myRating}
@@ -674,6 +727,8 @@ export function MatchDetailsScreen() {
           void loadRatingsOverview()
         }}
         finalizeMatchOpportunity={finalizeMatchOpportunity}
+        submitRivalCaptainVote={submitRivalCaptainVote}
+        finalizeRivalOrganizerOverride={finalizeRivalOrganizerOverride}
         suspendMatchOpportunity={suspendMatchOpportunity}
         submitMatchRating={submitMatchRating}
       />

@@ -18,6 +18,7 @@ import {
   Gender,
   Level,
   RivalChallenge,
+  RevueltaResult,
   RivalResult,
   Team,
   TeamInvite,
@@ -185,13 +186,23 @@ interface AppContextType {
     colorHexA: string,
     colorHexB: string
   ) => Promise<void>
-  /** Organizador: cerrar partido y registrar resultado (rival o casual). */
+  /** Organizador: cerrar partido casual (faltan jugadores) o revuelta con resultado. */
   finalizeMatchOpportunity: (
     opportunityId: string,
-    outcome:
-      | { kind: 'rival'; rivalResult: RivalResult }
-      | { kind: 'casual' }
+    outcome: { kind: 'casual' } | { kind: 'revuelta'; revueltaResult: RevueltaResult }
   ) => Promise<void>
+  /** Capitán (rival): votar resultado; si ambos coinciden se cierra el partido. */
+  submitRivalCaptainVote: (
+    opportunityId: string,
+    vote: RivalResult
+  ) => Promise<void>
+  /** Organizador: tras desacuerdo de capitanes y 72 h desde la hora del partido. */
+  finalizeRivalOrganizerOverride: (
+    opportunityId: string,
+    result: RivalResult
+  ) => Promise<void>
+  /** Recarga perfil desde BD (stats tras partidos). */
+  refreshCurrentUserProfile: () => Promise<void>
   suspendMatchOpportunity: (
     opportunityId: string,
     reason: string
@@ -1054,11 +1065,78 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast.success('¡Equipos sorteados! Equipo A y Equipo B listos.')
   }
 
+  const refreshCurrentUserProfile = useCallback(async () => {
+    if (!isSupabaseConfigured()) return
+    const supabase = createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user?.email) return
+    const profile = await fetchProfileForUser(supabase, user.id, user.email)
+    if (profile) setCurrentUser(profile)
+  }, [])
+
+  const submitRivalCaptainVote = async (
+    opportunityId: string,
+    vote: RivalResult
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const { error } = await supabase.rpc('submit_rival_captain_vote', {
+      p_opportunity_id: opportunityId,
+      p_vote: vote,
+    })
+    if (error) {
+      const msg = error.message
+      if (msg.includes('not_captain')) {
+        toast.error('Solo los capitanes pueden votar el resultado.')
+      } else if (msg.includes('challenge_not_accepted')) {
+        toast.error('El desafío debe estar aceptado para votar.')
+      } else {
+        toast.error(msg)
+      }
+      return
+    }
+    const matches = await fetchMatchOpportunities(supabase)
+    setMatchOpportunities(matches)
+    await refreshCurrentUserProfile()
+    toast.success('Voto registrado.')
+  }
+
+  const finalizeRivalOrganizerOverride = async (
+    opportunityId: string,
+    result: RivalResult
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = createClient()
+    const { error } = await supabase.rpc('finalize_rival_organizer_override', {
+      p_opportunity_id: opportunityId,
+      p_result: result,
+    })
+    if (error) {
+      const msg = error.message
+      if (msg.includes('deadline_not_reached')) {
+        toast.error(
+          'El desempate del organizador está disponible 72 h después de la hora programada del partido.'
+        )
+      } else if (msg.includes('not_disputed')) {
+        toast.error('No hay desacuerdo entre capitanes que resolver.')
+      } else {
+        toast.error(msg)
+      }
+      return
+    }
+    const matches = await fetchMatchOpportunities(supabase)
+    setMatchOpportunities(matches)
+    await refreshCurrentUserProfile()
+    toast.success('Resultado confirmado. Ventana de calificaciones 48 h.')
+  }
+
   const finalizeMatchOpportunity = async (
     opportunityId: string,
     outcome:
-      | { kind: 'rival'; rivalResult: RivalResult }
       | { kind: 'casual' }
+      | { kind: 'revuelta'; revueltaResult: RevueltaResult }
   ) => {
     if (!currentUser || !isSupabaseConfigured()) return
     const opp = matchOpportunities.find((m) => m.id === opportunityId)
@@ -1070,33 +1148,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.info('Este partido ya está finalizado.')
       return
     }
-    if (opp.type === 'rival' && outcome.kind !== 'rival') {
-      toast.error('Indica el resultado del partido.')
+    if (opp.type === 'players' && outcome.kind !== 'casual') {
+      toast.error('Indica el cierre como partido casual.')
       return
     }
-    if (opp.type !== 'rival' && outcome.kind !== 'casual') {
-      toast.error('Tipo de partido no válido.')
+    if (opp.type === 'open' && outcome.kind !== 'revuelta') {
+      toast.error('Indica el resultado (equipo A, B o empate).')
+      return
+    }
+    if (opp.type === 'rival') {
+      toast.error(
+        'En equipo vs equipo votan los capitanes; si no se ponen de acuerdo, podrás decidir tras 72 h.'
+      )
       return
     }
 
     const supabase = createClient()
-    const now = new Date().toISOString()
-    const update: Record<string, unknown> = {
-      status: 'completed',
-      finalized_at: now,
-      updated_at: now,
-    }
-    if (opp.type === 'rival' && outcome.kind === 'rival') {
-      update.rival_result = outcome.rivalResult
-      update.casual_completed = null
-    } else {
-      update.rival_result = null
-      update.casual_completed = true
+
+    if (opp.type === 'open' && outcome.kind === 'revuelta') {
+      const { error } = await supabase.rpc('finalize_revuelta_match', {
+        p_opportunity_id: opportunityId,
+        p_result: outcome.revueltaResult,
+      })
+      if (error) {
+        toast.error(error.message)
+        return
+      }
+      const matches = await fetchMatchOpportunities(supabase)
+      setMatchOpportunities(matches)
+      await refreshCurrentUserProfile()
+      toast.success('Partido finalizado. Los jugadores pueden calificar en las próximas 48 h.')
+      return
     }
 
+    const now = new Date().toISOString()
     const { error } = await supabase
       .from('match_opportunities')
-      .update(update)
+      .update({
+        status: 'completed',
+        finalized_at: now,
+        updated_at: now,
+        rival_result: null,
+        revuelta_result: null,
+        casual_completed: true,
+      })
       .eq('id', opportunityId)
       .eq('creator_id', currentUser.id)
 
@@ -1107,6 +1202,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const matches = await fetchMatchOpportunities(supabase)
     setMatchOpportunities(matches)
+    await refreshCurrentUserProfile()
     toast.success('Partido finalizado. Los jugadores pueden calificar en las próximas 48 h.')
   }
 
@@ -2228,6 +2324,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         joinMatchOpportunity,
         randomizeRevueltaTeams,
         finalizeMatchOpportunity,
+        submitRivalCaptainVote,
+        finalizeRivalOrganizerOverride,
+        refreshCurrentUserProfile,
         suspendMatchOpportunity,
         submitMatchRating,
         users,

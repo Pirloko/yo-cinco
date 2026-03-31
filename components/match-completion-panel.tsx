@@ -1,7 +1,12 @@
 'use client'
 
-import { useState } from 'react'
-import type { MatchOpportunity, RivalResult } from '@/lib/types'
+import { useMemo, useState } from 'react'
+import type {
+  MatchOpportunity,
+  RevueltaResult,
+  RivalChallenge,
+  RivalResult,
+} from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -11,6 +16,8 @@ import {
   type MatchOpportunityRatingRow,
 } from '@/lib/supabase/rating-queries'
 import { Trophy, ClipboardCheck, Star, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { formatDistanceToNow } from 'date-fns'
+import { es } from 'date-fns/locale'
 
 /** Motivos predefinidos al suspender (organizador). */
 const SUSPEND_PRESET_REASONS = [
@@ -20,8 +27,6 @@ const SUSPEND_PRESET_REASONS = [
   'Motivos de salud o lesión',
   'Conflicto de horario o agenda',
 ] as const
-import { formatDistanceToNow } from 'date-fns'
-import { es } from 'date-fns/locale'
 
 function StarRow({
   label,
@@ -63,6 +68,8 @@ function StarRow({
 
 type Props = {
   opportunity: MatchOpportunity
+  /** Desafío rival aceptado (si aplica). */
+  rivalChallenge: RivalChallenge | null
   currentUserId: string
   isConfirmedParticipant: boolean
   myRating: MatchOpportunityRatingRow | null
@@ -71,8 +78,16 @@ type Props = {
   finalizeMatchOpportunity: (
     opportunityId: string,
     outcome:
-      | { kind: 'rival'; rivalResult: RivalResult }
       | { kind: 'casual' }
+      | { kind: 'revuelta'; revueltaResult: RevueltaResult }
+  ) => Promise<void>
+  submitRivalCaptainVote: (
+    opportunityId: string,
+    vote: RivalResult
+  ) => Promise<void>
+  finalizeRivalOrganizerOverride: (
+    opportunityId: string,
+    result: RivalResult
   ) => Promise<void>
   suspendMatchOpportunity: (
     opportunityId: string,
@@ -91,12 +106,15 @@ type Props = {
 
 export function MatchCompletionPanel({
   opportunity,
+  rivalChallenge,
   currentUserId,
   isConfirmedParticipant,
   myRating,
   loadingRating,
   onReloadMyRating,
   finalizeMatchOpportunity,
+  submitRivalCaptainVote,
+  finalizeRivalOrganizerOverride,
   suspendMatchOpportunity,
   submitMatchRating,
 }: Props) {
@@ -119,12 +137,71 @@ export function MatchCompletionPanel({
     !myRating &&
     !loadingRating
 
+  const deadline72h = useMemo(() => {
+    const d = new Date(opportunity.dateTime)
+    d.setHours(d.getHours() + 72)
+    return d
+  }, [opportunity.dateTime])
+
+  const isChallengerCaptain =
+    !!rivalChallenge &&
+    rivalChallenge.challengerCaptainId === currentUserId
+  const isAcceptedCaptain =
+    !!rivalChallenge &&
+    rivalChallenge.acceptedCaptainId === currentUserId
+
+  const needsMyCaptainVote =
+    (isChallengerCaptain && !opportunity.rivalCaptainVoteChallenger) ||
+    (isAcceptedCaptain && !opportunity.rivalCaptainVoteAccepted)
+
+  const showCaptainVote =
+    opportunity.type === 'rival' &&
+    rivalChallenge?.status === 'accepted' &&
+    !completed &&
+    !opportunity.rivalOutcomeDisputed &&
+    needsMyCaptainVote
+
+  const showOrganizerRivalPending =
+    opportunity.type === 'rival' &&
+    isCreator &&
+    !completed &&
+    rivalChallenge?.status === 'accepted' &&
+    !opportunity.rivalOutcomeDisputed &&
+    (!opportunity.rivalCaptainVoteChallenger ||
+      !opportunity.rivalCaptainVoteAccepted)
+
+  const showOrganizerOverride =
+    opportunity.type === 'rival' &&
+    isCreator &&
+    !completed &&
+    opportunity.rivalOutcomeDisputed &&
+    Date.now() >= deadline72h.getTime()
+
+  const showOrganizerDisputeWait =
+    opportunity.type === 'rival' &&
+    isCreator &&
+    !completed &&
+    opportunity.rivalOutcomeDisputed &&
+    Date.now() < deadline72h.getTime()
+
+  const showOrganizerFinalizeCasual =
+    isCreator &&
+    !completed &&
+    opportunity.status !== 'cancelled' &&
+    (opportunity.type === 'players' || opportunity.type === 'open')
+
+  const showOrganizerRivalSuspend =
+    isCreator && !completed && opportunity.status !== 'cancelled' && opportunity.type === 'rival'
+
   const [finalizing, setFinalizing] = useState(false)
-  const [rivalPick, setRivalPick] = useState<RivalResult | null>(null)
+  const [votingCaptain, setVotingCaptain] = useState(false)
+  const [overriding, setOverriding] = useState(false)
+  const [captainPick, setCaptainPick] = useState<RivalResult | null>(null)
+  const [overridePick, setOverridePick] = useState<RivalResult | null>(null)
+  const [revueltaPick, setRevueltaPick] = useState<RevueltaResult | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [suspending, setSuspending] = useState(false)
   const [suspendExpanded, setSuspendExpanded] = useState(false)
-  /** Índice 0–4 = preset; 'other' = texto libre. */
   const [suspendChoice, setSuspendChoice] = useState<
     number | 'other' | null
   >(null)
@@ -134,9 +211,6 @@ export function MatchCompletionPanel({
   const [matchStars, setMatchStars] = useState(0)
   const [levelStars, setLevelStars] = useState(0)
   const [comment, setComment] = useState('')
-
-  const showFinalize =
-    isCreator && !completed && opportunity.status !== 'cancelled'
 
   const resolvedSuspendReason = (): string | null => {
     if (suspendChoice === null) return null
@@ -180,6 +254,19 @@ export function MatchCompletionPanel({
         </p>
       )
     }
+    if (opportunity.type === 'open' && opportunity.revueltaResult) {
+      const map: Record<RevueltaResult, string> = {
+        team_a: 'Ganó equipo A',
+        team_b: 'Ganó equipo B',
+        draw: 'Empate',
+      }
+      return (
+        <p className="text-sm text-muted-foreground flex items-center gap-2">
+          <Trophy className="w-4 h-4 text-accent" />
+          {map[opportunity.revueltaResult]}
+        </p>
+      )
+    }
     if (opportunity.casualCompleted) {
       return (
         <p className="text-sm text-muted-foreground flex items-center gap-2">
@@ -191,14 +278,14 @@ export function MatchCompletionPanel({
     return null
   }
 
-  const handleFinalize = async () => {
-    if (opportunity.type === 'rival') {
-      if (!rivalPick) return
+  const handleFinalizeCasualOrRevuelta = async () => {
+    if (opportunity.type === 'open') {
+      if (!revueltaPick) return
       setFinalizing(true)
       try {
         await finalizeMatchOpportunity(opportunity.id, {
-          kind: 'rival',
-          rivalResult: rivalPick,
+          kind: 'revuelta',
+          revueltaResult: revueltaPick,
         })
       } finally {
         setFinalizing(false)
@@ -210,6 +297,28 @@ export function MatchCompletionPanel({
       await finalizeMatchOpportunity(opportunity.id, { kind: 'casual' })
     } finally {
       setFinalizing(false)
+    }
+  }
+
+  const handleCaptainVote = async () => {
+    if (!captainPick) return
+    setVotingCaptain(true)
+    try {
+      await submitRivalCaptainVote(opportunity.id, captainPick)
+      setCaptainPick(null)
+    } finally {
+      setVotingCaptain(false)
+    }
+  }
+
+  const handleOverride = async () => {
+    if (!overridePick) return
+    setOverriding(true)
+    try {
+      await finalizeRivalOrganizerOverride(opportunity.id, overridePick)
+      setOverridePick(null)
+    } finally {
+      setOverriding(false)
     }
   }
 
@@ -231,7 +340,16 @@ export function MatchCompletionPanel({
     }
   }
 
-  if (!showFinalize && !completed) return null
+  const hasPreMatchContent =
+    needsResolveAfterMidnight ||
+    showOrganizerFinalizeCasual ||
+    showCaptainVote ||
+    showOrganizerRivalPending ||
+    showOrganizerOverride ||
+    showOrganizerDisputeWait ||
+    showOrganizerRivalSuspend
+
+  if (!completed && !hasPreMatchContent) return null
 
   return (
     <div className="border-b border-border bg-secondary/40 px-4 py-3 space-y-4">
@@ -246,7 +364,132 @@ export function MatchCompletionPanel({
           </p>
         </div>
       )}
-      {showFinalize && (
+
+      {showCaptainVote && (
+        <div className="space-y-2 rounded-xl border border-border bg-card/50 p-3">
+          <p className="text-sm font-medium text-foreground">
+            Tu voto como capitán
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Ambos capitanes deben coincidir. Si no, el organizador podrá decidir
+            tras 72 h desde la hora del partido.
+          </p>
+          <div className="flex flex-col gap-2">
+            {(
+              [
+                ['creator_team', 'Ganó el equipo del organizador'],
+                ['rival_team', 'Ganó el equipo rival'],
+                ['draw', 'Empate'],
+              ] as const
+            ).map(([val, label]) => (
+              <label
+                key={val}
+                className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-sm ${
+                  captainPick === val
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border bg-secondary/50'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="captain-rival-result"
+                  className="accent-primary"
+                  checked={captainPick === val}
+                  onChange={() => setCaptainPick(val)}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <Button
+            className="w-full"
+            disabled={votingCaptain || !captainPick}
+            onClick={() => void handleCaptainVote()}
+          >
+            {votingCaptain ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Enviando voto…
+              </>
+            ) : (
+              'Registrar mi voto'
+            )}
+          </Button>
+        </div>
+      )}
+
+      {showOrganizerRivalPending && (
+        <p className="text-xs text-muted-foreground">
+          Esperando el voto de ambos capitanes para cerrar el resultado.
+        </p>
+      )}
+
+      {showOrganizerDisputeWait && (
+        <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 space-y-1">
+          <p className="text-sm font-medium text-foreground">
+            Los capitanes no coinciden
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Podrás definir el resultado el{' '}
+            {formatDistanceToNow(deadline72h, { locale: es, addSuffix: true })} desde
+            la hora del partido (72 h).
+          </p>
+        </div>
+      )}
+
+      {showOrganizerOverride && (
+        <div className="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-3">
+          <p className="text-sm font-medium text-foreground">
+            Desempate como organizador
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Pasaron 72 h desde la hora del partido. Elige el resultado final.
+          </p>
+          <div className="flex flex-col gap-2">
+            {(
+              [
+                ['creator_team', 'Ganó el equipo del organizador'],
+                ['rival_team', 'Ganó el equipo rival'],
+                ['draw', 'Empate'],
+              ] as const
+            ).map(([val, label]) => (
+              <label
+                key={val}
+                className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-sm ${
+                  overridePick === val
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border bg-card'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="override-rival"
+                  className="accent-primary"
+                  checked={overridePick === val}
+                  onChange={() => setOverridePick(val)}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <Button
+            className="w-full"
+            disabled={overriding || !overridePick}
+            onClick={() => void handleOverride()}
+          >
+            {overriding ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Guardando…
+              </>
+            ) : (
+              'Confirmar resultado final'
+            )}
+          </Button>
+        </div>
+      )}
+
+      {showOrganizerFinalizeCasual && (
         <div className="space-y-3">
           <p className="text-sm font-medium text-foreground">
             {needsResolveAfterMidnight ? 'Resolver partido' : 'Finalizar partido'}
@@ -255,31 +498,33 @@ export function MatchCompletionPanel({
             Al cerrar, se registrará el resultado y se abrirá la ventana de 48 h
             para que los jugadores califiquen.
           </p>
-          {opportunity.type === 'rival' && (
+          {opportunity.type === 'open' && (
             <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Resultado</Label>
+              <Label className="text-xs text-muted-foreground">
+                Resultado (revuelta)
+              </Label>
               <div className="flex flex-col gap-2">
                 {(
                   [
-                    ['creator_team', 'Ganó el equipo del organizador'],
-                    ['rival_team', 'Ganó el equipo rival'],
+                    ['team_a', 'Ganó equipo A'],
+                    ['team_b', 'Ganó equipo B'],
                     ['draw', 'Empate'],
                   ] as const
                 ).map(([val, label]) => (
                   <label
                     key={val}
                     className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-sm ${
-                      rivalPick === val
+                      revueltaPick === val
                         ? 'border-primary bg-primary/10'
                         : 'border-border bg-card'
                     }`}
                   >
                     <input
                       type="radio"
-                      name="rival-result"
+                      name="revuelta-result"
                       className="accent-primary"
-                      checked={rivalPick === val}
-                      onChange={() => setRivalPick(val)}
+                      checked={revueltaPick === val}
+                      onChange={() => setRevueltaPick(val)}
                     />
                     {label}
                   </label>
@@ -291,9 +536,9 @@ export function MatchCompletionPanel({
             className="w-full"
             disabled={
               finalizing ||
-              (opportunity.type === 'rival' && !rivalPick)
+              (opportunity.type === 'open' && !revueltaPick)
             }
-            onClick={() => void handleFinalize()}
+            onClick={() => void handleFinalizeCasualOrRevuelta()}
           >
             {finalizing ? (
               <>
@@ -430,6 +675,133 @@ export function MatchCompletionPanel({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {showOrganizerRivalSuspend && !showOrganizerFinalizeCasual && (
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-foreground">Suspender partido</p>
+          <p className="text-xs text-muted-foreground">
+            Si no se jugará, elige un motivo y confirma la suspensión.
+          </p>
+          <Button
+            type="button"
+            variant="destructive"
+            className="w-full justify-between h-11"
+            disabled={suspending}
+            onClick={() => {
+              setSuspendExpanded((v) => !v)
+              if (suspendExpanded) {
+                setSuspendChoice(null)
+                setSuspendOtherText('')
+              }
+            }}
+          >
+            <span>Suspender partido</span>
+            {suspendExpanded ? (
+              <ChevronUp className="w-4 h-4 shrink-0 opacity-90" />
+            ) : (
+              <ChevronDown className="w-4 h-4 shrink-0 opacity-90" />
+            )}
+          </Button>
+          {suspendExpanded && (
+            <div className="space-y-3 rounded-lg border border-border bg-card/60 p-3">
+              <p className="text-xs font-medium text-foreground">
+                Motivo de la suspensión
+              </p>
+              <div className="flex flex-col gap-2">
+                {SUSPEND_PRESET_REASONS.map((label, i) => (
+                  <label
+                    key={label}
+                    className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer text-sm ${
+                      suspendChoice === i
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border bg-secondary/50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="suspend-reason-rival"
+                      className="accent-primary shrink-0"
+                      checked={suspendChoice === i}
+                      onChange={() => {
+                        setSuspendChoice(i)
+                        setSuspendOtherText('')
+                      }}
+                      disabled={suspending}
+                    />
+                    <span className="text-left leading-snug">{label}</span>
+                  </label>
+                ))}
+                <label
+                  className={`flex flex-col gap-2 p-2.5 rounded-lg border cursor-pointer text-sm ${
+                    suspendChoice === 'other'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border bg-secondary/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="suspend-reason-rival"
+                      className="accent-primary shrink-0"
+                      checked={suspendChoice === 'other'}
+                      onChange={() => setSuspendChoice('other')}
+                      disabled={suspending}
+                    />
+                    <span className="font-medium">Otro</span>
+                  </div>
+                  {suspendChoice === 'other' && (
+                    <Textarea
+                      value={suspendOtherText}
+                      onChange={(e) => setSuspendOtherText(e.target.value)}
+                      placeholder="Describe el motivo…"
+                      className="bg-background border-border min-h-[72px] resize-none text-sm ml-6"
+                      maxLength={1000}
+                      disabled={suspending}
+                    />
+                  )}
+                </label>
+              </div>
+              {suspendChoice === 'other' && (
+                <p className="text-[11px] text-muted-foreground">
+                  Mínimo 5 caracteres.
+                </p>
+              )}
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  disabled={suspending}
+                  onClick={() => {
+                    setSuspendExpanded(false)
+                    setSuspendChoice(null)
+                    setSuspendOtherText('')
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-red-500/40 text-red-400 hover:bg-red-500/10 sm:min-w-[180px]"
+                  disabled={!canConfirmSuspend}
+                  onClick={() => void handleSuspend()}
+                >
+                  {suspending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Suspendiendo…
+                    </>
+                  ) : (
+                    'Confirmar suspensión'
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

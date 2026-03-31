@@ -4,6 +4,9 @@ import { notFound } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import { Crown, Shield } from 'lucide-react'
+import { TeamCardStatsStrip } from '@/components/team-card-stats-strip'
+import { TeamRivalMomentumBlock } from '@/components/team-rival-momentum-block'
+import { teamRivalSnapshotFromTeam } from '@/lib/team-rival-momentum'
 import { fetchPublicTeamSnapshot } from '@/lib/supabase/public-team-server'
 import { isValidTeamInviteId } from '@/lib/team-invite-url'
 import { Button } from '@/components/ui/button'
@@ -75,6 +78,14 @@ export default async function EquipoPublicPage({
 
   if (!team) notFound()
 
+  const rivalSnap = teamRivalSnapshotFromTeam({
+    statsWins: team.statsWins,
+    statsDraws: team.statsDraws,
+    statsLosses: team.statsLosses,
+    statsWinStreak: team.statsWinStreak,
+    statsLossStreak: team.statsLossStreak,
+  })
+
   const joinQuery = `joinTeam=${encodeURIComponent(team.id)}`
   const appRoot = '/'
 
@@ -116,6 +127,24 @@ export default async function EquipoPublicPage({
             {team.description}
           </p>
         ) : null}
+
+        <section
+          className="rounded-2xl border border-border/80 bg-gradient-to-b from-card via-card to-secondary/[0.12] p-5 space-y-5 shadow-sm"
+          aria-labelledby="team-stats-heading"
+        >
+          <h2
+            id="team-stats-heading"
+            className="text-base font-semibold text-foreground"
+          >
+            Estadísticas del Equipo
+          </h2>
+          <TeamCardStatsStrip team={team} size="lg" showMomentum={false} />
+          <TeamRivalMomentumBlock
+            snapshot={rivalSnap}
+            variant="featured"
+            footnote="El título reacciona a rachas y resultados; la barra muestra el progreso hacia el siguiente nivel de impulso."
+          />
+        </section>
 
         <div>
           <h2 className="text-lg font-semibold mb-3">Plantilla</h2>

@@ -26,6 +26,11 @@ export type PublicTeamSnapshot = {
   gender: Gender
   captainId: string
   members: PublicTeamMemberRow[]
+  statsWins: number
+  statsDraws: number
+  statsLosses: number
+  statsWinStreak: number
+  statsLossStreak: number
 }
 
 function mapSnapshot(
@@ -44,6 +49,11 @@ function mapSnapshot(
     gender: team.gender as Gender,
     captainId: team.captain_id as string,
     members,
+    statsWins: Math.max(0, (team.stats_wins as number | null) ?? 0),
+    statsDraws: Math.max(0, (team.stats_draws as number | null) ?? 0),
+    statsLosses: Math.max(0, (team.stats_losses as number | null) ?? 0),
+    statsWinStreak: Math.max(0, (team.stats_win_streak as number | null) ?? 0),
+    statsLossStreak: Math.max(0, (team.stats_loss_streak as number | null) ?? 0),
   }
 }
 

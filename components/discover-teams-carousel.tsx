@@ -227,6 +227,13 @@ function DiscoverTeamCard({
                 <>{matchCount} part. jugados</>
               )}
             </span>
+            <span
+              className="rounded-full bg-white/20 px-3 py-1.5 text-[11px] font-semibold backdrop-blur-md tabular-nums leading-tight"
+              title="Victorias, empates y derrotas (partidos rival)"
+            >
+              {team.statsWins ?? 0} vic · {team.statsDraws ?? 0} emp · {team.statsLosses ?? 0}{' '}
+              der
+            </span>
           </div>
         </div>
       </div>

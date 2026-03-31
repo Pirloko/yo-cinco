@@ -9,6 +9,9 @@ import {
   uploadTeamLogoFile,
 } from '@/lib/supabase/team-logos'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
+import { TeamCardStatsStrip } from '@/components/team-card-stats-strip'
+import { TeamRivalMomentumBlock } from '@/components/team-rival-momentum-block'
+import { teamRivalSnapshotFromTeam } from '@/lib/team-rival-momentum'
 import { BottomNav } from './bottom-nav'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -35,6 +38,7 @@ import {
   MessageCircle,
   ScrollText,
   ExternalLink,
+  Swords,
 } from 'lucide-react'
 import {
   Team,
@@ -428,56 +432,67 @@ export function TeamsScreen() {
     const canChallenge = !isUserTeam && myCaptainTeams.length > 0
 
     return (
-      <Card 
-        key={team.id} 
-        className="bg-card border-border cursor-pointer hover:border-primary/50 transition-colors"
+      <Card
+        key={team.id}
+        className="group rounded-2xl border border-border/80 bg-gradient-to-b from-card via-card to-secondary/[0.12] shadow-sm cursor-pointer overflow-hidden transition-all duration-200 hover:border-primary/40 hover:shadow-md hover:shadow-primary/[0.06]"
         onClick={() => {
           setSelectedTeam(team)
           setView('detail')
         }}
       >
         <CardContent className="p-4">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-xl bg-muted overflow-hidden flex-shrink-0">
+          <div className="flex items-start gap-3">
+            <div className="w-14 h-14 rounded-2xl bg-muted overflow-hidden flex-shrink-0 ring-2 ring-border/50 shadow-inner group-hover:ring-primary/30 transition-all">
               {team.logo ? (
-                <img 
-                  src={team.logo} 
-                  alt={team.name} 
+                <img
+                  src={team.logo}
+                  alt={team.name}
                   className="w-full h-full object-cover"
                 />
               ) : (
-                <div className="w-full h-full flex items-center justify-center bg-primary/20">
+                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/25 to-primary/5">
                   <Shield className="w-7 h-7 text-primary" />
                 </div>
               )}
             </div>
-            
+
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-foreground truncate">{team.name}</h3>
-                {isCaptain && (
-                  <Crown className="w-4 h-4 text-accent flex-shrink-0" />
-                )}
+              <div className="flex items-start justify-between gap-2 pr-1">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-foreground truncate text-[15px] leading-snug">
+                      {team.name}
+                    </h3>
+                    {isCaptain && (
+                      <Crown className="w-4 h-4 text-amber-500 shrink-0 drop-shadow-sm" />
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] font-medium px-2 py-0 h-5 border border-border/60"
+                    >
+                      {levelLabels[team.level]}
+                    </Badge>
+                    <span className="text-[11px] text-muted-foreground">
+                      {team.members.length}/{TEAM_ROSTER_MAX} jugadores
+                    </span>
+                  </div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-muted-foreground/70 shrink-0 mt-0.5 transition-transform group-hover:translate-x-0.5 group-hover:text-primary/80" />
               </div>
-              <div className="flex items-center gap-2 mt-1">
-                <Badge variant="secondary" className="text-xs">
-                  {levelLabels[team.level]}
-                </Badge>
-                <span className="text-xs text-muted-foreground">
-                  {team.members.length}/{TEAM_ROSTER_MAX} jugadores
-                </span>
-              </div>
+
+              <TeamCardStatsStrip team={team} className="mt-3" />
+
               {team.description && (
-                <p className="text-xs text-muted-foreground mt-1 truncate">
+                <p className="text-xs text-muted-foreground mt-2.5 line-clamp-2 leading-relaxed border-t border-border/40 pt-2.5">
                   {team.description}
                 </p>
               )}
             </div>
-            
-            <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
           </div>
           {!isUserTeam && (
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-4 flex flex-wrap gap-2 border-t border-border/40 pt-3">
               <Button
                 type="button"
                 size="sm"
@@ -1072,6 +1087,31 @@ export function TeamsScreen() {
             <p className="text-sm text-muted-foreground mb-6 italic">
               Sin descripción. Pulsa Editar para añadir una.
             </p>
+          )}
+
+          {(!isCaptain || !teamDetailEditing) && (
+            <div className="mb-6 rounded-2xl border border-border/80 bg-gradient-to-b from-card via-card to-secondary/[0.18] p-5 shadow-sm space-y-5">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 border border-primary/25 shadow-sm">
+                  <Swords className="w-5 h-5 text-primary" aria-hidden />
+                </span>
+                <h3 className="text-base font-semibold text-foreground tracking-tight">
+                  Estadísticas del Equipo
+                </h3>
+              </div>
+
+              <TeamCardStatsStrip
+                team={team}
+                size="lg"
+                showMomentum={false}
+              />
+
+              <TeamRivalMomentumBlock
+                snapshot={teamRivalSnapshotFromTeam(team)}
+                variant="featured"
+                footnote="El nivel de impulso combina partidos jugados, victorias, empates y rachas recientes."
+              />
+            </div>
           )}
 
           {isCaptain && incomingJoin.length > 0 && !teamDetailEditing && (

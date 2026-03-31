@@ -5,6 +5,7 @@ import type {
   MatchStatus,
   MatchType,
   Position,
+  RevueltaResult,
   RivalResult,
   User,
 } from '@/lib/types'
@@ -36,6 +37,11 @@ export type ProfileRow = {
   bio: string | null
   whatsapp_phone?: string | null
   player_essentials_completed_at?: string | null
+  stats_player_wins?: number | null
+  stats_player_draws?: number | null
+  stats_player_losses?: number | null
+  stats_organized_completed?: number | null
+  stats_organizer_wins?: number | null
   created_at: string
   account_type?: 'player' | 'venue' | 'admin' | null
 }
@@ -60,6 +66,11 @@ export function profileRowToUser(row: ProfileRow, email: string): User {
     playerEssentialsCompletedAt: row.player_essentials_completed_at
       ? new Date(row.player_essentials_completed_at)
       : undefined,
+    statsPlayerWins: row.stats_player_wins ?? 0,
+    statsPlayerDraws: row.stats_player_draws ?? 0,
+    statsPlayerLosses: row.stats_player_losses ?? 0,
+    statsOrganizedCompleted: row.stats_organized_completed ?? 0,
+    statsOrganizerWins: row.stats_organizer_wins ?? 0,
     createdAt: new Date(row.created_at),
     accountType:
       row.account_type === 'venue'
@@ -102,6 +113,11 @@ export type MatchOpportunityRow = {
   suspended_at?: string | null
   suspended_reason?: string | null
   revuelta_lineup?: unknown | null
+  revuelta_result?: RevueltaResult | null
+  rival_captain_vote_challenger?: RivalResult | null
+  rival_captain_vote_accepted?: RivalResult | null
+  rival_outcome_disputed?: boolean | null
+  match_stats_applied_at?: string | null
   sports_venue_id?: string | null
   venue_reservation_id?: string | null
 }
@@ -159,6 +175,13 @@ export function mapMatchOpportunityFromDb(
     suspendedReason: row.suspended_reason ?? undefined,
     revueltaLineup:
       parseRevueltaLineup(row.revuelta_lineup) ?? undefined,
+    revueltaResult: row.revuelta_result ?? undefined,
+    rivalCaptainVoteChallenger: row.rival_captain_vote_challenger ?? undefined,
+    rivalCaptainVoteAccepted: row.rival_captain_vote_accepted ?? undefined,
+    rivalOutcomeDisputed: row.rival_outcome_disputed ?? undefined,
+    matchStatsAppliedAt: row.match_stats_applied_at
+      ? new Date(row.match_stats_applied_at)
+      : undefined,
     sportsVenueId: row.sports_venue_id ?? undefined,
     venueReservationId: row.venue_reservation_id ?? undefined,
     venueReservationPricing:

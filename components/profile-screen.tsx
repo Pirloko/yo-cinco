@@ -21,9 +21,10 @@ import {
   Star,
   Edit,
   ChevronRight,
-  Target,
   Users,
   Trophy,
+  Minus,
+  TrendingDown,
   Clock,
   Bell,
   Shield,
@@ -34,6 +35,7 @@ import {
   Palette,
 } from 'lucide-react'
 import type { Level } from '@/lib/types'
+import { getOrganizerTierProgress } from '@/lib/organizer-level'
 import { ThemeSegmentedControl } from '@/components/theme-controls'
 
 const LEVEL_LABELS: Record<Level, string> = {
@@ -72,8 +74,6 @@ export function ProfileScreen() {
     logout,
     setCurrentScreen,
     openProfileEditor,
-    matchOpportunities,
-    participatingOpportunityIds,
     getUserTeams,
     setInitialMatchesTab,
     updateProfilePhoto,
@@ -99,53 +99,47 @@ export function ProfileScreen() {
     }
   }
 
-  const stats = useMemo(() => {
-    const uid = currentUser?.id
-    if (!uid) {
-      return { partidos: 0, equipos: 0, victorias: 0 }
+  const playerStats = useMemo(() => {
+    if (!currentUser) {
+      return { v: 0, e: 0, d: 0, equipos: 0 }
     }
-    const partidos = matchOpportunities.filter(
-      (m) =>
-        m.status === 'completed' &&
-        (m.creatorId === uid || participatingOpportunityIds.includes(m.id))
-    ).length
-    const victorias = matchOpportunities.filter(
-      (m) =>
-        m.status === 'completed' &&
-        m.type === 'rival' &&
-        m.creatorId === uid &&
-        m.rivalResult === 'creator_team'
-    ).length
     return {
-      partidos,
+      v: currentUser.statsPlayerWins ?? 0,
+      e: currentUser.statsPlayerDraws ?? 0,
+      d: currentUser.statsPlayerLosses ?? 0,
       equipos: getUserTeams().length,
-      victorias,
     }
-  }, [
-    currentUser?.id,
-    matchOpportunities,
-    participatingOpportunityIds,
-    getUserTeams,
-  ])
+  }, [currentUser, getUserTeams])
+
+  const organizerProgress = useMemo(() => {
+    const n = currentUser?.statsOrganizedCompleted ?? 0
+    return getOrganizerTierProgress(n)
+  }, [currentUser?.statsOrganizedCompleted])
 
   const statItems = [
     {
-      label: 'Partidos',
-      value: stats.partidos,
-      hint: 'Finalizados',
-      icon: Target,
+      label: 'Victorias',
+      value: playerStats.v,
+      hint: 'Como jugador (V)',
+      icon: Trophy,
+    },
+    {
+      label: 'Empates',
+      value: playerStats.e,
+      hint: 'Como jugador (E)',
+      icon: Minus,
+    },
+    {
+      label: 'Derrotas',
+      value: playerStats.d,
+      hint: 'Como jugador (D)',
+      icon: TrendingDown,
     },
     {
       label: 'Equipos',
-      value: stats.equipos,
+      value: playerStats.equipos,
       hint: 'Tus equipos',
       icon: Users,
-    },
-    {
-      label: 'Victorias',
-      value: stats.victorias,
-      hint: 'Como organizador',
-      icon: Trophy,
     },
   ] as const
 
@@ -381,7 +375,7 @@ export function ProfileScreen() {
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-2 mt-8 pt-6 border-t border-border">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-8 pt-6 border-t border-border">
             {statItems.map(({ label, value, hint, icon: Icon }) => (
               <div
                 key={label}
@@ -397,6 +391,47 @@ export function ProfileScreen() {
                 <p className="text-[10px] text-muted-foreground mt-0.5">{hint}</p>
               </div>
             ))}
+          </div>
+
+          <div className="mt-6 pt-6 border-t border-border space-y-3">
+            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+              <Shield className="w-3.5 h-3.5 text-primary" />
+              Organización de partidos
+            </p>
+            <div className="rounded-xl bg-secondary/40 border border-border/50 p-4 space-y-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <div>
+                  <p className="text-2xl font-bold text-foreground tabular-nums">
+                    {currentUser.statsOrganizedCompleted ?? 0}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Partidos organizados finalizados
+                  </p>
+                </div>
+                <span className="text-xs font-medium text-primary text-right max-w-[60%] leading-snug">
+                  {organizerProgress.tier.label}
+                </span>
+              </div>
+              <div>
+                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-primary transition-[width]"
+                    style={{ width: `${Math.round(organizerProgress.progress * 100)}%` }}
+                  />
+                </div>
+                {organizerProgress.nextTierLabel && (
+                  <p className="text-[10px] text-muted-foreground mt-1.5">
+                    Siguiente: {organizerProgress.nextTierLabel}
+                  </p>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Victorias de tu equipo al organizar:{' '}
+                <span className="text-foreground font-medium tabular-nums">
+                  {currentUser.statsOrganizerWins ?? 0}
+                </span>
+              </p>
+            </div>
           </div>
         </div>
       </div>

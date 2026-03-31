@@ -24,6 +24,9 @@ export type MatchesHubTab = 'upcoming' | 'chats' | 'finished'
 /** Resultado en partidos tipo rival (equipo del creador vs rival). */
 export type RivalResult = 'creator_team' | 'rival_team' | 'draw'
 
+/** Resultado en revuelta (equipos A/B tras sorteo). */
+export type RevueltaResult = 'team_a' | 'team_b' | 'draw'
+
 export type AccountType = 'player' | 'venue' | 'admin'
 
 /** Catálogo geo (tablas `geo_*`). */
@@ -70,6 +73,14 @@ export interface User {
   whatsappPhone?: string
   /** Confirmación de WhatsApp + género (OAuth debe pasar por onboarding). */
   playerEssentialsCompletedAt?: Date
+  /** Estadísticas acumuladas (BD). */
+  statsPlayerWins?: number
+  statsPlayerDraws?: number
+  statsPlayerLosses?: number
+  /** Partidos organizados y cerrados como jugados (no suspendidos). */
+  statsOrganizedCompleted?: number
+  /** Victorias del equipo del organizador al organizar. */
+  statsOrganizerWins?: number
   createdAt: Date
   /** Por defecto jugador; `venue` solo vía administración en Supabase. */
   accountType?: AccountType
@@ -149,6 +160,12 @@ export interface Team {
   cityRegionId?: string
   gender: Gender
   description?: string
+  /** Partidos rival finalizados (BD). */
+  statsWins?: number
+  statsDraws?: number
+  statsLosses?: number
+  statsWinStreak?: number
+  statsLossStreak?: number
   createdAt: Date
 }
 
@@ -248,6 +265,16 @@ export interface MatchOpportunity {
   suspendedReason?: string
   /** Revuelta: equipos A/B tras sorteo del organizador. */
   revueltaLineup?: RevueltaLineup
+  /** Revuelta: resultado al cerrar (equipo ganador o empate). */
+  revueltaResult?: RevueltaResult
+  /** Voto capitán equipo retador (rival). */
+  rivalCaptainVoteChallenger?: RivalResult
+  /** Voto capitán equipo aceptado (rival). */
+  rivalCaptainVoteAccepted?: RivalResult
+  /** Capitanes no coinciden; falta desempate del organizador tras plazo. */
+  rivalOutcomeDisputed?: boolean
+  /** Evita doble conteo de stats (solo lectura). */
+  matchStatsAppliedAt?: Date
 }
 
 export interface Match {

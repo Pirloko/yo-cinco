@@ -83,6 +83,11 @@ function mapTeamRow(
     cityRegionId: geo?.region_id ?? undefined,
     gender: t.gender as Gender,
     description: (t.description as string | null) ?? undefined,
+    statsWins: (t.stats_wins as number | null) ?? 0,
+    statsDraws: (t.stats_draws as number | null) ?? 0,
+    statsLosses: (t.stats_losses as number | null) ?? 0,
+    statsWinStreak: (t.stats_win_streak as number | null) ?? 0,
+    statsLossStreak: (t.stats_loss_streak as number | null) ?? 0,
     createdAt: new Date(t.created_at as string),
   }
 }

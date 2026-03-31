@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useApp } from '@/lib/app-context'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,11 +41,22 @@ export function ChatScreen() {
     suspendMatchOpportunity,
     submitMatchRating,
     randomizeRevueltaTeams,
+    rivalChallenges,
+    submitRivalCaptainVote,
+    finalizeRivalOrganizerOverride,
   } = useApp()
 
   const opportunity = selectedChatOpportunityId
     ? matchOpportunities.find((m) => m.id === selectedChatOpportunityId)
     : undefined
+
+  const rivalChallengeForOpp = useMemo(
+    () =>
+      opportunity
+        ? rivalChallenges.find((c) => c.opportunityId === opportunity.id) ?? null
+        : null,
+    [rivalChallenges, opportunity?.id]
+  )
 
   const chatMessagingOpen = opportunity
     ? isMatchChatMessagingOpen(opportunity)
@@ -371,6 +382,7 @@ export function ChatScreen() {
       {opportunity && currentUser && (
         <MatchCompletionPanel
           opportunity={opportunity}
+          rivalChallenge={rivalChallengeForOpp}
           currentUserId={currentUser.id}
           isConfirmedParticipant={participatingOpportunityIds.includes(
             opportunity.id
@@ -379,6 +391,8 @@ export function ChatScreen() {
           loadingRating={loadingRating}
           onReloadMyRating={() => void loadMyRating()}
           finalizeMatchOpportunity={finalizeMatchOpportunity}
+          submitRivalCaptainVote={submitRivalCaptainVote}
+          finalizeRivalOrganizerOverride={finalizeRivalOrganizerOverride}
           suspendMatchOpportunity={suspendMatchOpportunity}
           submitMatchRating={submitMatchRating}
         />

@@ -28,6 +28,20 @@ export async function fetchProfileForUser(
   return profileRowToUser(data as ProfileRow, email)
 }
 
+/** Solo `stats_organized_completed` (badge nivel organizador en detalle de partido). */
+export async function fetchOrganizerCompletedCount(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('stats_organized_completed')
+    .eq('id', userId)
+    .maybeSingle()
+  if (error || !data) return 0
+  return Math.max(0, (data.stats_organized_completed as number) ?? 0)
+}
+
 export async function fetchMatchOpportunities(
   supabase: SupabaseClient
 ): Promise<MatchOpportunity[]> {
