@@ -33,8 +33,7 @@ import {
   MessageCircle,
   Shield,
 } from 'lucide-react'
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
+import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { playersSeekProfileLabel } from '@/lib/players-seek-profile'
 import { MatchCourtPricingBlock } from '@/components/match-court-pricing'
 
@@ -251,9 +250,7 @@ export function MatchDetailsScreen() {
     const raw = venueContact?.phone?.trim() ?? ''
     const digits = raw.replace(/\D/g, '')
     if (!digits || !opportunity) return null
-    const msg = `Hola ${venueContact?.name ?? opportunity.venue}. Soy ${currentUser.name} y vengo de la app futmatch (soy el organizador del partido "${opportunity.title}"). Quiero confirmar la reserva de cancha para el ${format(new Date(opportunity.dateTime), "d 'de' MMMM", {
-      locale: es,
-    })} a las ${format(new Date(opportunity.dateTime), 'HH:mm')} hrs. ¿quisiera saber si Está disponible y cómo realizo el pago?`
+    const msg = `Hola ${venueContact?.name ?? opportunity.venue}. Soy ${currentUser.name} y vengo de la app futmatch (soy el organizador del partido "${opportunity.title}"). Quiero confirmar la reserva de cancha para el ${formatMatchInTimezone(opportunity.dateTime, "d 'de' MMMM")} a las ${formatMatchInTimezone(opportunity.dateTime, 'HH:mm')} hrs. ¿quisiera saber si Está disponible y cómo realizo el pago?`
     return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`
   })()
 
@@ -360,13 +357,11 @@ export function MatchDetailsScreen() {
           <div className="grid grid-cols-1 gap-2 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-primary" />
-              {format(new Date(opportunity.dateTime), "EEEE d 'de' MMMM", {
-                locale: es,
-              })}
+              {formatMatchInTimezone(opportunity.dateTime, "EEEE d 'de' MMMM")}
             </div>
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-primary" />
-              {format(new Date(opportunity.dateTime), 'HH:mm', { locale: es })} hrs
+              {formatMatchInTimezone(opportunity.dateTime, 'HH:mm')} hrs
             </div>
             <div className="flex items-center gap-2">
               <MapPin className="w-4 h-4 text-primary" />
@@ -586,7 +581,8 @@ export function MatchDetailsScreen() {
           </Button>
         </div>
 
-        {(opportunity.status === 'completed' || ratingSummary?.count) && (
+        {(opportunity.status === 'completed' ||
+          (ratingSummary?.count ?? 0) > 0) && (
           <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
             <h3 className="font-medium text-foreground">Calificaciones del partido</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">

@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   ArrowRight,
   User,
+  Users,
   Calendar,
   Star,
   Clock,
@@ -195,7 +196,7 @@ export function OnboardingScreen() {
               <p className="text-muted-foreground">
                 {isEditMode
                   ? 'Actualiza tu nombre, edad, ciudad y nivel'
-                  : 'Cuéntanos sobre ti y tu nivel de juego'}
+                  : 'WhatsApp y género son obligatorios; solo verás partidos de tu mismo género.'}
               </p>
             </div>
 
@@ -231,6 +232,80 @@ export function OnboardingScreen() {
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="whatsappPhone" className="text-foreground flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-primary" />
+                  WhatsApp (obligatorio)
+                </Label>
+                <Input
+                  id="whatsappPhone"
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="+56912345678"
+                  value={data.whatsappPhone}
+                  onChange={(e) =>
+                    setData({ ...data, whatsappPhone: e.target.value })
+                  }
+                  className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Lo usaremos para coordinar partidos.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <Label className="text-foreground flex items-center gap-2">
+                  <Users className="w-4 h-4 text-primary" />
+                  Género
+                </Label>
+                {isEditMode ? (
+                  <>
+                    <div className="rounded-xl border border-border bg-secondary/60 px-4 py-3 text-center font-medium text-foreground">
+                      {data.gender === 'male' ? 'Masculino' : 'Femenino'}
+                    </div>
+                    <p className="text-xs text-muted-foreground text-center">
+                      El género no se puede cambiar después de crear la cuenta.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setData({ ...data, gender: 'male' })}
+                        className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${
+                          data.gender === 'male'
+                            ? 'border-primary bg-primary/10'
+                            : 'border-border bg-secondary hover:border-muted-foreground'
+                        }`}
+                      >
+                        <User className={`w-6 h-6 ${data.gender === 'male' ? 'text-primary' : 'text-muted-foreground'}`} />
+                        <span className={`font-medium ${data.gender === 'male' ? 'text-primary' : 'text-foreground'}`}>
+                          Masculino
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setData({ ...data, gender: 'female' })}
+                        className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${
+                          data.gender === 'female'
+                            ? 'border-primary bg-primary/10'
+                            : 'border-border bg-secondary hover:border-muted-foreground'
+                        }`}
+                      >
+                        <User className={`w-6 h-6 ${data.gender === 'female' ? 'text-primary' : 'text-muted-foreground'}`} />
+                        <span className={`font-medium ${data.gender === 'female' ? 'text-primary' : 'text-foreground'}`}>
+                          Femenino
+                        </span>
+                      </button>
+                    </div>
+                    <p className="text-xs text-muted-foreground text-center">
+                      Solo verás partidos y jugadores de tu mismo género. No podrás cambiarlo después.
+                    </p>
+                  </>
+                )}
+              </div>
+
               <GeoLocationSelect
                 cityId={data.cityId}
                 onChange={(next) =>
@@ -242,23 +317,6 @@ export function OnboardingScreen() {
                 }
                 label="Ciudad / ubicación"
               />
-
-              <div className="space-y-2">
-                <Label htmlFor="whatsappPhone" className="text-foreground flex items-center gap-2">
-                  <Phone className="w-4 h-4 text-primary" />
-                  WhatsApp
-                </Label>
-                <Input
-                  id="whatsappPhone"
-                  type="tel"
-                  placeholder="+56912345678"
-                  value={data.whatsappPhone}
-                  onChange={(e) =>
-                    setData({ ...data, whatsappPhone: e.target.value })
-                  }
-                  className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
-                />
-              </div>
 
               <div className="space-y-3">
                 <Label className="text-foreground flex items-center gap-2">

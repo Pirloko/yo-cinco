@@ -76,18 +76,19 @@ export function JoinRevueltaDialog({
     }
   }, [open, opportunity?.id])
 
-  if (!opportunity) return null
-
-  const needed = opportunity.playersNeeded ?? 0
+  const needed = opportunity?.playersNeeded ?? 0
   const cap = needed
-  const joined = loadingCount ? (opportunity.playersJoined ?? 0) : joinedCount
+  const joined = loadingCount
+    ? (opportunity?.playersJoined ?? 0)
+    : joinedCount
   const totalLeft = cap > 0 ? Math.max(0, cap - joined) : 999
   const gkLeft = Math.max(0, MAX_GOALKEEPERS - gkCount)
   const fieldCap = Math.max(0, cap - MAX_GOALKEEPERS)
   const fieldLeft = Math.max(0, fieldCap - fieldCount)
-  const full = cap > 0 && joined >= cap
+  const full = !!opportunity && cap > 0 && joined >= cap
 
   const availabilityText = useMemo(() => {
+    if (!opportunity) return ''
     if (full) return 'No quedan cupos.'
     if (fieldLeft <= 0 && gkLeft > 0) return 'Solo quedan cupos de arquero.'
     if (gkLeft <= 0 && fieldLeft > 0) return 'Quedan cupos de jugadores.'
@@ -95,7 +96,9 @@ export function JoinRevueltaDialog({
       return `Quedan ${fieldLeft} de jugadores y ${gkLeft} de arquero.`
     }
     return 'Cupos disponibles.'
-  }, [full, fieldLeft, gkLeft])
+  }, [opportunity, full, fieldLeft, gkLeft])
+
+  if (!opportunity) return null
 
   const handleJoin = async (asGk: boolean) => {
     if (full) return

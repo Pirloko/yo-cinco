@@ -68,6 +68,8 @@ export interface User {
   photo: string
   bio?: string
   whatsappPhone?: string
+  /** Confirmación de WhatsApp + género (OAuth debe pasar por onboarding). */
+  playerEssentialsCompletedAt?: Date
   createdAt: Date
   /** Por defecto jugador; `venue` solo vía administración en Supabase. */
   accountType?: AccountType

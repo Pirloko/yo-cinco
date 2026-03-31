@@ -3,8 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
+import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { fetchPublicRevueltaSnapshot } from '@/lib/supabase/public-revuelta-server'
 import { isValidOpportunityInviteId } from '@/lib/match-invite-url'
 import { Button } from '@/components/ui/button'
@@ -98,10 +97,10 @@ export default async function RevueltaPublicPage({
         <div className="text-sm space-y-1 text-muted-foreground">
           <p>
             <span className="text-foreground font-medium">
-              {format(dt, "EEEE d 'de' MMMM", { locale: es })}
+              {formatMatchInTimezone(dt, "EEEE d 'de' MMMM")}
             </span>
           </p>
-          <p>{format(dt, 'HH:mm', { locale: es })} hrs</p>
+          <p>{formatMatchInTimezone(dt, 'HH:mm')} hrs</p>
           <p>
             Cupos:{' '}
             <span className="text-foreground">

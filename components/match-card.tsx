@@ -20,8 +20,8 @@ import {
   Loader2,
   Flame,
 } from 'lucide-react'
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
+import { formatMatchInTimezone } from '@/lib/match-datetime-format'
+import { MATCH_CARD_SHELL } from '@/lib/card-shell'
 
 interface MatchCardProps {
   match: MatchOpportunity
@@ -133,7 +133,7 @@ export function MatchCard({
       : getActionLabel()
 
   return (
-    <div className="bg-card rounded-2xl border border-border overflow-hidden hover:border-primary/50 transition-all">
+    <div className={MATCH_CARD_SHELL}>
       {/* Header with type badge */}
       <div className={`px-4 py-3 border-b border-border ${getTypeBgColor()}`}>
         <div className="flex items-center justify-between">
@@ -177,91 +177,109 @@ export function MatchCard({
       ) : null}
 
       {/* Content */}
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-3">
         {/* Title and Team */}
-        <div>
-          <h3 className="font-semibold text-lg text-foreground">{match.title}</h3>
+        <div className="space-y-1">
+          <h3 className="font-semibold text-base leading-snug text-foreground pr-1">
+            {match.title}
+          </h3>
           {match.teamName && (
             <p className="text-sm text-muted-foreground">{match.teamName}</p>
           )}
           {match.description && (
-            <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{match.description}</p>
+            <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
+              {match.description}
+            </p>
           )}
         </div>
 
-        {/* Details */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Calendar className="w-4 h-4 text-primary" />
-            <span>{format(new Date(match.dateTime), "EEEE d 'de' MMMM", { locale: es })}</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Clock className="w-4 h-4 text-primary" />
-            <span>{format(new Date(match.dateTime), 'HH:mm', { locale: es })} hrs</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <MapPin className="w-4 h-4 text-primary" />
-            <span>{match.venue}, {match.location}</span>
-          </div>
-          {priceLine ? (
-            <p className="text-xs text-amber-100/90 bg-amber-500/10 border border-amber-500/25 rounded-lg px-2 py-1.5">
-              {priceLine}
-            </p>
-          ) : null}
-          {match.playersNeeded && (
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Users className="w-4 h-4 text-primary" />
-                <span>{match.playersJoined}/{match.playersNeeded} jugadores</span>
-                <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary rounded-full transition-all"
-                    style={{
-                      width: `${((match.playersJoined || 0) / match.playersNeeded) * 100}%`,
-                    }}
-                  />
-                </div>
-              </div>
-              {match.type === 'open' && (
-                <p className="text-xs text-muted-foreground pl-6">
-                  Cupos disponibles:{' '}
-                  <span className="text-foreground font-medium">
-                    {Math.max(
-                      0,
-                      match.playersNeeded - (match.playersJoined || 0)
-                    )}
-                  </span>
-                  {' · '}
-                  Total en cancha (organizador incluido).
-                </p>
-              )}
-              {match.type === 'players' && (
-                <div className="text-xs text-muted-foreground pl-6 space-y-0.5">
-                  <p>Cupos solo para quienes se suman (el organizador no cuenta).</p>
-                  {playersSeekProfileLabel(match.playersSeekProfile) && (
-                    <p className="text-foreground/90">
-                      {playersSeekProfileLabel(match.playersSeekProfile)}
-                      {match.playersSeekProfile === 'gk_and_field' && (
-                        <span className="text-muted-foreground">
-                          {' '}
-                          · máx. 1 arquero
-                        </span>
-                      )}
-                    </p>
-                  )}
-                </div>
-              )}
+        {/* Cuándo y dónde: bloque único, menos filas sueltas */}
+        <div className="rounded-xl border border-border/80 bg-secondary/40 px-3 py-2.5 space-y-2">
+          <div className="flex gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background/80 border border-border/60">
+              <Calendar className="w-4 h-4 text-primary" aria-hidden />
             </div>
-          )}
-          {match.type === 'open' &&
-            currentUserId &&
-            (match.creatorId === currentUserId || isJoined) && (
-              <RevueltaInviteActions opportunity={match} className="pt-1" />
-            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-foreground leading-tight">
+                {formatMatchInTimezone(match.dateTime, "EEEE d 'de' MMMM")}
+              </p>
+              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Clock className="w-3.5 h-3.5 shrink-0 text-primary/90" aria-hidden />
+                {formatMatchInTimezone(match.dateTime, 'HH:mm')} hrs
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2.5 border-t border-border/50 pt-2">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background/80 border border-border/60">
+              <MapPin className="w-4 h-4 text-primary" aria-hidden />
+            </div>
+            <p className="min-w-0 flex-1 text-sm text-muted-foreground leading-snug">
+              <span className="text-foreground font-medium">{match.venue}</span>
+              <span className="text-muted-foreground"> · {match.location}</span>
+            </p>
+          </div>
         </div>
+
+        {priceLine ? (
+          <p className="text-xs text-amber-100/90 bg-amber-500/10 border border-amber-500/25 rounded-lg px-2.5 py-1.5">
+            {priceLine}
+          </p>
+        ) : null}
+
+        {match.playersNeeded ? (
+          <div className="rounded-xl border border-border/80 bg-secondary/30 px-3 py-2.5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Users className="w-4 h-4 text-primary shrink-0" aria-hidden />
+                <span className="text-sm font-medium text-foreground">
+                  {match.playersJoined}/{match.playersNeeded} jugadores
+                </span>
+              </div>
+            </div>
+            <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
+              <div
+                className="h-full bg-primary rounded-full transition-all"
+                style={{
+                  width: `${Math.min(100, ((match.playersJoined || 0) / match.playersNeeded) * 100)}%`,
+                }}
+              />
+            </div>
+            {match.type === 'open' && (
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                Cupos libres:{' '}
+                <span className="text-foreground font-medium">
+                  {Math.max(0, match.playersNeeded - (match.playersJoined || 0))}
+                </span>
+                . Total en cancha (organizador incluido).
+              </p>
+            )}
+            {match.type === 'players' && (
+              <div className="text-[11px] text-muted-foreground space-y-0.5 leading-relaxed">
+                <p>Cupos solo para quienes se suman (el organizador no cuenta).</p>
+                {playersSeekProfileLabel(match.playersSeekProfile) && (
+                  <p className="text-foreground/90">
+                    {playersSeekProfileLabel(match.playersSeekProfile)}
+                    {match.playersSeekProfile === 'gk_and_field' && (
+                      <span className="text-muted-foreground">
+                        {' '}
+                        · máx. 1 arquero
+                      </span>
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {match.type === 'open' &&
+          currentUserId &&
+          (match.creatorId === currentUserId || isJoined) && (
+            <RevueltaInviteActions opportunity={match} className="pt-0.5" />
+          )}
 
         {/* Creator */}
-        <div className="flex items-center justify-between pt-2 border-t border-border">
+        <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2 border-t border-border">
           <div className="flex items-center gap-3">
             <img
               src={match.creatorPhoto}
@@ -273,7 +291,7 @@ export function MatchCard({
               <p className="text-xs text-muted-foreground">Organizador</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
             <Button
               variant="ghost"
               size="sm"

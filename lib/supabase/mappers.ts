@@ -35,6 +35,7 @@ export type ProfileRow = {
   photo_url: string
   bio: string | null
   whatsapp_phone?: string | null
+  player_essentials_completed_at?: string | null
   created_at: string
   account_type?: 'player' | 'venue' | 'admin' | null
 }
@@ -56,6 +57,9 @@ export function profileRowToUser(row: ProfileRow, email: string): User {
     photo: row.photo_url || DEFAULT_AVATAR,
     bio: row.bio ?? undefined,
     whatsappPhone: row.whatsapp_phone ?? undefined,
+    playerEssentialsCompletedAt: row.player_essentials_completed_at
+      ? new Date(row.player_essentials_completed_at)
+      : undefined,
     createdAt: new Date(row.created_at),
     accountType:
       row.account_type === 'venue'

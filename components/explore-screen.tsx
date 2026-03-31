@@ -25,11 +25,12 @@ import {
 } from '@/lib/supabase/venue-queries'
 import type { SportsVenue } from '@/lib/types'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
+import { MATCH_CARD_SHELL, TABLE_OUTLINE } from '@/lib/card-shell'
+import { cn } from '@/lib/utils'
 import { Search, X, MapPin, Building2, CalendarRange, Clock } from 'lucide-react'
 import { RegionCityFilterSelect } from '@/components/region-city-filter'
 import { findNextVenueSlot } from '@/lib/venue-slots'
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
+import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { writeCreatePrefill } from '@/lib/create-prefill'
 
 const HORIZON_OPTIONS = [
@@ -164,8 +165,8 @@ export function ExploreScreen() {
       sportsVenueId: row.venueId,
       venueLabel: row.venueName,
       city: row.city,
-      date: format(row.nextSlotAt, 'yyyy-MM-dd'),
-      time: format(row.nextSlotAt, 'HH:mm'),
+      date: formatMatchInTimezone(row.nextSlotAt, 'yyyy-MM-dd'),
+      time: formatMatchInTimezone(row.nextSlotAt, 'HH:mm'),
       bookCourtSlot: true,
     })
     setCurrentScreen('create')
@@ -231,7 +232,12 @@ export function ExploreScreen() {
           <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
             {displayedVenues.map((v) => (
               <Link key={v.id} href={`/centro/${v.id}`} className="shrink-0 w-[200px]">
-                <Card className="bg-card border-border hover:border-primary/40 transition-colors">
+                <Card
+                  className={cn(
+                    MATCH_CARD_SHELL,
+                    'gap-0 py-0 hover:border-primary/55 flex flex-col'
+                  )}
+                >
                   <CardContent className="p-3 space-y-1">
                     <p className="font-medium text-sm text-foreground line-clamp-2">
                       {v.name}
@@ -269,7 +275,7 @@ export function ExploreScreen() {
             No hay datos de horarios para mostrar.
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border">
+          <div className={TABLE_OUTLINE}>
             <table className="w-full min-w-[320px] text-sm">
               <thead>
                 <tr className="border-b border-border bg-secondary/40 text-left text-muted-foreground">
@@ -310,9 +316,10 @@ export function ExploreScreen() {
                     <td className="px-3 py-2.5 align-top whitespace-nowrap text-muted-foreground">
                       {row.nextSlotAt ? (
                         <span className="text-foreground">
-                          {format(row.nextSlotAt, "EEE d MMM · HH:mm", {
-                            locale: es,
-                          })}
+                          {formatMatchInTimezone(
+                            row.nextSlotAt,
+                            'EEE d MMM · HH:mm'
+                          )}
                         </span>
                       ) : (
                         '—'

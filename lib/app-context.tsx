@@ -121,7 +121,10 @@ const PLAYER_NAV_SCREENS = new Set<AppScreen>([
 
 function needsOnboardingProfile(u: User): boolean {
   if (u.accountType !== 'player') return false
-  return u.name.trim().length < 2 || u.age < 16
+  const demoIncomplete = u.name.trim().length < 2 || u.age < 16
+  /** Registro email marca esto al guardar WhatsApp + género; OAuth queda NULL hasta onboarding. */
+  const essentialsMissing = !u.playerEssentialsCompletedAt
+  return demoIncomplete || essentialsMissing
 }
 
 interface AppContextType {
@@ -134,9 +137,7 @@ interface AppContextType {
   login: (
     email: string,
     password: string,
-    gender: Gender,
-    isSignUp: boolean,
-    whatsappPhone?: string
+    isSignUp: boolean
   ) => Promise<{
     ok: boolean
     error?: string
@@ -348,9 +349,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const login = async (
     email: string,
     password: string,
-    gender: Gender,
-    isSignUp: boolean,
-    whatsappPhone?: string
+    isSignUp: boolean
   ): Promise<{
     ok: boolean
     error?: string
@@ -370,14 +369,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const supabase = createClient()
       const emailTrimmed = email.trim()
       if (isSignUp) {
-        const whatsapp = whatsappPhone?.trim() ?? ''
-        if (!whatsapp) {
-          return { ok: false, error: 'Debes ingresar tu WhatsApp.' }
-        }
         const { data, error } = await supabase.auth.signUp({
           email: emailTrimmed,
           password,
-          options: { data: { gender, whatsapp_phone: whatsapp } },
         })
         if (error) return { ok: false, error: formatAuthError(error) }
         if (data.user && !data.session) {
@@ -386,12 +380,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             error:
               'Revisa tu correo para confirmar la cuenta antes de iniciar sesión.',
           }
-        }
-        if (data.user) {
-          await supabase
-            .from('profiles')
-            .update({ gender, whatsapp_phone: whatsapp })
-            .eq('id', data.user.id)
         }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
@@ -548,7 +536,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .update({
         name: data.name,
         age: data.age,
-        gender: data.gender,
+        ...(onboardingSource === 'profile_edit'
+          ? {}
+          : { gender: data.gender }),
         whatsapp_phone: data.whatsappPhone.trim(),
         position: data.position,
         level: data.level,
@@ -556,6 +546,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         city_id: nextCityId,
         availability: data.availability,
         photo_url: photo,
+        player_essentials_completed_at: new Date().toISOString(),
       })
       .eq('id', currentUser.id)
 
@@ -575,9 +566,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setCurrentUser({
         ...currentUser,
         ...data,
+        gender:
+          onboardingSource === 'profile_edit' ? currentUser.gender : data.gender,
         cityId: nextCityId,
         whatsappPhone: data.whatsappPhone.trim(),
         photo,
+        playerEssentialsCompletedAt: new Date(),
         email: currentUser.email,
         createdAt: currentUser.createdAt,
       })

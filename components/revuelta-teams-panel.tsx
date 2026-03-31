@@ -53,6 +53,22 @@ export function RevueltaTeamsPanel({
   randomizeRevueltaTeams,
   compact = false,
 }: Props) {
+  const [colorA, setColorA] = useState<string>(JERSEY_COLOR_PRESETS[0].hex)
+  const [colorB, setColorB] = useState<string>(JERSEY_COLOR_PRESETS[2].hex)
+  const [busy, setBusy] = useState(false)
+
+  const profileById = useMemo(() => {
+    const m = new Map<string, { name: string; photo: string; gk: boolean }>()
+    for (const p of participants) {
+      m.set(p.id, {
+        name: p.name,
+        photo: p.photo,
+        gk: p.isGoalkeeper === true,
+      })
+    }
+    return m
+  }, [participants])
+
   if (opportunity.type !== 'open') return null
 
   const needed = opportunity.playersNeeded ?? 0
@@ -70,22 +86,6 @@ export function RevueltaTeamsPanel({
   const full = needed > 0 && joined >= needed
   const hasTwoGoalkeepers = gkCount >= 2
   const lineup = opportunity.revueltaLineup
-
-  const [colorA, setColorA] = useState<string>(JERSEY_COLOR_PRESETS[0].hex)
-  const [colorB, setColorB] = useState<string>(JERSEY_COLOR_PRESETS[2].hex)
-  const [busy, setBusy] = useState(false)
-
-  const profileById = useMemo(() => {
-    const m = new Map<string, { name: string; photo: string; gk: boolean }>()
-    for (const p of participants) {
-      m.set(p.id, {
-        name: p.name,
-        photo: p.photo,
-        gk: p.isGoalkeeper === true,
-      })
-    }
-    return m
-  }, [participants])
 
   const renderTeam = (label: string, userIds: string[], hex: string) => (
     <div className="rounded-xl border border-border bg-secondary/40 p-3 space-y-2">

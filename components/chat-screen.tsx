@@ -23,6 +23,7 @@ import { RevueltaTeamsPanel } from '@/components/revuelta-teams-panel'
 import { ArrowLeft, Send, Calendar, MapPin, Info } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { toast } from 'sonner'
 
 type UiMessage = ChatMessageRow & { isMe: boolean }
@@ -250,9 +251,7 @@ export function ChatScreen() {
               </h1>
               <p className="text-xs text-muted-foreground truncate">
                 {opportunity.venue} ·{' '}
-                {format(new Date(opportunity.dateTime), "d MMM HH:mm", {
-                  locale: es,
-                })}
+                {formatMatchInTimezone(opportunity.dateTime, 'd MMM HH:mm')}
               </p>
             </div>
           </div>
@@ -283,10 +282,9 @@ export function ChatScreen() {
             <div className="flex items-center gap-2 text-sm">
               <Calendar className="w-4 h-4 text-primary" />
               <span className="text-foreground">
-                {format(
-                  new Date(opportunity.dateTime),
-                  "EEEE d 'de' MMMM, HH:mm",
-                  { locale: es }
+                {formatMatchInTimezone(
+                  opportunity.dateTime,
+                  "EEEE d 'de' MMMM, HH:mm"
                 )}{' '}
                 hrs
               </span>

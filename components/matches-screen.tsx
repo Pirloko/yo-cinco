@@ -33,7 +33,9 @@ import {
   Building2,
 } from 'lucide-react'
 import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
+import { formatMatchInTimezone } from '@/lib/match-datetime-format'
+import { MATCH_CARD_SHELL, COMPACT_CARD_ROW } from '@/lib/card-shell'
+import { cn } from '@/lib/utils'
 
 function isUserInvolved(
   m: MatchOpportunity,
@@ -320,13 +322,19 @@ export function MatchesScreen() {
                       key={m.id}
                       type="button"
                       onClick={() => openDetails(m.id)}
-                      className="w-full text-left rounded-lg border border-border bg-card/60 px-3 py-2 hover:border-primary/40 transition-colors"
+                      className={cn(
+                        'w-full text-left px-3 py-2',
+                        COMPACT_CARD_ROW
+                      )}
                     >
                       <p className="text-sm font-medium text-foreground truncate">
                         {m.title}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {format(m.dateTime, "EEEE d MMM · HH:mm", { locale: es })}
+                        {formatMatchInTimezone(
+                          m.dateTime,
+                          'EEEE d MMM · HH:mm'
+                        )}
                         {' · '}
                         {m.venue}
                       </p>
@@ -354,7 +362,7 @@ export function MatchesScreen() {
                   return (
                     <div
                       key={`reserve-${r.id}`}
-                      className="bg-card rounded-xl border border-border overflow-hidden"
+                      className={MATCH_CARD_SHELL}
                     >
                       <div className="px-4 py-3 border-b border-border bg-accent/10 border-accent/30">
                         <div className="flex items-center justify-between gap-2">
@@ -392,12 +400,12 @@ export function MatchesScreen() {
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <Calendar className="w-4 h-4 text-primary" />
-                            {format(r.startsAt, 'EEEE d MMM', { locale: es })}
+                            {formatMatchInTimezone(r.startsAt, 'EEEE d MMM')}
                           </span>
                           <span className="flex items-center gap-1">
                             <Clock className="w-4 h-4 text-primary" />
-                            {format(r.startsAt, 'HH:mm')} –{' '}
-                            {format(r.endsAt, 'HH:mm')}
+                            {formatMatchInTimezone(r.startsAt, 'HH:mm')} –{' '}
+                            {formatMatchInTimezone(r.endsAt, 'HH:mm')}
                           </span>
                         </div>
                         <div className="flex gap-2 pt-1">
@@ -425,10 +433,7 @@ export function MatchesScreen() {
                     participatingOpportunityIds
                   )
                 return (
-                  <div
-                    key={match.id}
-                    className="bg-card rounded-xl border border-border overflow-hidden"
-                  >
+                  <div key={match.id} className={MATCH_CARD_SHELL}>
                     <div
                       className={`px-4 py-3 border-b border-border ${getTypeHeaderBg(
                         match.type
@@ -485,13 +490,11 @@ export function MatchesScreen() {
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-4 h-4 text-primary" />
-                          {format(new Date(match.dateTime), "EEEE d MMM", {
-                            locale: es,
-                          })}
+                          {formatMatchInTimezone(match.dateTime, 'EEEE d MMM')}
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="w-4 h-4 text-primary" />
-                          {format(new Date(match.dateTime), 'HH:mm')}
+                          {formatMatchInTimezone(match.dateTime, 'HH:mm')}
                         </span>
                         <span className="flex items-center gap-1 min-w-0">
                           <MapPin className="w-4 h-4 text-primary shrink-0" />
@@ -554,7 +557,10 @@ export function MatchesScreen() {
                     key={chat.id}
                     type="button"
                     onClick={() => openChat(chat.id)}
-                    className="w-full bg-card rounded-xl border border-border overflow-hidden hover:border-primary/50 transition-all text-left"
+                    className={cn(
+                      MATCH_CARD_SHELL,
+                      'w-full cursor-pointer text-left'
+                    )}
                   >
                     <div
                       className={`px-4 py-3 border-b border-border ${getTypeHeaderBg(
@@ -606,9 +612,7 @@ export function MatchesScreen() {
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
                           <p className="text-xs text-muted-foreground flex items-center gap-1">
                             <Calendar className="w-3 h-3" />
-                            {format(new Date(chat.dateTime), "d MMM HH:mm", {
-                              locale: es,
-                            })}
+                            {formatMatchInTimezone(chat.dateTime, 'd MMM HH:mm')}
                           </p>
                           {isDone && (
                             <Badge variant="secondary" className="text-[10px]">
@@ -647,10 +651,7 @@ export function MatchesScreen() {
               finishedList.map((match) => {
                 const ratings = ratingByOpp.get(match.id)
                 return (
-                  <div
-                    key={match.id}
-                    className="bg-card rounded-xl border border-border overflow-hidden"
-                  >
+                  <div key={match.id} className={MATCH_CARD_SHELL}>
                     <div
                       className={`px-4 py-3 border-b border-border ${getTypeHeaderBg(
                         match.type
@@ -682,16 +683,15 @@ export function MatchesScreen() {
                             {match.title}
                           </h3>
                           <p className="text-sm text-muted-foreground">
-                            {format(new Date(match.dateTime), "d MMM yyyy", {
-                              locale: es,
-                            })}
+                            {formatMatchInTimezone(match.dateTime, 'd MMM yyyy')}
                             {match.finalizedAt && (
                               <span className="text-muted-foreground">
                                 {' '}
                                 · Cerrado{' '}
-                                {format(new Date(match.finalizedAt), 'd MMM', {
-                                  locale: es,
-                                })}
+                                {formatMatchInTimezone(
+                                  match.finalizedAt,
+                                  'd MMM'
+                                )}
                               </span>
                             )}
                           </p>
