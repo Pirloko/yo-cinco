@@ -237,6 +237,12 @@ export function ProfileScreen() {
   const levelLabel =
     (currentUser?.level && LEVEL_LABELS[currentUser.level]) || 'Intermedio'
 
+  const nameTokens = currentUser?.name
+    ? currentUser.name.trim().split(/\s+/).filter(Boolean)
+    : []
+  const profileFirstName = nameTokens[0] || 'Jugador'
+  const profileShowFullNameHeading = nameTokens.length > 1
+
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
@@ -252,18 +258,18 @@ export function ProfileScreen() {
           className="absolute inset-0 bg-gradient-to-br from-primary/25 via-background to-accent/15"
           aria-hidden
         />
-        <div className="relative flex items-center justify-between gap-3 px-4 pt-12 pb-8 sm:pt-14">
+        <div className="relative z-[1] flex items-center justify-between gap-3 px-4 pt-12 pb-5 sm:pt-14">
           <AppScreenBrandHeading
             className="min-w-0 flex-1"
-            eyebrow="Perfil"
-            title={`Hola, ${currentUser.name.split(' ')[0] || 'Jugador'}`}
-            titleClassName="text-2xl font-bold tracking-tight"
+            title="Perfil"
+            titleAs="p"
+            titleClassName="text-lg font-semibold tracking-tight sm:text-xl"
           />
           <Button
             type="button"
             variant="secondary"
             size="icon"
-            className="h-10 w-10 rounded-full border border-border bg-card/80 shadow-sm backdrop-blur-sm"
+            className="h-10 w-10 shrink-0 rounded-full border border-border bg-card/80 shadow-sm backdrop-blur-sm"
             onClick={() => setSettingsOpen(true)}
             aria-label="Configuración"
           >
@@ -280,10 +286,15 @@ export function ProfileScreen() {
         onChange={(ev) => void handlePhotoChange(ev)}
       />
 
-      <div className="px-4 -mt-6 relative z-10">
-        <div className="bg-card rounded-2xl border border-border shadow-lg shadow-black/20 p-6 pt-0">
+      <div className="px-4 pt-4 pb-2 relative z-[2]">
+        <div className="bg-card rounded-2xl border border-border shadow-lg shadow-black/20 p-6 pt-8">
           <div className="flex flex-col items-center">
-            <div className="relative -mt-14 mb-4">
+            <h1 className="mb-6 w-full text-center text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              Hola,{' '}
+              <span className="text-primary">{profileFirstName}</span>
+            </h1>
+
+            <div className="relative mb-1">
               <button
                 type="button"
                 onClick={() => pickProfilePhoto()}
@@ -330,7 +341,7 @@ export function ProfileScreen() {
               type="button"
               variant="ghost"
               size="sm"
-              className="text-xs text-muted-foreground -mt-1 mb-1 h-auto py-1"
+              className="text-xs text-muted-foreground mb-3 h-auto py-1"
               onClick={() => pickProfilePhoto()}
               disabled={photoWorking}
             >
@@ -338,10 +349,9 @@ export function ProfileScreen() {
             </Button>
 
             {isBirthday && (
-              <div className="mb-3 w-full max-w-sm mx-auto rounded-xl border border-primary/35 bg-gradient-to-br from-primary/15 to-primary/5 px-4 py-3 text-center shadow-sm">
+              <div className="mt-3 mb-1 w-full max-w-sm mx-auto rounded-xl border border-primary/35 bg-gradient-to-br from-primary/15 to-primary/5 px-4 py-3 text-center shadow-sm">
                 <p className="text-sm font-semibold text-primary">
-                  ¡Feliz cumpleaños,{' '}
-                  {currentUser.name.trim().split(/\s+/)[0] || 'crack'}!
+                  ¡Feliz cumpleaños, {profileFirstName}!
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
                   Que tengas un gran día en la cancha.
@@ -349,10 +359,16 @@ export function ProfileScreen() {
               </div>
             )}
 
-            <h2 className="text-xl font-bold text-foreground text-center">
-              {currentUser.name}
-            </h2>
-            <p className="mt-1 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+            {profileShowFullNameHeading ? (
+              <h2 className="mt-4 text-lg font-bold text-foreground text-center border-t border-border/60 pt-4 w-full">
+                {currentUser.name}
+              </h2>
+            ) : null}
+            <p
+              className={`flex items-center justify-center gap-1.5 text-sm text-muted-foreground ${
+                profileShowFullNameHeading ? 'mt-1' : 'mt-4'
+              }`}
+            >
               <MapPin className="w-4 h-4 shrink-0 text-primary" />
               {currentUser.city || 'Rancagua'}
             </p>

@@ -8,6 +8,8 @@ type AppScreenBrandHeadingProps = {
   eyebrow?: string
   title: string
   subtitle?: string
+  /** Por defecto `h1`; usá `p` si la pantalla define su propio `h1` principal. */
+  titleAs?: 'h1' | 'p'
   /** Ej.: botón atrás a la izquierda del logo */
   before?: ReactNode
   titleClassName?: string
@@ -18,6 +20,7 @@ export function AppScreenBrandHeading({
   eyebrow,
   title,
   subtitle,
+  titleAs = 'h1',
   before,
   titleClassName,
   className,
@@ -52,15 +55,27 @@ export function AppScreenBrandHeading({
               {eyebrow}
             </p>
           ) : null}
-          <h1
-            className={cn(
-              'truncate font-bold text-foreground',
-              eyebrow && 'mt-0.5',
-              titleClassName ?? 'text-2xl'
-            )}
-          >
-            {title}
-          </h1>
+          {titleAs === 'p' ? (
+            <p
+              className={cn(
+                'truncate font-bold text-foreground',
+                eyebrow && 'mt-0.5',
+                titleClassName ?? 'text-2xl'
+              )}
+            >
+              {title}
+            </p>
+          ) : (
+            <h1
+              className={cn(
+                'truncate font-bold text-foreground',
+                eyebrow && 'mt-0.5',
+                titleClassName ?? 'text-2xl'
+              )}
+            >
+              {title}
+            </h1>
+          )}
           {subtitle ? (
             <p className="mt-0.5 truncate text-sm text-muted-foreground">
               {subtitle}
