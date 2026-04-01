@@ -6,12 +6,12 @@ import { NextResponse, type NextRequest } from 'next/server'
  * Solo `response.cookies` no basta en App Router: hay que reflejar los valores
  * nuevos en `request.cookies` y volver a crear `NextResponse.next({ request })`
  * para que el documento y el cliente de Supabase en el navegador vean el mismo
- * estado que el middleware (evita “sesión perdida” al refrescar).
+ * estado que el proxy (evita “sesión perdida” al refrescar).
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request })
 
-  // En desarrollo, o si Supabase está intermitente, el middleware no debe bloquear la app.
+  // En desarrollo, o si Supabase está intermitente, el proxy no debe bloquear la app.
   // Si el refresh de sesión falla, seguimos sin romper navegación/login.
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
