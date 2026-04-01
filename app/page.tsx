@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect } from 'react'
+
 import { useApp } from '@/lib/app-context'
 import { LandingPage } from '@/components/landing-page'
 import { AuthScreen } from '@/components/auth-screen'
@@ -19,6 +21,15 @@ import { PublicPlayerProfileSheet } from '@/components/public-player-profile-she
 
 function AppContent() {
   const { authLoading, currentScreen } = useApp()
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+    const se = document.scrollingElement
+    if (se) se.scrollTop = 0
+  }, [currentScreen])
 
   if (authLoading) {
     return (

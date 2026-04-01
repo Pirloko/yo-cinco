@@ -1,0 +1,16 @@
+# URLs para Google Search Console (Inspeccionar / Solicitar indexación)
+# Dominio: https://www.Sportmatch.cl/
+
+# --- Páginas nuevas (canchas Rancagua) — prioridad ---
+https://www.Sportmatch.cl/rancagua/canchas/santa-helena
+https://www.Sportmatch.cl/rancagua/canchas/san-lorenzo
+https://www.Sportmatch.cl/rancagua/canchas/energy
+https://www.Sportmatch.cl/rancagua/canchas/san-damian
+
+# --- Hub actualizado (enlaces a canchas) ---
+https://www.Sportmatch.cl/rancagua/futbolito
+
+# --- Otras landing SEO Rancagua (opcional) ---
+https://www.Sportmatch.cl/rancagua/revueltas
+https://www.Sportmatch.cl/rancagua/faltan-jugadores
+https://www.Sportmatch.cl/rancagua/buscar-rival
