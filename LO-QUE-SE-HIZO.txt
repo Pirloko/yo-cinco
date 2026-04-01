@@ -1,0 +1,127 @@
+================================================================================
+  REGISTRO DE LO IMPLEMENTADO — SPORTMATCH (RESUMEN PARA EL EQUIPO / FUTURO YO)
+================================================================================
+
+Este documento describe cambios y entregas relevantes del proyecto. No sustituye
+al código; sirve como memoria escrita de qué existe y por qué.
+
+--------------------------------------------------------------------------------
+1. CAPA SEO LOCAL (RANCAGUA) — LANDING PARA GOOGLE
+--------------------------------------------------------------------------------
+
+Objetivo: páginas HTML estáticas/servidor para posicionar búsquedas locales de
+fútbol en Rancagua, sin alterar la SPA principal (app/page.tsx ni app-context).
+
+Rutas nuevas (Server Components, sin "use client"):
+
+  /rancagua/futbolito          → todos los tipos de partido (filtro "all")
+  /rancagua/buscar-rival       → type = rival
+  /rancagua/faltan-jugadores   → type = players
+  /rancagua/revueltas          → type = open
+
+Archivos de página:
+  app/rancagua/futbolito/page.tsx
+  app/rancagua/buscar-rival/page.tsx
+  app/rancagua/faltan-jugadores/page.tsx
+  app/rancagua/revueltas/page.tsx
+
+Cada página incluye:
+  - generateMetadata() (title, description, canonical, Open Graph)
+  - revalidate = 300 (ISR: datos se refrescan cada ~5 minutos, no solo en build)
+  - <h1>, párrafo introductorio (copy SEO), lista de partidos en HTML
+  - JSON-LD (schema.org SportsEvent en @graph) vía lib/seo/rancagua-json-ld.ts
+
+Componente compartido (server):
+  components/seo/rancagua-seo-page.tsx
+  - Lista enlaces a /?matchId=<uuid> por partido
+  - Fechas formateadas con lib/match-datetime-format (zona America/Santiago)
+
+Datos desde Supabase:
+  lib/supabase/seo-rancagua-matches.ts
+  - Tabla: match_opportunities
+  - Filtros: status IN (pending, confirmed), date_time > ahora
+  - Rancagua: location/venue ILIKE %Rancagua% O city_id en geo_cities (nombre/slug
+    Rancagua)
+  - Importante: la RLS de anon solo permite leer abiertos (open); para listar
+    rival/players en servidor se usa SUPABASE_SERVICE_ROLE_KEY (solo servidor).
+
+Origen canónico del sitio (URLs absolutas):
+  lib/seo/site-origin.ts → NEXT_PUBLIC_SITE_URL o fallback https://www.sportmatch.cl
+
+Sitemap dinámico:
+  app/sitemap.ts
+  - Estáticas: /, las cuatro rutas /rancagua/...
+  - Dinámicas: /equipo/[teamId] (teams), /centro/[venueId] (sports_venues)
+  - revalidate = 3600
+  - Con service role: equipos + centros; sin service role: solo centros (anon puede
+    leer sports_venues)
+
+Robots:
+  public/robots.txt
+  - User-agent: * Allow: /
+  - Sitemap: https://www.sportmatch.cl/sitemap.xml
+  (Ajustar dominio si el canónico cambia.)
+
+Proxy (deep link sin tocar app-context):
+  proxy.ts
+  - Petición a /?matchId=<uuid> → redirección a /?joinMatch=<uuid>
+  - La SPA ya lee joinMatch y abre el detalle del partido; no se modificó
+    lib/app-context.tsx ni app/page.tsx.
+
+--------------------------------------------------------------------------------
+2. INICIO — ESTADO VACÍO DEL FEED (MEJORA UX ANTERIOR)
+--------------------------------------------------------------------------------
+
+  components/home-screen.tsx
+  - Cuando no hay partidos en el feed: bloque minimalista con borde verde suave,
+    emoji de balón y texto "No hay partidos disponibles" (sin CTAs extra), acorde
+    a diseño solicitado.
+
+--------------------------------------------------------------------------------
+3. NEXT.JS 16 + VERCEL + PAQUETES
+--------------------------------------------------------------------------------
+
+  proxy.ts (antes middleware.ts)
+  - Convención Next.js 16: archivo raíz "proxy" en lugar de "middleware".
+  - Función exportada: proxy() — refresco de sesión Supabase + cookies.
+
+  package.json
+  - engines.node: "22.x" (avisos de Vercel con ">=20")
+  - pnpm.onlyBuiltDependencies: ["sharp"] (builds de sharp en instalación pnpm)
+
+  netlify.toml
+  - Queda por histórico; el deploy objetivo es Vercel.
+
+  app/layout.tsx
+  - @vercel/analytics solo si VERCEL === '1'
+
+Variables recomendadas en hosting:
+  NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  SUPABASE_SERVICE_ROLE_KEY (API admin + SEO listados),
+  NEXT_PUBLIC_SITE_URL (https://www.sportmatch.cl o tu dominio),
+
+--------------------------------------------------------------------------------
+4. DOCUMENTACIÓN GENERAL DEL REPOSITORIO
+--------------------------------------------------------------------------------
+
+  DOCUMENTACION-PROYECTO.txt
+  - Visión técnica amplia: stack, carpetas, migraciones Supabase, rutas API, etc.
+
+  DOCUMENTACION.md (si existe en el repo)
+  - Puede duplicar o ampliar contenido en Markdown.
+
+--------------------------------------------------------------------------------
+5. CHECKLIST POST-DESPLIEGUE (SEO + DOMINIO)
+--------------------------------------------------------------------------------
+
+  [ ] Vercel: SUPABASE_SERVICE_ROLE_KEY para que listados SEO y sitemap de equipos
+      funcionen.
+  [ ] NEXT_PUBLIC_SITE_URL alineado con dominio público (https + www o no, consistente).
+  [ ] Supabase Auth: Site URL y Redirect URLs con dominio de producción y .vercel.app si aplica.
+  [ ] DNS: propagación tras cambiar de Netlify a Vercel (nameservers o registros).
+  [ ] Opcional: Deployment Protection en Vercel desactivada para producción pública.
+  [ ] robots.txt: línea Sitemap coherente con dominio real si no es sportmatch.cl.
+
+================================================================================
+  FIN DEL DOCUMENTO — Actualizar al añadir features o cambiar infraestructura.
+================================================================================

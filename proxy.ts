@@ -9,6 +9,17 @@ import { NextResponse, type NextRequest } from 'next/server'
  * estado que el proxy (evita “sesión perdida” al refrescar).
  */
 export async function proxy(request: NextRequest) {
+  // SEO / enlaces desde páginas estáticas: ?matchId= → ?joinMatch= (lo consume la SPA en app-context)
+  if (request.nextUrl.pathname === '/') {
+    const matchId = request.nextUrl.searchParams.get('matchId')?.trim()
+    if (matchId) {
+      const u = request.nextUrl.clone()
+      u.searchParams.delete('matchId')
+      u.searchParams.set('joinMatch', matchId)
+      return NextResponse.redirect(u)
+    }
+  }
+
   let response = NextResponse.next({ request })
 
   // En desarrollo, o si Supabase está intermitente, el proxy no debe bloquear la app.

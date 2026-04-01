@@ -1,0 +1,377 @@
+================================================================================
+  SPORTMATCH — DOCUMENTACIÓN DEL PROYECTO (CÓDIGO + INFRAESTRUCTURA)
+  Generado como referencia técnica del repositorio. Actualizar al cambiar arquitectura.
+================================================================================
+
+--------------------------------------------------------------------------------
+1. IDENTIFICACIÓN
+--------------------------------------------------------------------------------
+
+  Nombre paquete:     sportmatch
+  Versión:            0.1.0 (privado)
+  Descripción breve:  Plataforma web de matchmaking para fútbol amateur (6 vs 6):
+                        rivales, jugadores, partidos abiertos (revuelta), equipos,
+                        centros deportivos con reserva de canchas, panel admin.
+
+  Marca en UI:        SPORTMATCH (metadatos en app/layout.tsx apuntan a sportmatch.cl
+                        como URL canónica por defecto si no hay NEXT_PUBLIC_SITE_URL).
+
+--------------------------------------------------------------------------------
+2. STACK TECNOLÓGICO
+--------------------------------------------------------------------------------
+
+  Framework:          Next.js 16.2.0 (App Router)
+  Runtime UI:         React 19.2.4
+  Lenguaje:           TypeScript 5.7.3
+  Estilos:            Tailwind CSS 4.x + tw-animate-css
+  Backend / datos:    Supabase (PostgreSQL + Auth + Storage + RLS)
+  SSR auth cookies:   @supabase/ssr
+  Formularios:        react-hook-form + zod + @hookform/resolvers
+  Iconos:             lucide-react
+  Componentes UI:     Radix UI (múltiples paquetes @radix-ui/*)
+  Gráficos (admin):   recharts
+  Carruseles:         embla-carousel-react
+  Fechas:             date-fns, date-fns-tz
+  Toasts:             sonner
+  Temas:              next-themes (claro / oscuro / sistema; localStorage sportmatch-theme)
+  Analytics:          @vercel/analytics (solo si process.env.VERCEL === '1')
+  Node (engines):     22.x (fijado en package.json para builds predecibles)
+  Gestor recomendado: pnpm (pnpm-lock.yaml); existe también package-lock.json
+
+--------------------------------------------------------------------------------
+3. SCRIPTS NPM
+--------------------------------------------------------------------------------
+
+  npm run dev         Desarrollo Next (Turbopack según versión)
+  npm run build       next build (producción)
+  npm run start       next start (tras build)
+  npm run lint        eslint .
+
+--------------------------------------------------------------------------------
+4. VARIABLES DE ENTORNO
+--------------------------------------------------------------------------------
+
+  Archivo local:      .env.local (no commitear secretos)
+
+  Obligatorias (app + cliente Supabase):
+    NEXT_PUBLIC_SUPABASE_URL
+    NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  Servidor (operaciones privilegiadas, rutas API admin, algunos módulos server):
+    SUPABASE_SERVICE_ROLE_KEY
+
+  Recomendada en producción:
+    NEXT_PUBLIC_SITE_URL   URL pública con https, sin barra final problemática
+                           (ej. https://www.sportmatch.cl). Usada en:
+                           - metadataBase / Open Graph / Twitter (app/layout.tsx)
+                           - getPublicSiteOrigin() (lib/site-url.ts) para OAuth redirect
+
+  Opcional:
+    NEXT_PUBLIC_APP_TIMEZONE   Zona horaria por defecto para formateo de fechas
+                               (lib/match-datetime-format.ts; default America/Santiago)
+
+  Vercel define automáticamente VERCEL=1 en su plataforma (Analytics).
+
+  Uso por archivo (resumen):
+    - lib/supabase/client.ts          → URL + anon (cliente browser)
+    - lib/supabase/server.ts          → URL + anon (server components / cookies)
+    - lib/supabase/admin.ts           → URL + service role
+    - lib/supabase/public-*-server.ts → lecturas públicas + a veces service role
+    - middleware/proxy (proxy.ts)     → URL + anon (refresh sesión)
+    - app/api/admin/*                 → requireAdmin + Supabase según ruta
+
+--------------------------------------------------------------------------------
+5. CONFIGURACIÓN NEXT (next.config.mjs)
+--------------------------------------------------------------------------------
+
+  typescript.ignoreBuildErrors: true   (el build no falla por errores TS; revisar en CI)
+  images.unoptimized: true            (Next Image sin optimización servidor; acorde a hosting)
+
+--------------------------------------------------------------------------------
+6. PROXY (ANTES MIDDLEWARE) — RAÍZ DEL PROYECTO
+--------------------------------------------------------------------------------
+
+  Archivo: proxy.ts (convención Next.js 16; reemplaza middleware.ts)
+
+  Función: Refrescar JWT de Supabase y sincronizar cookies entre request/response
+           para evitar pérdida de sesión al navegar (patrón recomendado @supabase/ssr).
+
+  Si faltan NEXT_PUBLIC_SUPABASE_URL o ANON_KEY, el proxy no bloquea; deja pasar.
+
+  Matcher: excluye _next/static, _next/image, favicon, extensiones de imagen estática.
+
+--------------------------------------------------------------------------------
+7. ESTRUCTURA DE CARPETAS (RESUMEN)
+--------------------------------------------------------------------------------
+
+  app/
+    layout.tsx              Metadatos, fuentes (Nunito marca), Providers, Analytics Vercel
+    page.tsx                Shell principal: cliente único; enrutado por currentScreen (app-context)
+    globals.css             Estilos globales + Tailwind
+    swipe/page.tsx          Ruta /swipe
+    equipo/[teamId]/        Página pública de equipo (SSR + datos Supabase)
+    revuelta/[opportunityId]/  Página pública de oportunidad revuelta
+    centro/[venueId]/       Página pública de centro deportivo
+    api/admin/              Rutas API protegidas (métricas, geo, reports, sanctions,
+                            create-venue-user)
+
+  components/
+    Pantallas principales: landing-page, auth-screen, onboarding-screen, home-screen,
+    create-screen, explore-screen, matches-screen, chat-screen, match-details-screen,
+    profile-screen, teams-screen, venue-*, admin-dashboard-screen, swipe-screen,
+    match-card, bottom-nav, region-city-filter, dialogs de unión, etc.
+    components/ui/          Biblioteca de primitivas (shadcn-style)
+
+  lib/
+    app-context.tsx         Estado global masivo: auth, usuario, partidos, equipos, chat,
+                            rivales, venue, navegación entre pantallas
+    types.ts                Tipos de dominio (User, Team, MatchOpportunity, etc.)
+    supabase/               Cliente, server, admin, mappers, queries por dominio
+    age-birthday.ts         Edad desde birthDate
+    site-url.ts             Origen público para redirects
+    geo-constants.ts, mock-data.ts, utilidades de partidos, rivales, revuelta, etc.
+
+  hooks/                    use-mobile, use-discover-teams, use-toast
+
+  public/                   Assets estáticos (logos, onboarding, badges)
+
+  supabase/
+    migrations/             Migraciones SQL versionadas (orden cronológico en nombre)
+    *.sql manuales          Scripts operativos (ej. borrado usuarios por email)
+
+  proxy.ts                  Proxy edge/node según Next (sesión Supabase)
+
+--------------------------------------------------------------------------------
+8. MODELO DE NAVEGACIÓN (SPA INTERNA)
+--------------------------------------------------------------------------------
+
+  La URL del navegador suele ser "/" para la mayoría del flujo. La “pantalla” activa la
+  define React state currentScreen en AppProvider (lib/app-context.tsx), no el file-system
+  de Next (salvo rutas públicas /equipo, /revuelta, /centro, /swipe).
+
+  Pantallas (AppScreen): landing, auth, onboarding, home, create, explore, matches,
+  chat, matchDetails, profile, teams, venueOnboarding, venueDashboard, adminDashboard
+
+  Jugador: flujo típico landing → registro/login → onboarding (perfil obligatorio) → home.
+  Cuenta venue: tras auth, venue onboarding si no hay sports_venues → venue dashboard.
+  Admin: account_type admin en profiles → admin dashboard.
+
+  Parámetros URL útiles (app-context):
+    ?joinTeam=, ?joinMatch=, ?register=1  → sessionStorage y limpieza de query
+    ?prefillCreate=1                       → abrir crear partido tras estar listo
+    ?screen=                               → abrir pestaña principal (jugador)
+
+--------------------------------------------------------------------------------
+9. TIPOS DE PARTIDO (DOMINIO)
+--------------------------------------------------------------------------------
+
+  MatchType:
+    rival     Busca rival (equipos, desafíos, resultado por equipos)
+    players   Faltan jugadores (cupos, perfil buscado: arquero/campo)
+    open      Revuelta (sorteo equipos A/B, porteros, alineación)
+
+  MatchStatus: pending | confirmed | completed | cancelled
+
+  Género: male | female
+  Niveles: principiante | intermedio | avanzado | competitivo
+  Posiciones: portero | defensa | mediocampista | delantero
+
+--------------------------------------------------------------------------------
+10. SUPABASE — CAPAS
+--------------------------------------------------------------------------------
+
+  Cliente browser:     createClient() en lib/supabase/client.ts (anon)
+  Servidor con cookies: lib/supabase/server.ts (lecturas con sesión usuario)
+  Admin SDK:            lib/supabase/admin.ts (service role; solo servidor)
+  Mappers:              lib/supabase/mappers.ts (filas DB → tipos TS)
+
+  Páginas públicas server-side:
+    public-team-server.ts, public-revuelta-server.ts, public-venue-server.ts
+    (lecturas controladas; pueden usar anon + service role según caso)
+
+  Políticas: RLS en migraciones; perfiles y datos sensibles acotados por rol.
+
+--------------------------------------------------------------------------------
+11. RUTAS API (app/api)
+--------------------------------------------------------------------------------
+
+  Prefijo: /api/admin/*
+
+  Ejemplos (nombres de archivo):
+    metrics/route.ts
+    geo/route.ts
+    reports/route.ts
+    sanctions/route.ts
+    create-venue-user/route.ts
+
+  Autorización: lib/supabase/require-admin.ts
+    - Cookie de sesión (SSR) o
+    - Authorization: Bearer <JWT> y comprobación account_type === 'admin' en profiles
+
+--------------------------------------------------------------------------------
+12. BASE DE DATOS — MIGRACIONES (supabase/migrations)
+--------------------------------------------------------------------------------
+
+  Orden aproximado por prefijo de fecha (aplicar en cadena en proyecto Supabase):
+
+  20250322180000_initial_schema.sql
+    Esquema base: profiles, match_opportunities, participants, matches, messages,
+    teams, enums, índices, RLS inicial.
+
+  20250322180001_rls_policies.sql
+    Políticas RLS.
+
+  20250322190000_match_completion_and_ratings.sql
+    Cierre de partidos y calificaciones.
+
+  20250322193000_rival_challenges.sql
+    Desafíos entre equipos (rival).
+
+  20250322194000_match_suspension_reason.sql
+    Suspensiones / motivos.
+
+  20250324120000_team_logos_storage.sql
+    Storage logos de equipo.
+
+  20250325140000_anon_public_team_invite_read.sql
+    Lectura pública controlada para invitaciones.
+
+  20250325160000_revuelta_goalkeeper_and_public_read.sql
+    Revuelta: porteros y lectura pública.
+
+  20250325180000_revuelta_lineup.sql
+    Alineación revuelta.
+
+  20250326120000_players_seek_profile.sql
+    Perfil buscado en partidos "players".
+
+  20250326140000_profile_avatars_storage.sql
+    Storage avatares.
+
+  20250326160000_team_join_requests.sql
+    Solicitudes para unirse a equipo.
+
+  20250326170000_team_private_settings.sql
+    Ajustes privados equipo (WhatsApp, reglas).
+
+  20250327100000_sports_venues_and_bookings.sql
+    Centros deportivos y reservas base.
+
+  20250327110000_venue_public_reservations_rpc.sql
+    RPC reservas públicas.
+
+  20250327120000_team_members_limit_5.sql
+    Límite miembros equipo.
+
+  20250327120001_teams_limit_5.sql
+    Límite cantidad de equipos por usuario.
+
+  20250327130000_revuelta_roles_and_capacity.sql
+    Roles y capacidad revuelta.
+
+  20260326112000_profiles_whatsapp_required_signup.sql
+    WhatsApp en registro.
+
+  20260326123000_allow_auth_user_creation_without_whatsapp.sql
+    Ajuste creación auth.
+
+  20260326200000_venue_reservations_payments_and_history.sql
+    Pagos e historial reservas.
+
+  20260327001000_admin_and_self_confirmed_reservations.sql
+    Confirmación admin/autoservicio.
+
+  20260327012000_venue_manual_reservations_insert_policy.sql
+    Políticas inserción manual reservas.
+
+  20260329120000_geo_locations.sql
+    Catálogo geo (país/región/ciudad).
+
+  20260329160000_court_price_per_hour.sql
+    Precio cancha por hora.
+
+  20260330140000_team_city_immutable_and_rival_counts.sql
+    Ciudad equipo inmutable y conteos rival.
+
+  20260330180000_team_roster_max_18.sql
+    Tamaño plantel máximo.
+
+  20260331120000_profiles_player_essentials.sql
+    Esenciales jugador (onboarding).
+
+  20260331190000_match_outcomes_stats_votes.sql
+    Resultados, stats, votos capitanes.
+
+  20260401120000_team_stats_wdl.sql
+    Estadísticas W/D/L equipos.
+
+  20260401140000_team_rival_streaks.sql
+    Rachas rival.
+
+  20260401170000_public_player_profiles_reports_sanctions.sql
+    Perfiles públicos, reportes, sanciones.
+
+  20260401183000_sync_team_member_position_from_profile.sql
+    Sincronía posición miembro con perfil.
+
+  20260403120000_profiles_birth_date.sql
+    Fecha de nacimiento perfiles y edad.
+
+  Nota: El esquema real es la suma de todas; no ejecutar solo la inicial en un proyecto
+  ya evolucionado sin revisar dependencias.
+
+--------------------------------------------------------------------------------
+13. REGLAS DE NEGOCIO RELEVANTES (CÓDIGO)
+--------------------------------------------------------------------------------
+
+  - Máximo equipos por usuario: 5 (mensajes/toasts en app-context; migraciones teams_limit)
+  - Plantel equipo: TEAM_ROSTER_MAX en lib/team-roster.ts (migración 18 jugadores)
+  - Moderación: perfiles pueden tener suspensión/baneo (solo lectura en UI pública)
+  - Onboarding jugador: datos esenciales + foto; edad desde birthDate (age-birthday.ts)
+
+--------------------------------------------------------------------------------
+14. DESPLIEGUE
+--------------------------------------------------------------------------------
+
+  Objetivo actual: Vercel (build: npm run build; Node 22.x por engines).
+
+  netlify.toml existe por histórico (plugin Next en Netlify); no es necesario para Vercel.
+
+  Dominio custom: configurar DNS según Vercel (nameservers o registros). Propagación puede
+  tardar. Variables de entorno deben replicarse en el panel Vercel (Production/Preview).
+
+  Supabase Auth: Site URL y Redirect URLs deben incluir el dominio público final y el
+  dominio .vercel.app si se usa para pruebas.
+
+--------------------------------------------------------------------------------
+15. ARCHIVOS Y CARPETAS AUXILIARES
+--------------------------------------------------------------------------------
+
+  components.json       Config típica shadcn/ui
+  eslint.config.mjs     ESLint
+  postcss.config.mjs    PostCSS + Tailwind
+  tsconfig.json         Paths @/* → raíz del proyecto
+  public/               Recursos estáticos servidos en /
+
+--------------------------------------------------------------------------------
+16. SEGURIDAD — RECORDATORIOS
+--------------------------------------------------------------------------------
+
+  - No commitear .env.local ni service role en repositorio público.
+  - SUPABASE_SERVICE_ROLE_KEY solo en servidor; nunca NEXT_PUBLIC_*.
+  - Admin API: siempre pasar por requireAdmin o equivalente.
+  - RLS es la línea principal de defensa en base de datos.
+
+--------------------------------------------------------------------------------
+17. MANTENIMIENTO DE ESTE DOCUMENTO
+--------------------------------------------------------------------------------
+
+  Al añadir:
+    - Nuevas rutas app/ o api/
+    - Nuevas migraciones (añadir línea en sección 12)
+    - Nuevas variables de entorno (sección 4)
+    - Cambiar flujo de auth o proxy (secciones 6 y 8)
+
+================================================================================
+  FIN DOCUMENTACION-PROYECTO.txt
+================================================================================
