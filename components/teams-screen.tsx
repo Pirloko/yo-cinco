@@ -74,57 +74,48 @@ const positionLabels: Record<Position, string> = {
 }
 
 const CAPTAIN_ARMBAND_SRC = '/team/captain-armband.png'
-const VICE_CAPTAIN_ARMBAND_SRC = '/team/vice-captain-armband.png'
+/** Nombre real del archivo en `public/team` (sin la “d” final en armban). */
+const VICE_CAPTAIN_ARMBAND_SRC = '/team/vice-captain-armban.png'
 
 function CaptainArmbandBadge({ compact }: { compact?: boolean }) {
+  const px = compact ? 16 : 20
   return (
     <span
-      className="inline-flex items-center gap-2 shrink-0 rounded-lg bg-amber-500/12 border border-amber-500/30 px-2 py-1"
+      className="inline-flex max-w-fit items-center gap-1 shrink-0 rounded-md border border-amber-500/35 bg-amber-500/10 px-1 py-0.5"
       title="Capitán principal"
     >
       <img
         src={CAPTAIN_ARMBAND_SRC}
         alt=""
-        width={compact ? 36 : 48}
-        height={compact ? 36 : 48}
-        className="object-contain shrink-0 drop-shadow-sm"
+        width={px}
+        height={px}
+        className={`shrink-0 object-contain opacity-95 ${compact ? 'size-4' : 'size-5'}`}
         draggable={false}
       />
-      <span
-        className={
-          compact
-            ? 'text-[10px] font-semibold leading-tight text-amber-900 dark:text-amber-200 max-w-[4.75rem]'
-            : 'text-xs font-semibold text-amber-900 dark:text-amber-200'
-        }
-      >
-        Capitán principal
+      <span className="text-[10px] font-semibold leading-none text-amber-900 dark:text-amber-200 sm:text-[11px]">
+        {compact ? 'Cap.' : 'Capitán'}
       </span>
     </span>
   )
 }
 
 function ViceCaptainArmbandBadge({ compact }: { compact?: boolean }) {
+  const px = compact ? 16 : 20
   return (
     <span
-      className="inline-flex items-center gap-2 shrink-0 rounded-lg bg-sky-500/12 border border-sky-500/35 px-2 py-1"
-      title="2do capitán"
+      className="inline-flex max-w-fit items-center gap-1 shrink-0 rounded-md border border-sky-500/40 bg-sky-500/10 px-1 py-0.5"
+      title="2.º capitán"
     >
       <img
         src={VICE_CAPTAIN_ARMBAND_SRC}
         alt=""
-        width={compact ? 36 : 48}
-        height={compact ? 36 : 48}
-        className="object-contain shrink-0 drop-shadow-sm"
+        width={px}
+        height={px}
+        className={`shrink-0 object-contain opacity-95 ${compact ? 'size-4' : 'size-5'}`}
         draggable={false}
       />
-      <span
-        className={
-          compact
-            ? 'text-[10px] font-semibold leading-tight text-sky-900 dark:text-sky-200 max-w-[4.75rem]'
-            : 'text-xs font-semibold text-sky-900 dark:text-sky-200'
-        }
-      >
-        2do capitán
+      <span className="text-[10px] font-semibold leading-none text-sky-900 dark:text-sky-200 sm:text-[11px]">
+        {compact ? '2.º' : '2.º cap.'}
       </span>
     </span>
   )
