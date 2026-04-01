@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Clock,
   Gavel,
+  KeyRound,
   LogOut,
   MapPinned,
   RefreshCw,
@@ -28,6 +29,7 @@ import { GeoLocationSelect } from '@/components/geo-location-select'
 import { AdminGeoCatalogPanel } from '@/components/admin-geo-catalog-panel'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import { formatAuthError } from '@/lib/supabase/auth-errors'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -120,6 +122,9 @@ export function AdminDashboardScreen() {
     mapsUrl: '',
   })
   const [adminTab, setAdminTab] = useState('resumen')
+  const [adminNewPassword, setAdminNewPassword] = useState('')
+  const [adminConfirmPassword, setAdminConfirmPassword] = useState('')
+  const [adminPwSaving, setAdminPwSaving] = useState(false)
 
   const resetVenueForm = useCallback(() => {
     setForm({
@@ -359,6 +364,36 @@ export function AdminDashboardScreen() {
     }
   }
 
+  const handleAdminPasswordChange = async () => {
+    if (!isSupabaseConfigured()) {
+      toast.error('Supabase no está configurado.')
+      return
+    }
+    const pw = adminNewPassword.trim()
+    if (pw.length < 6) {
+      toast.error('La contraseña debe tener al menos 6 caracteres.')
+      return
+    }
+    if (pw !== adminConfirmPassword.trim()) {
+      toast.error('Las contraseñas no coinciden.')
+      return
+    }
+    setAdminPwSaving(true)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.auth.updateUser({ password: pw })
+      if (error) {
+        toast.error(formatAuthError(error))
+        return
+      }
+      toast.success('Contraseña actualizada.')
+      setAdminNewPassword('')
+      setAdminConfirmPassword('')
+    } finally {
+      setAdminPwSaving(false)
+    }
+  }
+
   if (!currentUser || currentUser.accountType !== 'admin') {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -431,6 +466,10 @@ export function AdminDashboardScreen() {
             <TabsTrigger value="geo" className="shrink-0 gap-1.5 px-2.5 py-2 text-xs sm:px-3 sm:text-sm">
               <MapPinned className="h-4 w-4 shrink-0" />
               <span className="whitespace-nowrap">Geo</span>
+            </TabsTrigger>
+            <TabsTrigger value="cuenta" className="shrink-0 gap-1.5 px-2.5 py-2 text-xs sm:px-3 sm:text-sm">
+              <KeyRound className="h-4 w-4 shrink-0" />
+              <span className="whitespace-nowrap">Cuenta</span>
             </TabsTrigger>
           </TabsList>
 
@@ -952,6 +991,69 @@ export function AdminDashboardScreen() {
 
           <TabsContent value="geo" className="mt-0">
             <AdminGeoCatalogPanel />
+          </TabsContent>
+
+          <TabsContent value="cuenta" className="mt-0">
+            <Card className="gap-0 overflow-hidden border-border py-0 shadow-sm">
+              <CardHeader className="border-b border-border bg-secondary/20 px-4 py-4 sm:px-6">
+                <CardTitle className="text-lg">Contraseña de acceso</CardTitle>
+                <CardDescription>
+                  Cambia la clave con la que inicias sesión (email y contraseña). Si usas solo Google,
+                  Supabase puede permitir añadir o cambiar contraseña según la configuración del
+                  proyecto.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 p-4 sm:p-6">
+                {currentUser?.email ? (
+                  <p className="text-sm text-muted-foreground">
+                    Sesión actual:{' '}
+                    <span className="font-medium text-foreground">{currentUser.email}</span>
+                  </p>
+                ) : null}
+                <div className="grid max-w-md grid-cols-1 gap-4">
+                  <Field
+                    label="Nueva contraseña"
+                    type="password"
+                    value={adminNewPassword}
+                    onChange={setAdminNewPassword}
+                  />
+                  <Field
+                    label="Confirmar contraseña"
+                    type="password"
+                    value={adminConfirmPassword}
+                    onChange={setAdminConfirmPassword}
+                  />
+                </div>
+              </CardContent>
+              <Separator />
+              <CardFooter className="flex flex-col gap-3 border-t border-border bg-muted/20 px-4 py-4 sm:flex-row sm:justify-end sm:px-6">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                  disabled={adminPwSaving}
+                  onClick={() => {
+                    setAdminNewPassword('')
+                    setAdminConfirmPassword('')
+                  }}
+                >
+                  Limpiar
+                </Button>
+                <Button
+                  type="button"
+                  className="w-full gap-2 sm:w-auto"
+                  disabled={
+                    adminPwSaving ||
+                    !adminNewPassword.trim() ||
+                    !adminConfirmPassword.trim()
+                  }
+                  onClick={() => void handleAdminPasswordChange()}
+                >
+                  <KeyRound className="h-4 w-4" />
+                  {adminPwSaving ? 'Guardando…' : 'Guardar nueva contraseña'}
+                </Button>
+              </CardFooter>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
