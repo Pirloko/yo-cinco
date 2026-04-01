@@ -45,11 +45,21 @@ export function ChatScreen() {
     submitRivalCaptainVote,
     finalizeRivalOrganizerOverride,
     openPublicProfile,
+    profilesRealtimeGeneration,
+    avatarDisplayUrl,
   } = useApp()
 
   const opportunity = selectedChatOpportunityId
     ? matchOpportunities.find((m) => m.id === selectedChatOpportunityId)
     : undefined
+
+  const canAccessThread = useMemo(() => {
+    if (!opportunity || !currentUser) return false
+    return (
+      opportunity.creatorId === currentUser.id ||
+      participatingOpportunityIds.includes(opportunity.id)
+    )
+  }, [opportunity, currentUser, participatingOpportunityIds])
 
   const rivalChallengeForOpp = useMemo(
     () =>
@@ -95,7 +105,12 @@ export function ChatScreen() {
   }, [selectedChatOpportunityId, currentUser])
 
   const loadParticipants = useCallback(async () => {
-    if (!selectedChatOpportunityId || !currentUser || !isSupabaseConfigured()) {
+    if (
+      !selectedChatOpportunityId ||
+      !currentUser ||
+      !isSupabaseConfigured() ||
+      !canAccessThread
+    ) {
       setParticipants([])
       return
     }
@@ -110,10 +125,15 @@ export function ChatScreen() {
     } finally {
       setLoadingParticipants(false)
     }
-  }, [selectedChatOpportunityId, currentUser])
+  }, [selectedChatOpportunityId, currentUser, canAccessThread, profilesRealtimeGeneration])
 
   const loadMessages = useCallback(async () => {
     if (!selectedChatOpportunityId || !currentUser || !isSupabaseConfigured()) {
+      setMessages([])
+      setLoading(false)
+      return
+    }
+    if (!canAccessThread) {
       setMessages([])
       setLoading(false)
       return
@@ -136,7 +156,7 @@ export function ChatScreen() {
     } finally {
       setLoading(false)
     }
-  }, [selectedChatOpportunityId, currentUser])
+  }, [selectedChatOpportunityId, currentUser, canAccessThread, profilesRealtimeGeneration])
 
   useEffect(() => {
     loadMessages()
@@ -151,7 +171,13 @@ export function ChatScreen() {
   }, [loadParticipants])
 
   useEffect(() => {
-    if (!selectedChatOpportunityId || !isSupabaseConfigured()) return
+    if (
+      !selectedChatOpportunityId ||
+      !isSupabaseConfigured() ||
+      !canAccessThread
+    ) {
+      return
+    }
     const supabase = createClient()
     const channel = supabase
       .channel(`messages:${selectedChatOpportunityId}`)
@@ -173,7 +199,7 @@ export function ChatScreen() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [selectedChatOpportunityId, loadMessages, loadParticipants])
+  }, [selectedChatOpportunityId, loadMessages, loadParticipants, canAccessThread])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -186,6 +212,12 @@ export function ChatScreen() {
       !selectedChatOpportunityId ||
       !isSupabaseConfigured()
     ) {
+      return
+    }
+    if (!canAccessThread) {
+      toast.error(
+        'No tenés acceso al chat de este partido. Solo participantes o el organizador pueden escribir.'
+      )
       return
     }
     if (!chatMessagingOpen) {
@@ -240,6 +272,18 @@ export function ChatScreen() {
     )
   }
 
+  if (!canAccessThread) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 gap-4">
+        <p className="text-muted-foreground text-center text-sm max-w-sm">
+          No tenés acceso al chat de este partido. Solo el organizador y los
+          jugadores inscritos pueden usarlo.
+        </p>
+        <Button onClick={goBack}>Volver a partidos</Button>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border">
@@ -256,7 +300,10 @@ export function ChatScreen() {
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <div className="relative">
               <img
-                src={opportunity.creatorPhoto}
+                src={avatarDisplayUrl(
+                  opportunity.creatorPhoto,
+                  opportunity.creatorId
+                )}
                 alt={opportunity.title}
                 className="w-10 h-10 rounded-full object-cover border-2 border-primary"
               />
@@ -362,7 +409,7 @@ export function ChatScreen() {
                           className="flex items-center gap-2 min-w-0 text-left"
                         >
                           <img
-                            src={p.photo}
+                            src={avatarDisplayUrl(p.photo, p.id)}
                             alt={p.name}
                             className="w-7 h-7 rounded-full object-cover border border-border"
                           />
@@ -432,7 +479,10 @@ export function ChatScreen() {
                 >
                   {!message.isMe && (
                     <img
-                      src={message.senderPhoto}
+                      src={avatarDisplayUrl(
+                        message.senderPhoto,
+                        message.senderId
+                      )}
                       alt=""
                       className="w-8 h-8 rounded-full object-cover border border-border"
                     />

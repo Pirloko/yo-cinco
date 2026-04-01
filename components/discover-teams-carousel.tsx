@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { useApp } from '@/lib/app-context'
 import type { Level, Team, TeamJoinRequest } from '@/lib/types'
 
 const LEVEL_LABEL: Record<Level, string> = {
@@ -55,6 +56,7 @@ export function DiscoverTeamsCarousel({
   onRequestJoin,
   onChallenge,
 }: DiscoverTeamsCarouselProps) {
+  const { avatarDisplayUrl } = useApp()
   const [index, setIndex] = useState(0)
   const teamIdsKey = teams.map((t) => t.id).join(',')
 
@@ -80,13 +82,16 @@ export function DiscoverTeamsCarousel({
   }
 
   const team = teams[index]
-  const captainName =
-    team.members.find((m) => m.id === team.captainId)?.name ?? 'Capitán'
+  const captainMember = team.members.find((m) => m.id === team.captainId)
+  const captainName = captainMember?.name ?? 'Capitán'
+  const fallbackMember = team.members[0]
   const coverUrl =
     team.logo?.trim() ||
-    team.members.find((m) => m.id === team.captainId)?.photo ||
-    team.members[0]?.photo ||
-    'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&h=1000&fit=crop'
+    (captainMember
+      ? avatarDisplayUrl(captainMember.photo, captainMember.id)
+      : fallbackMember
+        ? avatarDisplayUrl(fallbackMember.photo, fallbackMember.id)
+        : 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&h=1000&fit=crop')
   const hasPendingJoin = joinRequests.some(
     (r) =>
       r.teamId === team.id &&

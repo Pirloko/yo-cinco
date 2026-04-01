@@ -66,6 +66,8 @@ export function MatchDetailsScreen() {
     teams,
     requestJoinPrivateRevuelta,
     respondToRevueltaExternalRequest,
+    profilesRealtimeGeneration,
+    avatarDisplayUrl,
   } = useApp()
 
   const opportunity = selectedMatchOpportunityId
@@ -128,7 +130,7 @@ export function MatchDetailsScreen() {
     } finally {
       setLoadingParticipants(false)
     }
-  }, [selectedMatchOpportunityId, currentUser])
+  }, [selectedMatchOpportunityId, currentUser, profilesRealtimeGeneration])
 
   const loadRatingsOverview = useCallback(async () => {
     if (!selectedMatchOpportunityId || !isSupabaseConfigured()) {
@@ -266,7 +268,11 @@ export function MatchDetailsScreen() {
   }
 
   const openChat = () => {
-    if (!opportunity) return
+    if (!opportunity || !currentUser) return
+    const can =
+      currentUser.id === opportunity.creatorId ||
+      participatingOpportunityIds.includes(opportunity.id)
+    if (!can) return
     setSelectedChatOpportunityId(opportunity.id)
     setCurrentScreen('chat')
   }
@@ -682,7 +688,7 @@ export function MatchDetailsScreen() {
                       className="flex items-center gap-2 min-w-0 text-left"
                     >
                       <img
-                        src={p.photo}
+                        src={avatarDisplayUrl(p.photo, p.id)}
                         alt={p.name}
                         className="w-8 h-8 rounded-full object-cover border border-border"
                       />

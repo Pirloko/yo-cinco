@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useApp } from '@/lib/app-context'
 import type { MatchOpportunity } from '@/lib/types'
 import type { OpportunityParticipantRow } from '@/lib/supabase/message-queries'
 import { JERSEY_COLOR_PRESETS } from '@/lib/jersey-colors'
@@ -53,6 +54,7 @@ export function RevueltaTeamsPanel({
   randomizeRevueltaTeams,
   compact = false,
 }: Props) {
+  const { avatarDisplayUrl } = useApp()
   const [colorA, setColorA] = useState<string>(JERSEY_COLOR_PRESETS[0].hex)
   const [colorB, setColorB] = useState<string>(JERSEY_COLOR_PRESETS[2].hex)
   const [busy, setBusy] = useState(false)
@@ -107,7 +109,7 @@ export function RevueltaTeamsPanel({
               className="flex items-center gap-2 text-xs text-foreground"
             >
               <img
-                src={pr?.photo ?? ''}
+                src={avatarDisplayUrl(pr?.photo, uid)}
                 alt=""
                 className="w-7 h-7 rounded-full object-cover border border-border shrink-0"
               />

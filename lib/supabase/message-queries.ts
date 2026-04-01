@@ -9,6 +9,8 @@ export async function fetchParticipatingOpportunityIds(
     .from('match_opportunity_participants')
     .select('opportunity_id')
     .eq('user_id', userId)
+    /** Misma regla que `can_access_opportunity_thread` (mensajes). */
+    .in('status', ['pending', 'confirmed'])
 
   return [
     ...new Set(

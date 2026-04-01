@@ -22,7 +22,6 @@ import { Badge } from '@/components/ui/badge'
 import {
   Plus,
   Users,
-  Crown,
   ChevronRight,
   UserPlus,
   Check,
@@ -40,7 +39,6 @@ import {
   ScrollText,
   ExternalLink,
   Swords,
-  Award,
   UserMinus,
 } from 'lucide-react'
 import {
@@ -75,6 +73,82 @@ const positionLabels: Record<Position, string> = {
   delantero: 'Delantero',
 }
 
+const CAPTAIN_ARMBAND_SRC = '/team/captain-armband.png'
+const VICE_CAPTAIN_ARMBAND_SRC = '/team/vice-captain-armband.png'
+
+function CaptainArmbandBadge({ compact }: { compact?: boolean }) {
+  return (
+    <span
+      className="inline-flex items-center gap-2 shrink-0 rounded-lg bg-amber-500/12 border border-amber-500/30 px-2 py-1"
+      title="Capitán principal"
+    >
+      <img
+        src={CAPTAIN_ARMBAND_SRC}
+        alt=""
+        width={compact ? 36 : 48}
+        height={compact ? 36 : 48}
+        className="object-contain shrink-0 drop-shadow-sm"
+        draggable={false}
+      />
+      <span
+        className={
+          compact
+            ? 'text-[10px] font-semibold leading-tight text-amber-900 dark:text-amber-200 max-w-[4.75rem]'
+            : 'text-xs font-semibold text-amber-900 dark:text-amber-200'
+        }
+      >
+        Capitán principal
+      </span>
+    </span>
+  )
+}
+
+function ViceCaptainArmbandBadge({ compact }: { compact?: boolean }) {
+  return (
+    <span
+      className="inline-flex items-center gap-2 shrink-0 rounded-lg bg-sky-500/12 border border-sky-500/35 px-2 py-1"
+      title="2do capitán"
+    >
+      <img
+        src={VICE_CAPTAIN_ARMBAND_SRC}
+        alt=""
+        width={compact ? 36 : 48}
+        height={compact ? 36 : 48}
+        className="object-contain shrink-0 drop-shadow-sm"
+        draggable={false}
+      />
+      <span
+        className={
+          compact
+            ? 'text-[10px] font-semibold leading-tight text-sky-900 dark:text-sky-200 max-w-[4.75rem]'
+            : 'text-xs font-semibold text-sky-900 dark:text-sky-200'
+        }
+      >
+        2do capitán
+      </span>
+    </span>
+  )
+}
+
+/** Capitán primero, vicecapitán segundo, resto en el orden original. */
+function rosterMembersOrdered(team: Team): Team['members'] {
+  const { members, captainId, viceCaptainId } = team
+  const captain = members.find((m) => m.id === captainId)
+  const vice =
+    viceCaptainId && viceCaptainId !== captainId
+      ? members.find((m) => m.id === viceCaptainId)
+      : undefined
+  const pinned = new Set<string>()
+  if (captain) pinned.add(captain.id)
+  if (vice) pinned.add(vice.id)
+  const rest = members.filter((m) => !pinned.has(m.id))
+  const out: Team['members'] = []
+  if (captain) out.push(captain)
+  if (vice) out.push(vice)
+  out.push(...rest)
+  return out
+}
+
 export function TeamsScreen() {
   const {
     currentUser,
@@ -102,6 +176,7 @@ export function TeamsScreen() {
     setTeamsDetailFocusTeamId,
     setCurrentScreen,
     openPublicProfile,
+    avatarDisplayUrl,
   } = useApp()
   
   const [view, setView] = useState<TeamsView>('list')
@@ -487,11 +562,9 @@ export function TeamsScreen() {
                     <h3 className="font-semibold text-foreground truncate text-[15px] leading-snug">
                       {team.name}
                     </h3>
-                    {isPrimaryCaptain && (
-                      <Crown className="w-4 h-4 text-amber-500 shrink-0 drop-shadow-sm" />
-                    )}
+                    {isPrimaryCaptain && <CaptainArmbandBadge compact />}
                     {isViceCaptain && !isPrimaryCaptain && (
-                      <Award className="w-4 h-4 text-sky-500 shrink-0 drop-shadow-sm" />
+                      <ViceCaptainArmbandBadge compact />
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
@@ -1457,7 +1530,7 @@ export function TeamsScreen() {
             </div>
 
             <div className="space-y-3">
-              {team.members.map((member) => (
+              {rosterMembersOrdered(team).map((member) => (
                 <Card key={member.id} className="bg-card border-border">
                   <CardContent className="p-3">
                     <div className="flex items-center gap-3">
@@ -1468,13 +1541,13 @@ export function TeamsScreen() {
                         aria-label={`Ver perfil de ${member.name}`}
                       >
                         <img
-                          src={member.photo}
+                          src={avatarDisplayUrl(member.photo, member.id)}
                           alt={member.name}
                           className="w-12 h-12 rounded-full object-cover border border-border"
                         />
                       </button>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                           <button
                             type="button"
                             onClick={() => openPublicProfile(member.id)}
@@ -1483,11 +1556,11 @@ export function TeamsScreen() {
                             {member.name}
                           </button>
                           {team.captainId === member.id && (
-                            <Crown className="w-4 h-4 text-accent" />
+                            <CaptainArmbandBadge />
                           )}
                           {team.viceCaptainId === member.id &&
                             member.id !== team.captainId && (
-                              <Award className="w-4 h-4 text-sky-500" />
+                              <ViceCaptainArmbandBadge />
                             )}
                         </div>
                         <p className="text-sm text-muted-foreground">
@@ -1622,7 +1695,7 @@ export function TeamsScreen() {
                   <CardContent className="p-3">
                     <div className="flex items-center gap-3">
                       <img
-                        src={user.photo}
+                        src={avatarDisplayUrl(user.photo, user.id)}
                         alt={user.name}
                         className="w-12 h-12 rounded-full object-cover"
                       />

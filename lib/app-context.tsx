@@ -75,7 +75,10 @@ import {
 } from '@/lib/create-prefill'
 import { buildRandomRevueltaLineup } from '@/lib/revuelta-lineup'
 import { playersJoinRules } from '@/lib/players-seek-profile'
-import { uploadProfileAvatarFile } from '@/lib/supabase/profile-photo'
+import {
+  uploadProfileAvatarFile,
+  cacheBustPublicUrl,
+} from '@/lib/supabase/profile-photo'
 import { fetchVenueForOwner } from '@/lib/supabase/venue-queries'
 import {
   persistPlayerLastNav,
@@ -194,6 +197,13 @@ interface AppContextType {
   /** Incrementar al subir foto (misma URL pública → evitar caché del navegador en `<img>`). */
   profilePhotoCacheBust: number
   bumpProfilePhotoCache: () => void
+  /** Se incrementa con cada UPDATE Realtime en `profiles` (refetch participantes / mensajes). */
+  profilesRealtimeGeneration: number
+  /** Avatar con bust por usuario (Realtime + subida propia). */
+  avatarDisplayUrl: (
+    url: string | null | undefined,
+    userId?: string | null
+  ) => string
   matchOpportunities: MatchOpportunity[]
   addMatchOpportunity: (
     match: Omit<MatchOpportunity, 'id' | 'createdAt'> & {
@@ -353,6 +363,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('landing')
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [profilePhotoCacheBust, setProfilePhotoCacheBust] = useState(0)
+  const [profilePhotoEpochByUser, setProfilePhotoEpochByUser] = useState<
+    Record<string, number>
+  >({})
+  const [profilesRealtimeGeneration, setProfilesRealtimeGeneration] = useState(0)
   const [matchOpportunities, setMatchOpportunities] = useState<
     MatchOpportunity[]
   >([])
@@ -394,6 +408,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const bumpProfilePhotoCache = useCallback(() => {
     setProfilePhotoCacheBust((n) => n + 1)
   }, [])
+
+  const avatarDisplayUrl = useCallback(
+    (url: string | null | undefined, userId?: string | null) => {
+      const raw = url?.trim()
+      if (!raw) return DEFAULT_AVATAR
+      if (raw === DEFAULT_AVATAR) return DEFAULT_AVATAR
+      let v = 0
+      if (userId && currentUser?.id === userId) {
+        v += profilePhotoCacheBust
+      }
+      if (userId) {
+        v += profilePhotoEpochByUser[userId] ?? 0
+      }
+      return cacheBustPublicUrl(raw, v)
+    },
+    [currentUser?.id, profilePhotoCacheBust, profilePhotoEpochByUser]
+  )
 
   const updateProfilePhoto = useCallback(
     async (file: File) => {
@@ -591,6 +622,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     setCurrentUser(null)
     setProfilePhotoCacheBust(0)
+    setProfilePhotoEpochByUser({})
+    setProfilesRealtimeGeneration(0)
     setUsers([])
     setMatchOpportunities([])
     setTeams([])
@@ -2342,6 +2375,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     setCurrentUser(null)
     setProfilePhotoCacheBust(0)
+    setProfilePhotoEpochByUser({})
+    setProfilesRealtimeGeneration(0)
     setUsers([])
     setMatchOpportunities([])
     setTeams([])
@@ -2710,6 +2745,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
         { event: '*', schema: 'public', table: 'team_private_settings' },
         scheduleRefresh
       )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles' },
+        (payload) => {
+          scheduleRefresh()
+          const row = payload.new as Record<string, unknown> | null
+          const id = typeof row?.id === 'string' ? row.id : null
+          if (id) {
+            setProfilePhotoEpochByUser((prev) => ({
+              ...prev,
+              [id]: (prev[id] ?? 0) + 1,
+            }))
+            setProfilesRealtimeGeneration((g) => g + 1)
+          }
+          setCurrentUser((u) => {
+            if (!u || !id || u.id !== id || !row) return u
+            const photo = row.photo_url
+            const name = row.name
+            return {
+              ...u,
+              photo:
+                typeof photo === 'string' && photo.trim()
+                  ? photo
+                  : u.photo,
+              name:
+                typeof name === 'string' && name.trim() ? name : u.name,
+            }
+          })
+        }
+      )
       .subscribe()
 
     return () => {
@@ -2753,6 +2818,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateProfilePhoto,
         profilePhotoCacheBust,
         bumpProfilePhotoCache,
+        profilesRealtimeGeneration,
+        avatarDisplayUrl,
         matchOpportunities,
         addMatchOpportunity,
         reserveVenueOnly,

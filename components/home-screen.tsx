@@ -5,7 +5,6 @@ import Image from 'next/image'
 import Link from 'next/link'
 
 import { useApp } from '@/lib/app-context'
-import { cacheBustPublicUrl } from '@/lib/supabase/profile-photo'
 import { BottomNav } from '@/components/bottom-nav'
 import { MatchCard } from '@/components/match-card'
 import { Button } from '@/components/ui/button'
@@ -45,7 +44,7 @@ export function HomeScreen() {
     acceptRivalOpportunityWithTeam,
     participatingOpportunityIds,
     setInitialMatchesTab,
-    profilePhotoCacheBust,
+    avatarDisplayUrl,
   } = useApp()
   const [joiningId, setJoiningId] = useState<string | null>(null)
   const [revueltaJoinOpp, setRevueltaJoinOpp] = useState<MatchOpportunity | null>(
@@ -202,10 +201,10 @@ export function HomeScreen() {
               className="w-10 h-10 rounded-full overflow-hidden border-2 border-primary"
             >
               <img
-                src={cacheBustPublicUrl(
+                src={avatarDisplayUrl(
                   currentUser?.photo ||
                     'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face',
-                  profilePhotoCacheBust
+                  currentUser?.id
                 )}
                 alt={currentUser?.name}
                 className="w-full h-full object-cover"

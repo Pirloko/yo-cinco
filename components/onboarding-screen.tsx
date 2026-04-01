@@ -22,10 +22,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
-import {
-  uploadProfileAvatarFile,
-  cacheBustPublicUrl,
-} from '@/lib/supabase/profile-photo'
+import { uploadProfileAvatarFile } from '@/lib/supabase/profile-photo'
 import { GeoLocationSelect } from '@/components/geo-location-select'
 import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
 import {
@@ -114,8 +111,8 @@ export function OnboardingScreen() {
     currentUser,
     onboardingSource,
     setOnboardingSource,
-    profilePhotoCacheBust,
     bumpProfilePhotoCache,
+    avatarDisplayUrl,
   } = useApp()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [photoUploading, setPhotoUploading] = useState(false)
@@ -539,9 +536,9 @@ export function OnboardingScreen() {
                         <Loader2 className="w-10 h-10 text-primary animate-spin" />
                       ) : hasRealProfilePhoto(data.photo) ? (
                         <img
-                          src={cacheBustPublicUrl(
+                          src={avatarDisplayUrl(
                             data.photo,
-                            profilePhotoCacheBust
+                            currentUser?.id
                           )}
                           alt=""
                           className="w-full h-full object-cover"

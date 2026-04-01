@@ -27,7 +27,13 @@ function formatDayLabel(day: string): string {
 }
 
 export function PublicPlayerProfileSheet() {
-  const { publicProfileUserId, closePublicProfile, currentUser } = useApp()
+  const {
+    publicProfileUserId,
+    closePublicProfile,
+    currentUser,
+    profilesRealtimeGeneration,
+    avatarDisplayUrl,
+  } = useApp()
   const [loading, setLoading] = useState(false)
   const [profile, setProfile] = useState<PublicPlayerProfile | null>(null)
   const [reportOpen, setReportOpen] = useState(false)
@@ -54,7 +60,7 @@ export function PublicPlayerProfileSheet() {
     return () => {
       cancelled = true
     }
-  }, [open, publicProfileUserId])
+  }, [open, publicProfileUserId, profilesRealtimeGeneration])
 
   const organizerProgress = useMemo(() => {
     const n = profile?.statsOrganizedCompleted ?? 0
@@ -103,7 +109,7 @@ export function PublicPlayerProfileSheet() {
               <div className="h-16 w-16 rounded-2xl overflow-hidden border border-border bg-secondary/30 shrink-0">
                 {profile.photo ? (
                   <img
-                    src={profile.photo}
+                    src={avatarDisplayUrl(profile.photo, profile.id)}
                     alt=""
                     className="h-full w-full object-cover"
                   />

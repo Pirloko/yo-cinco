@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { convertImageFileToWebP } from '@/lib/image-webp'
 
 export const PROFILE_AVATARS_BUCKET = 'profile-avatars'
 
@@ -7,26 +8,34 @@ export function profileAvatarStoragePath(userId: string): string {
 }
 
 const MAX_BYTES = 2 * 1024 * 1024
-const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+const ALLOWED_INPUT = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 
 export async function uploadProfileAvatarFile(
   supabase: SupabaseClient,
   userId: string,
   file: File
 ): Promise<{ publicUrl: string } | { error: string }> {
-  if (!ALLOWED.includes(file.type)) {
+  if (!ALLOWED_INPUT.includes(file.type)) {
     return { error: 'Usa una imagen JPG, PNG, WebP o GIF.' }
   }
   if (file.size > MAX_BYTES) {
     return { error: 'La imagen no puede superar 2 MB.' }
   }
 
+  const toUpload =
+    typeof document !== 'undefined'
+      ? await convertImageFileToWebP(file)
+      : file
+  if (toUpload.size > MAX_BYTES) {
+    return { error: 'La imagen no puede superar 2 MB tras optimizar.' }
+  }
+
   const path = profileAvatarStoragePath(userId)
   const { error: upErr } = await supabase.storage
     .from(PROFILE_AVATARS_BUCKET)
-    .upload(path, file, {
+    .upload(path, toUpload, {
       upsert: true,
-      contentType: file.type,
+      contentType: toUpload.type || 'image/webp',
       cacheControl: '3600',
     })
 

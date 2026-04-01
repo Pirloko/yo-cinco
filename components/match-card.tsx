@@ -1,5 +1,6 @@
 'use client'
 
+import { useApp } from '@/lib/app-context'
 import { MatchOpportunity } from '@/lib/types'
 import {
   matchFillUrgencyMessage,
@@ -53,6 +54,7 @@ export function MatchCard({
   showHomeFeedUrgency = false,
   isPrivateRevueltaExternal = false,
 }: MatchCardProps) {
+  const { avatarDisplayUrl } = useApp()
   const getTypeIcon = () => {
     switch (match.type) {
       case 'rival':
@@ -285,7 +287,7 @@ export function MatchCard({
         <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2 border-t border-border">
           <div className="flex items-center gap-3">
             <img
-              src={match.creatorPhoto}
+              src={avatarDisplayUrl(match.creatorPhoto, match.creatorId)}
               alt={match.creatorName}
               className="w-10 h-10 rounded-full object-cover border-2 border-border"
             />

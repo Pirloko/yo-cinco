@@ -52,7 +52,7 @@ export async function fetchTeamsWithMembers(
       id: uid,
       name: p?.name ?? 'Jugador',
       position: m.position as Position,
-      photo: (m.photo_url as string) || p?.photo_url || DEFAULT_AVATAR,
+      photo: p?.photo_url || (m.photo_url as string) || DEFAULT_AVATAR,
       status: m.status as TeamMember['status'],
     }
     const list = membersByTeam.get(tid) ?? []

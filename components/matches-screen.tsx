@@ -78,6 +78,7 @@ export function MatchesScreen() {
     setCurrentScreen,
     initialMatchesTab,
     setInitialMatchesTab,
+    avatarDisplayUrl,
   } = useApp()
 
   const [activeTab, setActiveTab] = useState<MatchesHubTab>('upcoming')
@@ -260,6 +261,13 @@ export function MatchesScreen() {
   }
 
   const openChat = (opportunityId: string) => {
+    if (!currentUser) return
+    const m = matchOpportunities.find((x) => x.id === opportunityId)
+    if (!m) return
+    const can =
+      m.creatorId === currentUser.id ||
+      participatingOpportunityIds.includes(opportunityId)
+    if (!can) return
     setSelectedChatOpportunityId(opportunityId)
     setCurrentScreen('chat')
   }
@@ -462,7 +470,10 @@ export function MatchesScreen() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-3 min-w-0">
                           <img
-                            src={match.creatorPhoto}
+                            src={avatarDisplayUrl(
+                              match.creatorPhoto,
+                              match.creatorId
+                            )}
                             alt={match.creatorName}
                             className="w-12 h-12 rounded-full object-cover border-2 border-border shrink-0"
                           />
@@ -589,7 +600,10 @@ export function MatchesScreen() {
                     <div className="p-4 flex items-center gap-4">
                       <div className="relative shrink-0">
                         <img
-                          src={chat.creatorPhoto}
+                          src={avatarDisplayUrl(
+                            chat.creatorPhoto,
+                            chat.creatorId
+                          )}
                           alt={chat.title}
                           className="w-14 h-14 rounded-full object-cover border-2 border-border"
                         />
