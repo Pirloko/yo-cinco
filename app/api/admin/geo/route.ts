@@ -88,6 +88,7 @@ type Body =
       isActive?: boolean
     }
   | { action: 'deleteCity'; id: string }
+  | { action: 'bulkUpdateCities'; ids: string[]; isActive: boolean }
 
 export async function POST(req: Request) {
   try {
@@ -224,6 +225,24 @@ export async function POST(req: Request) {
         const { error } = await admin.from('geo_cities').update(row).eq('id', body.id)
         if (error) return NextResponse.json({ error: error.message }, { status: 400 })
         return NextResponse.json({ ok: true })
+      }
+      case 'bulkUpdateCities': {
+        const ids = Array.from(new Set((body.ids ?? []).filter((x): x is string => typeof x === 'string')))
+        if (ids.length === 0) {
+          return NextResponse.json({ error: 'Indica al menos una ciudad.' }, { status: 400 })
+        }
+        if (ids.length > 2000) {
+          return NextResponse.json(
+            { error: 'Máximo 2000 ciudades por operación. Reduce la selección.' },
+            { status: 400 }
+          )
+        }
+        const { error } = await admin
+          .from('geo_cities')
+          .update({ is_active: body.isActive })
+          .in('id', ids)
+        if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+        return NextResponse.json({ ok: true, updated: ids.length })
       }
       case 'deleteCity': {
         const { error } = await admin.from('geo_cities').delete().eq('id', body.id)

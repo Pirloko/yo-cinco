@@ -67,11 +67,12 @@ export function ExploreScreen() {
       setCityFilter('')
       return
     }
+    setCityFilter('')
     void fetchGeoCitiesWithVenuesInRegion(
       createClient(),
       currentUser.regionId
     ).then(setCityFilterOptions)
-  }, [currentUser?.regionId])
+  }, [currentUser?.regionId, currentUser?.cityId])
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return

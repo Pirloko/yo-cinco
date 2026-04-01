@@ -1,8 +1,18 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, MapPinned, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import {
+  ChevronDown,
+  Loader2,
+  MapPinned,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -22,6 +32,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
+import { Checkbox } from '@/components/ui/checkbox'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 
 type GeoCountryRow = {
@@ -90,6 +106,11 @@ export function AdminGeoCatalogPanel() {
     slug: '',
   })
 
+  const [cityQuery, setCityQuery] = useState('')
+  const [cityRegionFilter, setCityRegionFilter] = useState<string>('')
+  const [citiesInactiveOnly, setCitiesInactiveOnly] = useState(false)
+  const [selectedCityIds, setSelectedCityIds] = useState<Set<string>>(() => new Set())
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -131,7 +152,14 @@ export function AdminGeoCatalogPanel() {
     void load()
   }, [load])
 
-  const postAction = async (json: Record<string, unknown>): Promise<boolean> => {
+  type PostOpts = { reload?: boolean; toastMessage?: string | false }
+
+  const postAction = async (
+    json: Record<string, unknown>,
+    opts?: PostOpts
+  ): Promise<boolean> => {
+    const reload = opts?.reload !== false
+    const toastMsg = opts?.toastMessage
     setSaving(true)
     try {
       const r = await adminJsonFetch('/api/admin/geo', {
@@ -140,8 +168,30 @@ export function AdminGeoCatalogPanel() {
       })
       const j = (await r.json()) as { error?: string; ok?: boolean }
       if (!r.ok) throw new Error(j.error ?? 'Error')
-      toast.success('Guardado')
-      await load()
+      if (toastMsg === false) {
+        /* silencioso (ej. interruptor Activo) */
+      } else if (toastMsg !== undefined) {
+        toast.success(toastMsg)
+      } else if (reload) {
+        toast.success('Guardado')
+      }
+      if (json.action === 'updateCity' && !reload && typeof json.id === 'string') {
+        const id = json.id as string
+        const patch = json as { name?: string; slug?: string; isActive?: boolean }
+        setCities((prev) =>
+          prev.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  ...(patch.name !== undefined && { name: patch.name }),
+                  ...(patch.slug !== undefined && { slug: patch.slug }),
+                  ...(patch.isActive !== undefined && { is_active: patch.isActive }),
+                }
+              : c
+          )
+        )
+      }
+      if (reload) await load()
       return true
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Error')
@@ -151,9 +201,110 @@ export function AdminGeoCatalogPanel() {
     }
   }
 
+  const setCityBulkSelected = (id: string, checked: boolean) => {
+    setSelectedCityIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  const handleCityPatch =
+    (cityId: string) =>
+    (patch: { name?: string; slug?: string; isActive?: boolean }) => {
+      const onlyIsActive =
+        Object.keys(patch).length === 1 && patch.isActive !== undefined
+      void postAction(
+        { action: 'updateCity', id: cityId, ...patch },
+        onlyIsActive ? { reload: false, toastMessage: false } : undefined
+      )
+    }
+
   const regionLabel = (r: GeoRegionRow) => {
     const c = countries.find((x) => x.id === r.country_id)
     return `${c?.name ?? '?'} — ${r.name} (${r.code})`
+  }
+
+  const filteredCities = useMemo(() => {
+    let list = cities
+    if (citiesInactiveOnly) list = list.filter((c) => !c.is_active)
+    if (cityRegionFilter) list = list.filter((c) => c.region_id === cityRegionFilter)
+    const q = cityQuery.trim().toLowerCase()
+    if (q) {
+      list = list.filter((ci) => {
+        const reg = regions.find((r) => r.id === ci.region_id)
+        const regName = reg?.name?.toLowerCase() ?? ''
+        return (
+          ci.name.toLowerCase().includes(q) ||
+          ci.slug.toLowerCase().includes(q) ||
+          regName.includes(q)
+        )
+      })
+    }
+    return list
+  }, [cities, citiesInactiveOnly, cityRegionFilter, cityQuery, regions])
+
+  const bulkActivateSelected = async () => {
+    const ids = [...selectedCityIds]
+    if (ids.length === 0) return
+    setSaving(true)
+    try {
+      const r = await adminJsonFetch('/api/admin/geo', {
+        method: 'POST',
+        json: { action: 'bulkUpdateCities', ids, isActive: true },
+      })
+      const j = (await r.json()) as { error?: string; ok?: boolean; updated?: number }
+      if (!r.ok) throw new Error(j.error ?? 'Error')
+      const n = j.updated ?? ids.length
+      toast.success(n === 1 ? '1 ciudad activada.' : `${n} ciudades activadas.`)
+      setSelectedCityIds(new Set())
+      setCities((prev) =>
+        prev.map((c) => (ids.includes(c.id) ? { ...c, is_active: true } : c))
+      )
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inactiveCityCount = useMemo(
+    () => cities.filter((c) => !c.is_active).length,
+    [cities]
+  )
+
+  const useGroupedCityList = !cityQuery.trim() && !cityRegionFilter
+
+  const citiesByRegion = useMemo(() => {
+    const map = new Map<string, GeoCityRow[]>()
+    for (const ci of filteredCities) {
+      const arr = map.get(ci.region_id) ?? []
+      arr.push(ci)
+      map.set(ci.region_id, arr)
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => a.name.localeCompare(b.name, 'es'))
+    }
+    const regionIds = [...map.keys()].sort((a, b) => {
+      const ra = regions.find((r) => r.id === a)
+      const rb = regions.find((r) => r.id === b)
+      return (ra?.name ?? a).localeCompare(rb?.name ?? b, 'es')
+    })
+    return regionIds.map((id) => ({
+      regionId: id,
+      region: regions.find((r) => r.id === id),
+      cities: map.get(id) ?? [],
+    }))
+  }, [filteredCities, regions])
+
+  const hasCityFilters =
+    cityQuery.trim().length > 0 || !!cityRegionFilter || citiesInactiveOnly
+
+  const clearCityFilters = () => {
+    setCityQuery('')
+    setCityRegionFilter('')
+    setCitiesInactiveOnly(false)
   }
 
   return (
@@ -349,11 +500,117 @@ export function AdminGeoCatalogPanel() {
               </ul>
             </section>
 
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">Ciudades</h3>
+            <section className="space-y-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <div className="min-w-0 space-y-1">
+                  <h3 className="text-sm font-semibold text-foreground">Ciudades</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Búsqueda y filtros abajo. Casillas en cada fila; botón para activar las marcadas.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-9 w-full shrink-0 sm:w-auto"
+                  disabled={saving || selectedCityIds.size === 0}
+                  onClick={() => void bulkActivateSelected()}
+                >
+                  {selectedCityIds.size === 0
+                    ? 'Activar ciudad(es) marcadas'
+                    : selectedCityIds.size === 1
+                      ? 'Activar 1 marcada'
+                      : `Activar ${selectedCityIds.size} marcadas`}
+                </Button>
+              </div>
+
+              <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-3 sm:p-4">
+                <p className="text-xs font-medium text-foreground">Buscar y filtrar</p>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                  <div className="relative min-w-0 flex-1 space-y-1">
+                    <Label className="text-xs">Buscar ciudad o comuna</Label>
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        className="h-9 bg-background pl-9 pr-9"
+                        placeholder="Nombre, slug o región…"
+                        value={cityQuery}
+                        onChange={(e) => setCityQuery(e.target.value)}
+                        autoComplete="off"
+                      />
+                      {cityQuery ? (
+                        <button
+                          type="button"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          onClick={() => setCityQuery('')}
+                          aria-label="Limpiar búsqueda"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="w-full space-y-1 min-[480px]:max-w-[280px] lg:w-[280px]">
+                    <Label className="text-xs">Región</Label>
+                    <Select
+                      value={cityRegionFilter || 'all'}
+                      onValueChange={(v) => setCityRegionFilter(v === 'all' ? '' : v)}
+                    >
+                      <SelectTrigger className="h-9 w-full bg-background">
+                        <SelectValue placeholder="Todas" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[min(280px,50vh)]">
+                        <SelectItem value="all">Todas las regiones</SelectItem>
+                        {regions.map((r) => (
+                          <SelectItem key={r.id} value={r.id}>
+                            {regionLabel(r)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+                      <Switch
+                        id="geo-cities-inactive"
+                        checked={citiesInactiveOnly}
+                        onCheckedChange={setCitiesInactiveOnly}
+                      />
+                      <Label htmlFor="geo-cities-inactive" className="cursor-pointer text-xs">
+                        Solo inactivas
+                        {inactiveCityCount > 0 ? (
+                          <span className="ml-1 text-muted-foreground">({inactiveCityCount})</span>
+                        ) : null}
+                      </Label>
+                    </div>
+                    {hasCityFilters ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 text-xs"
+                        onClick={clearCityFilters}
+                      >
+                        Quitar filtros
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Mostrando{' '}
+                  <span className="font-medium text-foreground">{filteredCities.length}</span> de{' '}
+                  <span className="font-medium text-foreground">{cities.length}</span> ciudades
+                  {useGroupedCityList ? (
+                    <span className="hidden sm:inline">
+                      {' '}
+                      · Agrupadas por región (toca para expandir)
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+
               <div className="flex flex-wrap gap-2 items-end">
                 <div className="space-y-1 min-w-[220px] flex-1">
-                  <Label className="text-xs">Región</Label>
+                  <Label className="text-xs">Nueva ciudad — Región</Label>
                   <Select
                     value={newCity.regionId}
                     onValueChange={(v) => setNewCity((s) => ({ ...s, regionId: v }))}
@@ -361,7 +618,7 @@ export function AdminGeoCatalogPanel() {
                     <SelectTrigger className="h-9 w-full bg-secondary">
                       <SelectValue placeholder="Región" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-[min(280px,50vh)]">
                       {regions.map((r) => (
                         <SelectItem key={r.id} value={r.id}>
                           {regionLabel(r)}
@@ -411,31 +668,103 @@ export function AdminGeoCatalogPanel() {
                   Agregar
                 </Button>
               </div>
-              <ul className="divide-y divide-border rounded-md border border-border">
-                {cities.map((ci) => {
-                  const reg = regions.find((r) => r.id === ci.region_id)
-                  return (
-                  <CityLine
-                    key={ci.id}
-                    row={ci}
-                    regionHint={reg ? regionLabel(reg) : ci.region_id}
-                    disabled={saving}
-                    onUpdate={(patch) =>
-                      void postAction({ action: 'updateCity', id: ci.id, ...patch })
-                    }
-                    onDelete={() => {
-                      if (
-                        !confirm(
-                          `¿Eliminar ciudad "${ci.name}"? Fallará si hay usuarios o centros en esa ciudad.`
-                        )
+
+              {filteredCities.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                  No hay ciudades con estos filtros. Prueba otra búsqueda o quita &quot;Solo
+                  inactivas&quot;.
+                </p>
+              ) : useGroupedCityList ? (
+                <div className="max-h-[min(70dvh,640px)] space-y-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
+                  {citiesByRegion.map(({ regionId, region, cities: groupCities }) => {
+                    const inactiveInGroup = groupCities.filter((c) => !c.is_active).length
+                    return (
+                      <Collapsible
+                        key={regionId}
+                        defaultOpen={inactiveInGroup > 0 && citiesInactiveOnly}
+                        className="group rounded-lg border border-border bg-card data-[state=open]:shadow-sm"
+                      >
+                        <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted/50">
+                          <span className="min-w-0 font-medium text-foreground">
+                            {region ? region.name : regionId}
+                            <span className="ml-2 font-normal text-muted-foreground">
+                              · {groupCities.length}{' '}
+                              {groupCities.length === 1 ? 'ciudad' : 'ciudades'}
+                              {inactiveInGroup > 0 ? (
+                                <span className="text-amber-600 dark:text-amber-400">
+                                  {' '}
+                                  ({inactiveInGroup} inactivas)
+                                </span>
+                              ) : null}
+                            </span>
+                          </span>
+                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <ul className="divide-y divide-border border-t border-border">
+                            {groupCities.map((ci) => {
+                              const reg = regions.find((r) => r.id === ci.region_id)
+                              return (
+                                <CityLine
+                                  key={ci.id}
+                                  row={ci}
+                                  regionHint={reg ? regionLabel(reg) : ci.region_id}
+                                  disabled={saving}
+                                  bulkSelected={selectedCityIds.has(ci.id)}
+                                  onBulkCheckedChange={(on) => setCityBulkSelected(ci.id, on)}
+                                  onUpdate={handleCityPatch(ci.id)}
+                                  onDelete={() => {
+                                    if (
+                                      !confirm(
+                                        `¿Eliminar ciudad "${ci.name}"? Fallará si hay usuarios o centros en esa ciudad.`
+                                      )
+                                    )
+                                      return
+                                    void postAction({ action: 'deleteCity', id: ci.id })
+                                  }}
+                                />
+                              )
+                            })}
+                          </ul>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )
+                  })}
+                </div>
+              ) : (
+                <ul className="max-h-[min(70dvh,640px)] divide-y divide-border overflow-y-auto rounded-md border border-border [scrollbar-width:thin]">
+                  {[...filteredCities]
+                    .sort((a, b) => {
+                      const ra = regions.find((r) => r.id === a.region_id)?.name ?? ''
+                      const rb = regions.find((r) => r.id === b.region_id)?.name ?? ''
+                      const c = ra.localeCompare(rb, 'es')
+                      return c !== 0 ? c : a.name.localeCompare(b.name, 'es')
+                    })
+                    .map((ci) => {
+                      const reg = regions.find((r) => r.id === ci.region_id)
+                      return (
+                        <CityLine
+                          key={ci.id}
+                          row={ci}
+                          regionHint={reg ? regionLabel(reg) : ci.region_id}
+                          disabled={saving}
+                          bulkSelected={selectedCityIds.has(ci.id)}
+                          onBulkCheckedChange={(on) => setCityBulkSelected(ci.id, on)}
+                          onUpdate={handleCityPatch(ci.id)}
+                          onDelete={() => {
+                            if (
+                              !confirm(
+                                `¿Eliminar ciudad "${ci.name}"? Fallará si hay usuarios o centros en esa ciudad.`
+                              )
+                            )
+                              return
+                            void postAction({ action: 'deleteCity', id: ci.id })
+                          }}
+                        />
                       )
-                        return
-                      void postAction({ action: 'deleteCity', id: ci.id })
-                    }}
-                  />
-                  )
-                })}
-              </ul>
+                    })}
+                </ul>
+              )}
             </section>
           </>
         )}
@@ -650,12 +979,16 @@ function CityLine({
   row,
   regionHint,
   disabled,
+  bulkSelected,
+  onBulkCheckedChange,
   onUpdate,
   onDelete,
 }: {
   row: GeoCityRow
   regionHint: string
   disabled: boolean
+  bulkSelected: boolean
+  onBulkCheckedChange: (checked: boolean) => void
   onUpdate: (patch: {
     name?: string
     slug?: string
@@ -672,14 +1005,29 @@ function CityLine({
   }, [row.id, row.name, row.slug])
 
   return (
-    <li className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
+    <li className="flex flex-wrap items-center gap-2 px-2 py-2 text-sm sm:gap-3 sm:px-3">
+      <div
+        className="flex shrink-0 items-center pt-0.5"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        <Checkbox
+          checked={bulkSelected}
+          disabled={disabled}
+          aria-label={`Seleccionar ${row.name} para activación masiva`}
+          onCheckedChange={(v) => {
+            if (v === 'indeterminate') return
+            onBulkCheckedChange(v === true)
+          }}
+        />
+      </div>
       <span
-        className="text-xs text-muted-foreground truncate max-w-[200px]"
+        className="max-w-[min(200px,40vw)] truncate text-xs text-muted-foreground"
         title={regionHint}
       >
         {regionHint}
       </span>
-      <span className="font-medium text-foreground flex-1 min-w-[100px]">
+      <span className="min-w-0 flex-1 font-medium text-foreground sm:min-w-[100px]">
         {row.name}
       </span>
       <code className="text-xs text-muted-foreground">{row.slug}</code>

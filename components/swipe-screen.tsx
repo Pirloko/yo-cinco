@@ -50,11 +50,12 @@ export function SwipeScreen() {
       setCityFilter('')
       return
     }
+    setCityFilter('')
     void fetchGeoCitiesWithVenuesInRegion(
       createClient(),
       currentUser.regionId
     ).then(setCityFilterOptions)
-  }, [currentUser?.regionId])
+  }, [currentUser?.regionId, currentUser?.cityId])
 
   const goHome = () => {
     router.push('/')
