@@ -37,3 +37,10 @@ export async function uploadProfileAvatarFile(
   const { data } = supabase.storage.from(PROFILE_AVATARS_BUCKET).getPublicUrl(path)
   return { publicUrl: data.publicUrl }
 }
+
+/** Misma URL pública tras upsert → el navegador puede seguir mostrando la imagen en caché. Usar versión distinta en `src` para forzar recarga. */
+export function cacheBustPublicUrl(url: string, version: number): string {
+  if (!url || !url.startsWith('http')) return url
+  const sep = url.includes('?') ? '&' : '?'
+  return `${url}${sep}v=${version}`
+}

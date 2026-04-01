@@ -8,6 +8,14 @@ import type {
   RivalResult,
 } from '@/lib/types'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -80,7 +88,8 @@ type Props = {
     outcome:
       | { kind: 'casual' }
       | { kind: 'revuelta'; revueltaResult: RevueltaResult }
-  ) => Promise<void>
+      | { kind: 'rival'; rivalResult: RivalResult }
+  ) => Promise<boolean>
   submitRivalCaptainVote: (
     opportunityId: string,
     vote: RivalResult
@@ -159,16 +168,8 @@ export function MatchCompletionPanel({
     rivalChallenge?.status === 'accepted' &&
     !completed &&
     !opportunity.rivalOutcomeDisputed &&
-    needsMyCaptainVote
-
-  const showOrganizerRivalPending =
-    opportunity.type === 'rival' &&
-    isCreator &&
-    !completed &&
-    rivalChallenge?.status === 'accepted' &&
-    !opportunity.rivalOutcomeDisputed &&
-    (!opportunity.rivalCaptainVoteChallenger ||
-      !opportunity.rivalCaptainVoteAccepted)
+    needsMyCaptainVote &&
+    !isCreator
 
   const showOrganizerOverride =
     opportunity.type === 'rival' &&
@@ -188,7 +189,9 @@ export function MatchCompletionPanel({
     isCreator &&
     !completed &&
     opportunity.status !== 'cancelled' &&
-    (opportunity.type === 'players' || opportunity.type === 'open')
+    (opportunity.type === 'players' ||
+      opportunity.type === 'open' ||
+      (opportunity.type === 'rival' && rivalChallenge?.status === 'accepted'))
 
   const showOrganizerRivalSuspend =
     isCreator && !completed && opportunity.status !== 'cancelled' && opportunity.type === 'rival'
@@ -198,7 +201,11 @@ export function MatchCompletionPanel({
   const [overriding, setOverriding] = useState(false)
   const [captainPick, setCaptainPick] = useState<RivalResult | null>(null)
   const [overridePick, setOverridePick] = useState<RivalResult | null>(null)
+  const [finalizeDialogOpen, setFinalizeDialogOpen] = useState(false)
   const [revueltaPick, setRevueltaPick] = useState<RevueltaResult | null>(null)
+  const [rivalOrganizerPick, setRivalOrganizerPick] = useState<RivalResult | null>(
+    null
+  )
   const [submitting, setSubmitting] = useState(false)
   const [suspending, setSuspending] = useState(false)
   const [suspendExpanded, setSuspendExpanded] = useState(false)
@@ -278,26 +285,48 @@ export function MatchCompletionPanel({
     return null
   }
 
-  const handleFinalizeCasualOrRevuelta = async () => {
+  const openFinalizeDialog = () => {
+    setRevueltaPick(null)
+    setRivalOrganizerPick(null)
+    setFinalizeDialogOpen(true)
+  }
+
+  const handleFinalizeCasualOrRevuelta = async (): Promise<boolean> => {
     if (opportunity.type === 'open') {
-      if (!revueltaPick) return
+      if (!revueltaPick) return false
       setFinalizing(true)
       try {
-        await finalizeMatchOpportunity(opportunity.id, {
+        return await finalizeMatchOpportunity(opportunity.id, {
           kind: 'revuelta',
           revueltaResult: revueltaPick,
         })
       } finally {
         setFinalizing(false)
       }
-      return
+    }
+    if (opportunity.type === 'rival') {
+      if (!rivalOrganizerPick) return false
+      setFinalizing(true)
+      try {
+        return await finalizeMatchOpportunity(opportunity.id, {
+          kind: 'rival',
+          rivalResult: rivalOrganizerPick,
+        })
+      } finally {
+        setFinalizing(false)
+      }
     }
     setFinalizing(true)
     try {
-      await finalizeMatchOpportunity(opportunity.id, { kind: 'casual' })
+      return await finalizeMatchOpportunity(opportunity.id, { kind: 'casual' })
     } finally {
       setFinalizing(false)
     }
+  }
+
+  const confirmFinalizeFromDialog = async () => {
+    const ok = await handleFinalizeCasualOrRevuelta()
+    if (ok) setFinalizeDialogOpen(false)
   }
 
   const handleCaptainVote = async () => {
@@ -344,7 +373,6 @@ export function MatchCompletionPanel({
     needsResolveAfterMidnight ||
     showOrganizerFinalizeCasual ||
     showCaptainVote ||
-    showOrganizerRivalPending ||
     showOrganizerOverride ||
     showOrganizerDisputeWait ||
     showOrganizerRivalSuspend
@@ -416,12 +444,6 @@ export function MatchCompletionPanel({
             )}
           </Button>
         </div>
-      )}
-
-      {showOrganizerRivalPending && (
-        <p className="text-xs text-muted-foreground">
-          Esperando el voto de ambos capitanes para cerrar el resultado.
-        </p>
       )}
 
       {showOrganizerDisputeWait && (
@@ -498,57 +520,142 @@ export function MatchCompletionPanel({
             Al cerrar, se registrará el resultado y se abrirá la ventana de 48 h
             para que los jugadores califiquen.
           </p>
-          {opportunity.type === 'open' && (
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">
-                Resultado (revuelta)
-              </Label>
-              <div className="flex flex-col gap-2">
-                {(
-                  [
-                    ['team_a', 'Ganó equipo A'],
-                    ['team_b', 'Ganó equipo B'],
-                    ['draw', 'Empate'],
-                  ] as const
-                ).map(([val, label]) => (
-                  <label
-                    key={val}
-                    className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-sm ${
-                      revueltaPick === val
-                        ? 'border-primary bg-primary/10'
-                        : 'border-border bg-card'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="revuelta-result"
-                      className="accent-primary"
-                      checked={revueltaPick === val}
-                      onChange={() => setRevueltaPick(val)}
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
           <Button
+            type="button"
             className="w-full"
-            disabled={
-              finalizing ||
-              (opportunity.type === 'open' && !revueltaPick)
-            }
-            onClick={() => void handleFinalizeCasualOrRevuelta()}
+            disabled={finalizing}
+            onClick={openFinalizeDialog}
           >
-            {finalizing ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Guardando…
-              </>
-            ) : (
-              'Marcar partido como finalizado'
-            )}
+            Marcar partido como finalizado
           </Button>
+
+          <Dialog
+            open={finalizeDialogOpen}
+            onOpenChange={(open) => {
+              setFinalizeDialogOpen(open)
+              if (!open) {
+                setRevueltaPick(null)
+                setRivalOrganizerPick(null)
+              }
+            }}
+          >
+            <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>
+                  {opportunity.type === 'open'
+                    ? 'Resultado de la revuelta'
+                    : opportunity.type === 'rival'
+                      ? 'Resultado equipo vs equipo'
+                      : 'Confirmar cierre'}
+                </DialogTitle>
+                <DialogDescription>
+                  Se abrirá la ventana de 48 h para que los jugadores califiquen.
+                  {opportunity.type === 'players'
+                    ? ' Se registrará como partido jugado (sin marcador por equipos).'
+                    : null}
+                </DialogDescription>
+              </DialogHeader>
+
+              {opportunity.type === 'open' && (
+                <div className="space-y-2 py-1">
+                  <Label className="text-xs text-muted-foreground">
+                    ¿Quién ganó?
+                  </Label>
+                  <div className="flex flex-col gap-2">
+                    {(
+                      [
+                        ['team_a', 'Ganó equipo A'],
+                        ['team_b', 'Ganó equipo B'],
+                        ['draw', 'Empate'],
+                      ] as const
+                    ).map(([val, label]) => (
+                      <label
+                        key={val}
+                        className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-sm ${
+                          revueltaPick === val
+                            ? 'border-primary bg-primary/10'
+                            : 'border-border bg-card'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="revuelta-result-modal"
+                          className="accent-primary"
+                          checked={revueltaPick === val}
+                          onChange={() => setRevueltaPick(val)}
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {opportunity.type === 'rival' && (
+                <div className="space-y-2 py-1">
+                  <Label className="text-xs text-muted-foreground">
+                    ¿Quién ganó?
+                  </Label>
+                  <div className="flex flex-col gap-2">
+                    {(
+                      [
+                        ['creator_team', 'Ganó el equipo del organizador'],
+                        ['rival_team', 'Ganó el equipo rival'],
+                        ['draw', 'Empate'],
+                      ] as const
+                    ).map(([val, label]) => (
+                      <label
+                        key={val}
+                        className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-sm ${
+                          rivalOrganizerPick === val
+                            ? 'border-primary bg-primary/10'
+                            : 'border-border bg-card'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="rival-organizer-result-modal"
+                          className="accent-primary"
+                          checked={rivalOrganizerPick === val}
+                          onChange={() => setRivalOrganizerPick(val)}
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={finalizing}
+                  onClick={() => setFinalizeDialogOpen(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  disabled={
+                    finalizing ||
+                    (opportunity.type === 'open' && !revueltaPick) ||
+                    (opportunity.type === 'rival' && !rivalOrganizerPick)
+                  }
+                  onClick={() => void confirmFinalizeFromDialog()}
+                >
+                  {finalizing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Guardando…
+                    </>
+                  ) : (
+                    'Finalizar y guardar'
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <div className="pt-2 border-t border-border space-y-2">
             <p className="text-sm font-medium text-foreground">Suspender partido</p>

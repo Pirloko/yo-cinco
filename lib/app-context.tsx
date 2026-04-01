@@ -191,6 +191,9 @@ interface AppContextType {
   setOnboardingSource: (source: 'registration' | 'profile_edit') => void
   /** Sube imagen a Storage y actualiza `photo_url` del perfil. */
   updateProfilePhoto: (file: File) => Promise<{ ok: boolean; error?: string }>
+  /** Incrementar al subir foto (misma URL pública → evitar caché del navegador en `<img>`). */
+  profilePhotoCacheBust: number
+  bumpProfilePhotoCache: () => void
   matchOpportunities: MatchOpportunity[]
   addMatchOpportunity: (
     match: Omit<MatchOpportunity, 'id' | 'createdAt'> & {
@@ -228,11 +231,14 @@ interface AppContextType {
     colorHexA: string,
     colorHexB: string
   ) => Promise<void>
-  /** Organizador: cerrar partido casual (faltan jugadores) o revuelta con resultado. */
+  /** Organizador: cerrar partido casual, revuelta (A/B/empate) o rival (organizador vs rival / empate). `true` si se guardó. */
   finalizeMatchOpportunity: (
     opportunityId: string,
-    outcome: { kind: 'casual' } | { kind: 'revuelta'; revueltaResult: RevueltaResult }
-  ) => Promise<void>
+    outcome:
+      | { kind: 'casual' }
+      | { kind: 'revuelta'; revueltaResult: RevueltaResult }
+      | { kind: 'rival'; rivalResult: RivalResult }
+  ) => Promise<boolean>
   /** Capitán (rival): votar resultado; si ambos coinciden se cierra el partido. */
   submitRivalCaptainVote: (
     opportunityId: string,
@@ -346,6 +352,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [authLoading, setAuthLoading] = useState(true)
   const [currentScreen, setCurrentScreen] = useState<AppScreen>('landing')
   const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [profilePhotoCacheBust, setProfilePhotoCacheBust] = useState(0)
   const [matchOpportunities, setMatchOpportunities] = useState<
     MatchOpportunity[]
   >([])
@@ -384,6 +391,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCurrentScreen('onboarding')
   }, [])
 
+  const bumpProfilePhotoCache = useCallback(() => {
+    setProfilePhotoCacheBust((n) => n + 1)
+  }, [])
+
   const updateProfilePhoto = useCallback(
     async (file: File) => {
       if (!currentUser || !isSupabaseConfigured()) {
@@ -407,10 +418,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...currentUser,
         photo: up.publicUrl,
       })
+      bumpProfilePhotoCache()
       toast.success('Foto de perfil actualizada')
       return { ok: true }
     },
-    [currentUser]
+    [currentUser, bumpProfilePhotoCache]
   )
 
   const login = async (
@@ -578,6 +590,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // ignore
     }
     setCurrentUser(null)
+    setProfilePhotoCacheBust(0)
     setUsers([])
     setMatchOpportunities([])
     setTeams([])
@@ -1337,38 +1350,64 @@ export function AppProvider({ children }: { children: ReactNode }) {
     outcome:
       | { kind: 'casual' }
       | { kind: 'revuelta'; revueltaResult: RevueltaResult }
-  ) => {
-    if (!currentUser || !isSupabaseConfigured()) return
+      | { kind: 'rival'; rivalResult: RivalResult }
+  ): Promise<boolean> => {
+    if (!currentUser || !isSupabaseConfigured()) return false
     const ro = isUserReadOnly(currentUser)
     if (ro.readonly) {
       toastReadOnly(ro.reason)
-      return
+      return false
     }
     const opp = matchOpportunities.find((m) => m.id === opportunityId)
     if (!opp || opp.creatorId !== currentUser.id) {
       toast.error('Solo el organizador puede finalizar el partido.')
-      return
+      return false
     }
     if (opp.status === 'completed') {
       toast.info('Este partido ya está finalizado.')
-      return
+      return false
     }
     if (opp.type === 'players' && outcome.kind !== 'casual') {
       toast.error('Indica el cierre como partido casual.')
-      return
+      return false
     }
     if (opp.type === 'open' && outcome.kind !== 'revuelta') {
       toast.error('Indica el resultado (equipo A, B o empate).')
-      return
+      return false
     }
-    if (opp.type === 'rival') {
+    if (opp.type === 'rival' && outcome.kind !== 'rival') {
       toast.error(
-        'En equipo vs equipo votan los capitanes; si no se ponen de acuerdo, podrás decidir tras 72 h.'
+        'Indica el resultado (equipo del organizador, equipo rival o empate).'
       )
-      return
+      return false
     }
 
     const supabase = createClient()
+
+    if (opp.type === 'rival' && outcome.kind === 'rival') {
+      const { error } = await supabase.rpc('finalize_rival_match', {
+        p_opportunity_id: opportunityId,
+        p_result: outcome.rivalResult,
+      })
+      if (error) {
+        const msg = error.message
+        if (msg.includes('disputed_use_override')) {
+          toast.error(
+            'Hay desacuerdo entre capitanes: usa el desempate tras 72 h o resolvé el conflicto desde la app.'
+          )
+        } else if (msg.includes('challenge_not_accepted')) {
+          toast.error('El desafío debe estar aceptado para registrar el resultado.')
+        } else {
+          toast.error(msg)
+        }
+        return false
+      }
+      const matches = await fetchMatchOpportunities(supabase)
+      setMatchOpportunities(matches)
+      await refreshCurrentUserProfile()
+      toast.success('Partido finalizado. Los jugadores pueden calificar en las próximas 48 h.')
+      return true
+    }
 
     if (opp.type === 'open' && outcome.kind === 'revuelta') {
       const { error } = await supabase.rpc('finalize_revuelta_match', {
@@ -1377,13 +1416,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       if (error) {
         toast.error(error.message)
-        return
+        return false
       }
       const matches = await fetchMatchOpportunities(supabase)
       setMatchOpportunities(matches)
       await refreshCurrentUserProfile()
       toast.success('Partido finalizado. Los jugadores pueden calificar en las próximas 48 h.')
-      return
+      return true
     }
 
     const now = new Date().toISOString()
@@ -1402,13 +1441,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (error) {
       toast.error(error.message)
-      return
+      return false
     }
 
     const matches = await fetchMatchOpportunities(supabase)
     setMatchOpportunities(matches)
     await refreshCurrentUserProfile()
     toast.success('Partido finalizado. Los jugadores pueden calificar en las próximas 48 h.')
+    return true
   }
 
   const suspendMatchOpportunity = async (
@@ -2301,6 +2341,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // ignore
     }
     setCurrentUser(null)
+    setProfilePhotoCacheBust(0)
     setUsers([])
     setMatchOpportunities([])
     setTeams([])
@@ -2710,6 +2751,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         onboardingSource,
         setOnboardingSource,
         updateProfilePhoto,
+        profilePhotoCacheBust,
+        bumpProfilePhotoCache,
         matchOpportunities,
         addMatchOpportunity,
         reserveVenueOnly,

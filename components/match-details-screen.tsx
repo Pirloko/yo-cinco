@@ -350,6 +350,8 @@ export function MatchDetailsScreen() {
 
   const isCreator = currentUser.id === opportunity.creatorId
   const isParticipant = participatingOpportunityIds.includes(opportunity.id)
+  /** Misma regla que RLS `can_access_opportunity_thread`: creador o inscrito. */
+  const canOpenMatchChat = isCreator || isParticipant
   const gkCount = participants.filter((p) => p.isGoalkeeper).length
   const needed = opportunity.playersNeeded ?? 0
   const joined = opportunity.playersJoined ?? 0
@@ -825,7 +827,16 @@ export function MatchDetailsScreen() {
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <Button onClick={openChat} className="w-full">
+          <Button
+            onClick={openChat}
+            className="w-full"
+            disabled={!canOpenMatchChat}
+            title={
+              canOpenMatchChat
+                ? undefined
+                : 'Solo el organizador y los jugadores inscritos en este partido pueden usar el chat.'
+            }
+          >
             <MessageCircle className="w-4 h-4 mr-2" />
             Abrir chat
           </Button>
@@ -837,6 +848,12 @@ export function MatchDetailsScreen() {
             Ver en Partidos
           </Button>
         </div>
+        {!canOpenMatchChat && (
+          <p className="text-xs text-center text-muted-foreground">
+            El chat solo está disponible para el organizador y los jugadores
+            inscritos en este partido.
+          </p>
+        )}
 
         {(opportunity.status === 'completed' ||
           (ratingSummary?.count ?? 0) > 0) && (

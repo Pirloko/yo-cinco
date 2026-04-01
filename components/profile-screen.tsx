@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useRef } from 'react'
 import { useApp } from '@/lib/app-context'
+import { cacheBustPublicUrl } from '@/lib/supabase/profile-photo'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
@@ -81,12 +82,12 @@ export function ProfileScreen() {
     getUserTeams,
     setInitialMatchesTab,
     updateProfilePhoto,
+    profilePhotoCacheBust,
   } = useApp()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
   const [photoWorking, setPhotoWorking] = useState(false)
-  const [avatarKey, setAvatarKey] = useState(0)
 
   const pickProfilePhoto = () => photoInputRef.current?.click()
 
@@ -96,8 +97,7 @@ export function ProfileScreen() {
     if (!file) return
     setPhotoWorking(true)
     try {
-      const r = await updateProfilePhoto(file)
-      if (r.ok) setAvatarKey((k) => k + 1)
+      await updateProfilePhoto(file)
     } finally {
       setPhotoWorking(false)
     }
@@ -304,10 +304,12 @@ export function ProfileScreen() {
               >
                 <span className="relative block w-28 h-28 rounded-full border-4 border-card overflow-hidden">
                   <img
-                    key={avatarKey}
                     src={
-                      currentUser.photo ||
-                      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face'
+                      cacheBustPublicUrl(
+                        currentUser.photo ||
+                          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face',
+                        profilePhotoCacheBust
+                      )
                     }
                     alt=""
                     className="w-full h-full object-cover transition-opacity group-hover:opacity-90"
