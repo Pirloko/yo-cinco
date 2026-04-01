@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 
 import { RancaguaSeoPage } from '@/components/seo/rancagua-seo-page'
 import { getSeoSiteOrigin } from '@/lib/seo/site-origin'
@@ -34,14 +35,58 @@ export default async function FutbolitoRancaguaPage() {
     <RancaguaSeoPage
       h1="Partidos de futbolito en Rancagua"
       intro={
-        <p>
-          En Sportmatch podés encontrar partidos de futbolito y fútbol amateur en
-          Rancagua: rivales para tu equipo, cupos cuando faltan jugadores y
-          revueltas abiertas para completar equipos. Publicamos listados
-          actualizados con fecha y lugar para que entres a la app, te sumes al
-          que te calce y coordines con el resto del grupo. Todo queda pensado
-          para la cancha chica y el ritmo local, sin vueltas innecesarias.
-        </p>
+        <>
+          <p>
+            En Sportmatch podés encontrar partidos de futbolito y fútbol amateur
+            en Rancagua: rivales para tu equipo, cupos cuando faltan jugadores y
+            revueltas abiertas para completar equipos. Publicamos listados
+            actualizados con fecha y lugar para que entres a la app, te sumes al
+            que te calce y coordines con el resto del grupo. Todo queda pensado
+            para la cancha chica y el ritmo local, sin vueltas innecesarias.
+          </p>
+          <nav
+            className="rounded-xl border border-border bg-muted/30 p-4"
+            aria-label="Canchas y sectores en Rancagua"
+          >
+            <p className="text-sm font-medium text-foreground">
+              Canchas y sectores (futbolito y fútbol 7)
+            </p>
+            <ul className="mt-2 list-inside list-disc space-y-1 text-sm">
+              <li>
+                <Link
+                  href="/rancagua/canchas/santa-helena"
+                  className="text-primary underline-offset-4 hover:underline"
+                >
+                  Santa Helena
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/rancagua/canchas/san-lorenzo"
+                  className="text-primary underline-offset-4 hover:underline"
+                >
+                  San Lorenzo
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/rancagua/canchas/energy"
+                  className="text-primary underline-offset-4 hover:underline"
+                >
+                  Energy
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/rancagua/canchas/san-damian"
+                  className="text-primary underline-offset-4 hover:underline"
+                >
+                  San Damián
+                </Link>
+              </li>
+            </ul>
+          </nav>
+        </>
       }
       matches={matches}
       seoPageFullUrl={`${origin}${PATH}`}

@@ -14,6 +14,7 @@ import { fetchGeoCitiesWithVenuesInRegion } from '@/lib/supabase/venue-queries'
 import { useDiscoverTeams } from '@/hooks/use-discover-teams'
 import { saveRivalTargetTeamId } from '@/lib/rival-prefill'
 import type { Team } from '@/lib/types'
+import { userIsTeamStaffCaptain } from '@/lib/team-membership'
 
 export function SwipeScreen() {
   const router = useRouter()
@@ -22,6 +23,7 @@ export function SwipeScreen() {
     requestToJoinTeam,
     teamJoinRequests,
     setCurrentScreen,
+    getUserTeams,
   } = useApp()
   const [cityFilter, setCityFilter] = useState('')
   const [cityFilterOptions, setCityFilterOptions] = useState<
@@ -36,6 +38,11 @@ export function SwipeScreen() {
       cityFilter,
       fetchCountsEnabled: Boolean(currentUser),
     })
+
+  const canChallengeRival = Boolean(
+    currentUser &&
+      getUserTeams().some((t) => userIsTeamStaffCaptain(t, currentUser.id))
+  )
 
   useEffect(() => {
     if (!currentUser?.regionId || !isSupabaseConfigured()) {
@@ -128,6 +135,7 @@ export function SwipeScreen() {
           currentUserId={currentUser.id}
           joinRequests={teamJoinRequests}
           joiningTeamId={joiningDiscoverTeamId}
+          canChallengeRival={canChallengeRival}
           onRequestJoin={async (teamId) => {
             setJoiningDiscoverTeamId(teamId)
             try {

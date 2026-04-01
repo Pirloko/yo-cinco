@@ -20,16 +20,26 @@ export async function fetchRivalChallengesForUser(
   supabase: SupabaseClient,
   userId: string
 ): Promise<RivalChallenge[]> {
-  const { data: captainTeams } = await supabase
+  const { data: staffTeams } = await supabase
     .from('teams')
     .select('id')
-    .eq('captain_id', userId)
-  const myTeamIds = (captainTeams ?? []).map((t) => t.id as string)
+    .or(`captain_id.eq.${userId},vice_captain_id.eq.${userId}`)
+  const myStaffTeamIds = (staffTeams ?? []).map((t) => t.id as string)
+
+  const directOrParts = [
+    `challenger_captain_id.eq.${userId}`,
+    `challenged_captain_id.eq.${userId}`,
+  ]
+  if (myStaffTeamIds.length > 0) {
+    directOrParts.push(
+      `challenged_team_id.in.(${myStaffTeamIds.join(',')})`
+    )
+  }
 
   const { data: directRows } = await supabase
     .from('rival_challenges')
     .select('*')
-    .or(`challenger_captain_id.eq.${userId},challenged_captain_id.eq.${userId}`)
+    .or(directOrParts.join(','))
     .order('created_at', { ascending: false })
 
   const { data: openRows } = await supabase
@@ -43,7 +53,7 @@ export async function fetchRivalChallengesForUser(
   const all = [
     ...(directRows ?? []),
     ...(openRows ?? []).filter(
-      (r) => !myTeamIds.includes(r.challenger_team_id as string)
+      (r) => !myStaffTeamIds.includes(r.challenger_team_id as string)
     ),
   ] as RivalChallengeRow[]
   if (all.length === 0) return []

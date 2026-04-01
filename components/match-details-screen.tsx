@@ -38,6 +38,12 @@ import { playersSeekProfileLabel } from '@/lib/players-seek-profile'
 import { MatchCourtPricingBlock } from '@/components/match-court-pricing'
 import { getOrganizerTier } from '@/lib/organizer-level'
 import { fetchOrganizerCompletedCount } from '@/lib/supabase/queries'
+import { userIsConfirmedMemberOfTeam } from '@/lib/team-membership'
+import {
+  fetchPendingRevueltaExternalRequests,
+  fetchMyPendingRevueltaExternalRequest,
+  type PendingRevueltaExternalRequest,
+} from '@/lib/supabase/revuelta-external-requests'
 
 export function MatchDetailsScreen() {
   const {
@@ -57,6 +63,9 @@ export function MatchDetailsScreen() {
     submitRivalCaptainVote,
     finalizeRivalOrganizerOverride,
     openPublicProfile,
+    teams,
+    requestJoinPrivateRevuelta,
+    respondToRevueltaExternalRequest,
   } = useApp()
 
   const opportunity = selectedMatchOpportunityId
@@ -80,6 +89,12 @@ export function MatchDetailsScreen() {
     Array<{ comment: string; createdAt: Date }>
   >([])
   const [joinRevueltaOpen, setJoinRevueltaOpen] = useState(false)
+  const [extJoinRequests, setExtJoinRequests] = useState<
+    PendingRevueltaExternalRequest[]
+  >([])
+  const [loadingExtRequests, setLoadingExtRequests] = useState(false)
+  const [myExtPendingId, setMyExtPendingId] = useState<string | null>(null)
+  const [respondingId, setRespondingId] = useState<string | null>(null)
   const [joinPlayersOpen, setJoinPlayersOpen] = useState(false)
   const [reservationState, setReservationState] = useState<{
     id: string
@@ -256,6 +271,72 @@ export function MatchDetailsScreen() {
     setCurrentScreen('chat')
   }
 
+  const loadExtJoinData = useCallback(async () => {
+    if (!selectedMatchOpportunityId || !currentUser || !isSupabaseConfigured()) {
+      setExtJoinRequests([])
+      setMyExtPendingId(null)
+      return
+    }
+    const opp = matchOpportunities.find((m) => m.id === selectedMatchOpportunityId)
+    if (!opp || opp.type !== 'open' || !opp.privateRevueltaTeamId) {
+      setExtJoinRequests([])
+      setMyExtPendingId(null)
+      return
+    }
+    const supabase = createClient()
+    const team = teams.find((t) => t.id === opp.privateRevueltaTeamId)
+    const organizer = opp.creatorId === currentUser.id
+    const member = userIsConfirmedMemberOfTeam(team, currentUser.id)
+    setLoadingExtRequests(true)
+    try {
+      if (organizer) {
+        const list = await fetchPendingRevueltaExternalRequests(
+          supabase,
+          selectedMatchOpportunityId
+        )
+        setExtJoinRequests(list)
+      } else {
+        setExtJoinRequests([])
+      }
+      if (!member) {
+        const mine = await fetchMyPendingRevueltaExternalRequest(
+          supabase,
+          selectedMatchOpportunityId,
+          currentUser.id
+        )
+        setMyExtPendingId(mine?.id ?? null)
+      } else {
+        setMyExtPendingId(null)
+      }
+    } finally {
+      setLoadingExtRequests(false)
+    }
+  }, [selectedMatchOpportunityId, currentUser, matchOpportunities, teams])
+
+  const handleRespondExtRequest = useCallback(
+    async (requestId: string, accept: boolean) => {
+      setRespondingId(requestId)
+      try {
+        const res = await respondToRevueltaExternalRequest(requestId, accept)
+        if (res.ok) {
+          await loadParticipants()
+          await loadExtJoinData()
+        }
+      } finally {
+        setRespondingId(null)
+      }
+    },
+    [
+      respondToRevueltaExternalRequest,
+      loadParticipants,
+      loadExtJoinData,
+    ]
+  )
+
+  useEffect(() => {
+    void loadExtJoinData()
+  }, [loadExtJoinData])
+
   if (!currentUser || !opportunity) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
@@ -272,11 +353,38 @@ export function MatchDetailsScreen() {
   const gkCount = participants.filter((p) => p.isGoalkeeper).length
   const needed = opportunity.playersNeeded ?? 0
   const joined = opportunity.playersJoined ?? 0
+  const privateRevueltaTeam = opportunity.privateRevueltaTeamId
+    ? teams.find((t) => t.id === opportunity.privateRevueltaTeamId)
+    : undefined
+  const isPrivateRevueltaMember = userIsConfirmedMemberOfTeam(
+    privateRevueltaTeam,
+    currentUser.id
+  )
+  const isPrivateRevueltaNonMember =
+    opportunity.type === 'open' &&
+    !!opportunity.privateRevueltaTeamId &&
+    !isPrivateRevueltaMember
+
   const canJoinRevuelta =
     opportunity.type === 'open' &&
     !isCreator &&
     !isParticipant &&
-    (opportunity.status === 'pending' || opportunity.status === 'confirmed')
+    (opportunity.status === 'pending' || opportunity.status === 'confirmed') &&
+    !isPrivateRevueltaNonMember
+
+  const canRequestPrivateRevuelta =
+    isPrivateRevueltaNonMember &&
+    !isCreator &&
+    !isParticipant &&
+    (opportunity.status === 'pending' || opportunity.status === 'confirmed') &&
+    !myExtPendingId
+
+  const showExtPendingHint =
+    isPrivateRevueltaNonMember && !!myExtPendingId && !isParticipant
+
+  const isOrganizerOfPrivateRevuelta =
+    !!opportunity.privateRevueltaTeamId &&
+    opportunity.creatorId === currentUser.id
 
   const canJoinPlayersSearch =
     opportunity.type === 'players' &&
@@ -391,7 +499,14 @@ export function MatchDetailsScreen() {
                 <p className="text-sm text-muted-foreground">{opportunity.teamName}</p>
               )}
             </div>
-            <Badge variant="outline">{opportunity.level}</Badge>
+            <div className="flex flex-wrap items-center gap-2 justify-end">
+              {opportunity.privateRevueltaTeamId ? (
+                <Badge variant="secondary" className="text-xs">
+                  Privado · {privateRevueltaTeam?.name ?? 'equipo'}
+                </Badge>
+              ) : null}
+              <Badge variant="outline">{opportunity.level}</Badge>
+            </div>
           </div>
 
           {opportunity.description && (
@@ -597,6 +712,75 @@ export function MatchDetailsScreen() {
           )}
         </div>
 
+        {isOrganizerOfPrivateRevuelta &&
+          (opportunity.status === 'pending' ||
+            opportunity.status === 'confirmed') && (
+            <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+              <h3 className="font-medium text-foreground flex items-center gap-2">
+                <Shield className="w-4 h-4 text-primary" aria-hidden />
+                Solicitudes de jugadores externos
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Como organizador del partido podés aceptar o rechazar quién se suma desde afuera del plantel. Si aceptás, juegan solo este encuentro; no ingresan al equipo.
+              </p>
+              {loadingExtRequests ? (
+                <p className="text-sm text-muted-foreground">Cargando…</p>
+              ) : extJoinRequests.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nadie ha solicitado cupo todavía.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {extJoinRequests.map((r) => (
+                    <li
+                      key={r.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <img
+                          src={r.requesterPhoto || '/sportmatch-logo.png'}
+                          alt=""
+                          className="w-8 h-8 rounded-full object-cover border border-border"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {r.requesterName}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {r.isGoalkeeper ? 'Arquero' : 'Jugador de campo'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={respondingId === r.id}
+                          onClick={() => {
+                            void handleRespondExtRequest(r.id, false)
+                          }}
+                        >
+                          Rechazar
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={respondingId === r.id}
+                          onClick={() => {
+                            void handleRespondExtRequest(r.id, true)
+                          }}
+                        >
+                          Aceptar
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
         {opportunity.type === 'open' && (
           <RevueltaTeamsPanel
             opportunity={opportunity}
@@ -606,6 +790,20 @@ export function MatchDetailsScreen() {
           />
         )}
 
+        {canRequestPrivateRevuelta && (
+          <Button
+            type="button"
+            className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
+            onClick={() => setJoinRevueltaOpen(true)}
+          >
+            Solicitar ingreso
+          </Button>
+        )}
+        {showExtPendingHint && (
+          <p className="text-center text-sm text-muted-foreground rounded-xl border border-border bg-secondary/30 px-3 py-2">
+            Tu solicitud está pendiente. El organizador del partido la revisará.
+          </p>
+        )}
         {canJoinRevuelta && (
           <Button
             type="button"
@@ -708,7 +906,13 @@ export function MatchDetailsScreen() {
         open={joinRevueltaOpen}
         onOpenChange={setJoinRevueltaOpen}
         opportunity={opportunity}
+        mode={isPrivateRevueltaNonMember ? 'request' : 'join'}
         onJoin={async (isGk) => {
+          if (isPrivateRevueltaNonMember) {
+            const r = await requestJoinPrivateRevuelta(opportunity.id, isGk)
+            if (r.ok) await loadExtJoinData()
+            return
+          }
           await joinMatchOpportunity(opportunity.id, { isGoalkeeper: isGk })
         }}
       />

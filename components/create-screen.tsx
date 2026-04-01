@@ -6,6 +6,7 @@ import { useApp } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -41,6 +42,10 @@ import { computeVenueAvailableSlots, labelForHm } from '@/lib/venue-slots'
 import { consumeRivalTargetTeamId } from '@/lib/rival-prefill'
 import { TEAM_ROSTER_MAX } from '@/lib/team-roster'
 import {
+  userIsTeamPrimaryCaptain,
+  userIsTeamStaffCaptain,
+} from '@/lib/team-membership'
+import {
   ArrowLeft,
   ArrowRight,
   Target,
@@ -55,6 +60,7 @@ import {
   Shield,
   Swords,
   Crown,
+  Award,
   ChevronRight,
   Search,
   Info,
@@ -96,6 +102,11 @@ export function CreateScreen() {
   } = useApp()
   const [step, setStep] = useState(1)
   const [matchType, setMatchType] = useState<MatchType | 'reserve' | null>(null)
+  /** Revuelta (open): si se define, solo el plantel entra directo; externos solicitan al organizador. */
+  const [privateRevueltaTeamId, setPrivateRevueltaTeamId] = useState<string | null>(
+    null
+  )
+
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null)
   const [selectedRivalTeam, setSelectedRivalTeam] = useState<Team | null>(null)
   const [rivalMode, setRivalMode] = useState<'direct' | 'open'>('direct')
@@ -134,6 +145,10 @@ export function CreateScreen() {
   const [bookingNoCourt, setBookingNoCourt] = useState(false)
   const [venueTimesRefreshKey, setVenueTimesRefreshKey] = useState(0)
   const [venueCourtsHint, setVenueCourtsHint] = useState<VenueCourt[]>([])
+
+  useEffect(() => {
+    if (matchType !== 'open') setPrivateRevueltaTeamId(null)
+  }, [matchType])
 
   useEffect(() => {
     if (!linkedVenueId || !isSupabaseConfigured()) {
@@ -179,19 +194,21 @@ export function CreateScreen() {
     const target = allTeams.find((t) => t.id === rivalTeamId)
     if (!target) return
 
-    const captainTeams = getUserTeams().filter((t) => t.captainId === currentUser.id)
+    const staffTeams = getUserTeams().filter((t) =>
+      userIsTeamStaffCaptain(t, currentUser.id)
+    )
     setMatchType('rival')
     setRivalMode('direct')
     setSelectedRivalTeam(target)
     setStep(2)
-    if (captainTeams.length === 1) {
-      setSelectedTeam(captainTeams[0])
+    if (staffTeams.length === 1) {
+      setSelectedTeam(staffTeams[0])
       setStep(3)
     }
     toast.success(
-      captainTeams.length > 0
+      staffTeams.length > 0
         ? `Desafío listo contra ${target.name}. Completa fecha y publica.`
-        : 'Para desafiar, primero debes ser capitán de un equipo.'
+        : 'Para desafiar, debés ser capitán o vicecapitán de un equipo.'
     )
   }, [currentUser, getFilteredTeams, getUserTeams])
 
@@ -359,6 +376,9 @@ export function CreateScreen() {
 
 
   const userTeams = getUserTeams()
+  const rivalChallengerTeams = currentUser
+    ? userTeams.filter((t) => userIsTeamStaffCaptain(t, currentUser.id))
+    : []
   const allTeams = currentUser ? getFilteredTeams(currentUser.gender) : []
   const rivalTeams = allTeams
     .filter(
@@ -491,6 +511,10 @@ export function CreateScreen() {
           bookCourtSlot:
             linked && bookCourtSlot ? true : undefined,
           courtSlotMinutes: linked?.slotDurationMinutes,
+          privateRevueltaTeamId:
+            matchType === 'open' && privateRevueltaTeamId
+              ? privateRevueltaTeamId
+              : undefined,
         })
         if (!res.ok) {
           if (res.code === 'no_court') {
@@ -651,7 +675,7 @@ export function CreateScreen() {
             <Button
               onClick={() => {
                 if (matchType === 'rival') {
-                  if (userTeams.length === 0) {
+                  if (rivalChallengerTeams.length === 0) {
                     setCurrentScreen('teams')
                   } else {
                     setStep(2)
@@ -663,13 +687,15 @@ export function CreateScreen() {
               disabled={!matchType}
               className="w-full h-14 mt-8 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
-              {matchType === 'rival' && userTeams.length === 0 ? 'Crear equipo primero' : 'Continuar'}
+              {matchType === 'rival' && rivalChallengerTeams.length === 0
+                ? 'Crear equipo primero'
+                : 'Continuar'}
               <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
             
-            {matchType === 'rival' && userTeams.length === 0 && (
+            {matchType === 'rival' && rivalChallengerTeams.length === 0 && (
               <p className="text-center text-sm text-muted-foreground mt-3">
-                Necesitas tener un equipo para buscar rival
+                Necesitás ser capitán o vicecapitán de un equipo para buscar rival
               </p>
             )}
           </div>
@@ -684,7 +710,7 @@ export function CreateScreen() {
             </div>
 
             <div className="space-y-3 mt-6">
-              {userTeams.map((team) => (
+              {rivalChallengerTeams.map((team) => (
                 <Card 
                   key={team.id}
                   onClick={() => setSelectedTeam(team)}
@@ -708,9 +734,15 @@ export function CreateScreen() {
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold text-foreground">{team.name}</h3>
-                          {team.captainId === currentUser?.id && (
+                          {currentUser &&
+                            userIsTeamPrimaryCaptain(team, currentUser.id) && (
                             <Crown className="w-4 h-4 text-accent" />
                           )}
+                          {currentUser &&
+                            team.viceCaptainId === currentUser.id &&
+                            !userIsTeamPrimaryCaptain(team, currentUser.id) && (
+                              <Award className="w-4 h-4 text-sky-500" />
+                            )}
                         </div>
                         <div className="flex items-center gap-2 mt-1">
                           <Badge variant="secondary" className="text-xs">
@@ -1229,6 +1261,54 @@ export function CreateScreen() {
                       rows={3}
                     />
                   </div>
+                  {getUserTeams().length > 0 && (
+                    <div className="rounded-xl border border-border bg-secondary/40 p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <Label htmlFor="private-rev" className="text-foreground">
+                            Juega una Revuelta con los integrantes de tu equipo (partido privado)
+                          </Label>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Jugá junto a tus amigos miembros de tu equipo un partido
+                            amistoso tipo revuelta. Si faltan jugadores, jugadores externos
+                            podrán solicitar unirse al partido y vos, como organizador,
+                            serás quien decida si aceptás o rechazás a estos jugadores.
+                          </p>
+                        </div>
+                        <Switch
+                          id="private-rev"
+                          checked={!!privateRevueltaTeamId}
+                          onCheckedChange={(on) => {
+                            if (!on) setPrivateRevueltaTeamId(null)
+                            else {
+                              const ut = getUserTeams()
+                              setPrivateRevueltaTeamId(ut[0]?.id ?? null)
+                            }
+                          }}
+                        />
+                      </div>
+                      {privateRevueltaTeamId ? (
+                        <div className="space-y-2">
+                          <Label className="text-foreground">Equipo</Label>
+                          <Select
+                            value={privateRevueltaTeamId}
+                            onValueChange={(v) => setPrivateRevueltaTeamId(v)}
+                          >
+                            <SelectTrigger className="h-12 bg-secondary border-border">
+                              <SelectValue placeholder="Elegí equipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {getUserTeams().map((t) => (
+                                <SelectItem key={t.id} value={t.id}>
+                                  {t.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
                 </>
               )}
 

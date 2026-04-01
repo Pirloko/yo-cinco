@@ -77,6 +77,7 @@ function mapTeamRow(
     logo: (t.logo_url as string | null) ?? undefined,
     level: t.level as Level,
     captainId: t.captain_id as string,
+    viceCaptainId: (t.vice_captain_id as string | null) ?? null,
     members,
     cityId: (t.city_id as string) ?? '',
     city: geo?.name?.trim() || (t.city as string) || '',
@@ -135,21 +136,21 @@ export async function fetchTeamJoinRequestsForUser(
   supabase: SupabaseClient,
   userId: string
 ): Promise<TeamJoinRequest[]> {
-  const { data: captainTeams } = await supabase
+  const { data: staffTeams } = await supabase
     .from('teams')
     .select('id')
-    .eq('captain_id', userId)
+    .or(`captain_id.eq.${userId},vice_captain_id.eq.${userId}`)
 
-  const captainTeamIds = (captainTeams ?? []).map((t) => t.id as string)
+  const staffTeamIds = (staffTeams ?? []).map((t) => t.id as string)
 
   let query = supabase
     .from('team_join_requests')
     .select('*')
     .order('created_at', { ascending: false })
 
-  if (captainTeamIds.length > 0) {
+  if (staffTeamIds.length > 0) {
     query = query.or(
-      `requester_id.eq.${userId},team_id.in.(${captainTeamIds.join(',')})`
+      `requester_id.eq.${userId},team_id.in.(${staffTeamIds.join(',')})`
     )
   } else {
     query = query.eq('requester_id', userId)

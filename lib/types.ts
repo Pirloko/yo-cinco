@@ -182,6 +182,8 @@ export interface Team {
   logo?: string
   level: Level
   captainId: string
+  /** Segundo capitán (designado solo por el dueño). Misma gestión operativa; no edita datos sensibles ni WhatsApp/reglas. */
+  viceCaptainId?: string | null
   members: TeamMember[]
   cityId: string
   city: string
@@ -270,6 +272,8 @@ export interface MatchOpportunity {
   creatorName: string
   creatorPhoto: string
   teamName?: string
+  /** Revuelta (open) privada: solo este equipo entra directo; externos solicitan al organizador. */
+  privateRevueltaTeamId?: string
   playersNeeded?: number
   playersJoined?: number
   /** Solo type players: cupos (arquero / campo / ambos). */

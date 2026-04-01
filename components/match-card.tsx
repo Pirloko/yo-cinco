@@ -37,6 +37,8 @@ interface MatchCardProps {
   currentUserId?: string
   /** Inicio: priorizar partidos casi llenos (banner si quedan 1–3 cupos). */
   showHomeFeedUrgency?: boolean
+  /** Revuelta privada y el usuario no es del equipo: CTA solicitar. */
+  isPrivateRevueltaExternal?: boolean
 }
 
 export function MatchCard({
@@ -49,6 +51,7 @@ export function MatchCard({
   onViewDetails,
   currentUserId,
   showHomeFeedUrgency = false,
+  isPrivateRevueltaExternal = false,
 }: MatchCardProps) {
   const getTypeIcon = () => {
     switch (match.type) {
@@ -68,7 +71,7 @@ export function MatchCard({
       case 'players':
         return 'Faltan jugadores'
       case 'open':
-        return 'Revuelta abierta'
+        return match.privateRevueltaTeamId ? 'Revuelta privada' : 'Revuelta abierta'
     }
   }
 
@@ -79,7 +82,7 @@ export function MatchCard({
       case 'players':
         return 'Postular'
       case 'open':
-        return 'Unirse'
+        return isPrivateRevueltaExternal ? 'Solicitar' : 'Unirse'
     }
   }
 

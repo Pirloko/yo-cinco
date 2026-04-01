@@ -38,6 +38,8 @@ type DiscoverTeamsCarouselProps = {
   currentUserId: string
   joinRequests: TeamJoinRequest[]
   joiningTeamId: string | null
+  /** Si es false, el usuario no tiene equipo como capitán/vice para desafiar. */
+  canChallengeRival?: boolean
   onRequestJoin: (teamId: string) => void
   onChallenge: (team: Team) => void
 }
@@ -49,6 +51,7 @@ export function DiscoverTeamsCarousel({
   currentUserId,
   joinRequests,
   joiningTeamId,
+  canChallengeRival = true,
   onRequestJoin,
   onChallenge,
 }: DiscoverTeamsCarouselProps) {
@@ -137,6 +140,7 @@ export function DiscoverTeamsCarousel({
             joining={joiningTeamId === team.id}
             onRequestJoin={() => onRequestJoin(team.id)}
             onChallenge={() => onChallenge(team)}
+            canChallengeRival={canChallengeRival}
           />
         </div>
 
@@ -164,6 +168,7 @@ function DiscoverTeamCard({
   joining,
   onRequestJoin,
   onChallenge,
+  canChallengeRival,
 }: {
   team: Team
   matchCount: number
@@ -172,6 +177,7 @@ function DiscoverTeamCard({
   coverUrl: string
   hasPendingJoin: boolean
   joining: boolean
+  canChallengeRival: boolean
   onRequestJoin: () => void
   onChallenge: () => void
 }) {
@@ -256,6 +262,12 @@ function DiscoverTeamCard({
         <Button
           type="button"
           className="h-12 bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+          disabled={!canChallengeRival}
+          title={
+            !canChallengeRival
+              ? 'Necesitás ser capitán o vicecapitán de un equipo'
+              : undefined
+          }
           onClick={onChallenge}
         >
           Desafiar equipo

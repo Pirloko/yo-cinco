@@ -15,6 +15,7 @@ import { teamRivalSnapshotFromTeam } from '@/lib/team-rival-momentum'
 import { BottomNav } from './bottom-nav'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -39,6 +40,8 @@ import {
   ScrollText,
   ExternalLink,
   Swords,
+  Award,
+  UserMinus,
 } from 'lucide-react'
 import {
   Team,
@@ -50,7 +53,11 @@ import {
 import { fetchTeamPrivateSettings } from '@/lib/supabase/team-queries'
 import { teamInviteAbsoluteUrl } from '@/lib/team-invite-url'
 import { saveRivalTargetTeamId } from '@/lib/rival-prefill'
-import { TEAM_ROSTER_MAX } from '@/lib/team-roster'
+import { TEAM_ROSTER_MAX, TEAM_USER_MAX_MEMBERSHIPS } from '@/lib/team-roster'
+import {
+  userIsTeamPrimaryCaptain,
+  userIsTeamStaffCaptain,
+} from '@/lib/team-membership'
 
 type TeamsView = 'list' | 'create' | 'detail' | 'invite'
 
@@ -88,6 +95,8 @@ export function TeamsScreen() {
     requestToJoinTeam,
     respondToJoinRequest,
     cancelJoinRequest,
+    setTeamViceCaptain,
+    removeTeamMember,
     getFilteredUsers,
     teamsDetailFocusTeamId,
     setTeamsDetailFocusTeamId,
@@ -120,9 +129,10 @@ export function TeamsScreen() {
   const logoFileInputRef = useRef<HTMLInputElement>(null)
 
   const userTeams = getUserTeams()
-  const myCaptainTeams = userTeams.filter((t) => t.captainId === currentUser?.id)
-  const TEAM_LIMIT_MAX = 5
-  const isTeamLimitReached = userTeams.length >= TEAM_LIMIT_MAX
+  const myStaffTeams = userTeams.filter((t) =>
+    userIsTeamStaffCaptain(t, currentUser?.id ?? '')
+  )
+  const isTeamLimitReached = userTeams.length >= TEAM_USER_MAX_MEMBERSHIPS
   const allTeams = currentUser ? getFilteredTeams(currentUser.gender) : []
   const pendingInvites = teamInvites.filter(
     inv => inv.inviteeId === currentUser?.id && inv.status === 'pending'
@@ -130,7 +140,11 @@ export function TeamsScreen() {
   const pendingJoinRequestsForMe = teamJoinRequests.filter(
     (r) =>
       r.status === 'pending' &&
-      teams.some((t) => t.id === r.teamId && t.captainId === currentUser?.id)
+      teams.some(
+        (t) =>
+          t.id === r.teamId &&
+          userIsTeamStaffCaptain(t, currentUser?.id ?? '')
+      )
   )
 
   const pendingJoinForTeam = (teamId: string) =>
@@ -150,8 +164,13 @@ export function TeamsScreen() {
     team.members.some((m) => m.id === currentUser?.id)
   const incomingRivalChallenges = rivalChallenges.filter((c) => {
     if (c.status !== 'pending') return false
-    if (c.mode === 'direct') return c.challengedCaptainId === currentUser?.id
-    return c.challengerCaptainId !== currentUser?.id && myCaptainTeams.length > 0
+    if (c.mode === 'direct') {
+      const challenged = teams.find((t) => t.id === c.challengedTeamId)
+      return userIsTeamStaffCaptain(challenged, currentUser?.id ?? '')
+    }
+    return (
+      c.challengerCaptainId !== currentUser?.id && myStaffTeams.length > 0
+    )
   })
 
   const detailTeam: Team | null =
@@ -235,7 +254,9 @@ export function TeamsScreen() {
   const handleCreateTeam = async () => {
     if (!currentUser || !teamName.trim()) return
     if (isTeamLimitReached) {
-      toast.error(`Llegaste al máximo de ${TEAM_LIMIT_MAX} equipos.`)
+      toast.error(
+        `Llegaste al máximo de ${TEAM_USER_MAX_MEMBERSHIPS} equipos.`
+      )
       return
     }
 
@@ -421,7 +442,9 @@ export function TeamsScreen() {
     : []
 
   const renderTeamCard = (team: Team, isUserTeam: boolean) => {
-    const isCaptain = team.captainId === currentUser?.id
+    const isPrimaryCaptain = userIsTeamPrimaryCaptain(team, currentUser?.id ?? '')
+    const isViceCaptain =
+      !!team.viceCaptainId && team.viceCaptainId === currentUser?.id
     const isMember = userTeams.some((t) => t.id === team.id)
     const myJoin = myPendingJoinForTeam(team.id)
     const canRequestJoin =
@@ -430,7 +453,7 @@ export function TeamsScreen() {
       team.gender === currentUser?.gender &&
       team.members.length < TEAM_ROSTER_MAX &&
       !myJoin
-    const canChallenge = !isUserTeam && myCaptainTeams.length > 0
+    const canChallenge = !isUserTeam && myStaffTeams.length > 0
 
     return (
       <Card
@@ -464,8 +487,11 @@ export function TeamsScreen() {
                     <h3 className="font-semibold text-foreground truncate text-[15px] leading-snug">
                       {team.name}
                     </h3>
-                    {isCaptain && (
+                    {isPrimaryCaptain && (
                       <Crown className="w-4 h-4 text-amber-500 shrink-0 drop-shadow-sm" />
+                    )}
+                    {isViceCaptain && !isPrimaryCaptain && (
+                      <Award className="w-4 h-4 text-sky-500 shrink-0 drop-shadow-sm" />
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
@@ -516,7 +542,9 @@ export function TeamsScreen() {
                 onClick={(e) => {
                   e.stopPropagation()
                   if (!canChallenge) {
-                    toast.error('Debes ser capitán de un equipo para desafiar.')
+                    toast.error(
+                      'Debés ser capitán o vicecapitán de un equipo para desafiar.'
+                    )
                     return
                   }
                   saveRivalTargetTeamId(team.id)
@@ -630,7 +658,7 @@ export function TeamsScreen() {
             </div>
             {challenge.mode === 'open' && (
               <>
-                {myCaptainTeams.length > 0 ? (
+                {myStaffTeams.length > 0 ? (
                   <div className="space-y-1.5">
                     <p className="text-xs text-muted-foreground">
                       Selecciona con qué equipo quieres aceptar este desafío:
@@ -646,7 +674,7 @@ export function TeamsScreen() {
                       className="w-full h-10 rounded-lg bg-secondary border border-border px-3 text-sm text-foreground"
                     >
                       <option value="">Selecciona tu equipo</option>
-                      {myCaptainTeams.map((t) => (
+                      {myStaffTeams.map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.name}
                         </option>
@@ -655,7 +683,8 @@ export function TeamsScreen() {
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    No puedes desafiar porque no tienes un equipo como capitán.
+                    No podés aceptar: necesitás ser capitán o vicecapitán de un
+                    equipo.
                   </p>
                 )}
               </>
@@ -686,7 +715,7 @@ export function TeamsScreen() {
                 Aceptar desafío
               </Button>
             </div>
-            {challenge.mode === 'open' && myCaptainTeams.length === 0 && (
+            {challenge.mode === 'open' && myStaffTeams.length === 0 && (
               <Button
                 size="sm"
                 variant="secondary"
@@ -757,7 +786,10 @@ export function TeamsScreen() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground mb-3">
-            Puedes ser parte de hasta <span className="text-foreground font-medium">{TEAM_LIMIT_MAX}</span>{' '}
+            Podés ser parte de hasta{' '}
+            <span className="text-foreground font-medium">
+              {TEAM_USER_MAX_MEMBERSHIPS}
+            </span>{' '}
             equipos en total (incluye los que creas y a los que te unes).
             {isTeamLimitReached ? (
               <span className="text-foreground font-medium">
@@ -823,7 +855,8 @@ export function TeamsScreen() {
                 Límite máximo de equipos
               </p>
               <p>
-                Ya eres parte de {userTeams.length}/{TEAM_LIMIT_MAX} equipos. Para crear uno nuevo,
+                Ya eres parte de {userTeams.length}/{TEAM_USER_MAX_MEMBERSHIPS}{' '}
+                equipos. Para crear uno nuevo,
                 primero debes salir de alguno.
               </p>
             </CardContent>
@@ -893,7 +926,11 @@ export function TeamsScreen() {
     if (!detailTeam) return null
 
     const team = detailTeam
-    const isCaptain = team.captainId === currentUser?.id
+    const isPrimaryCaptain = userIsTeamPrimaryCaptain(
+      team,
+      currentUser?.id ?? ''
+    )
+    const isStaffCaptain = userIsTeamStaffCaptain(team, currentUser?.id ?? '')
     const isMember = isMemberOfTeam(team)
     const myJoin = myPendingJoinForTeam(team.id)
     const incomingJoin = pendingJoinForTeam(team.id)
@@ -933,7 +970,7 @@ export function TeamsScreen() {
                   <Shield className="w-10 h-10 text-primary" />
                 </div>
               )}
-              {isCaptain && (
+              {isPrimaryCaptain && (
                 <>
                   <input
                     ref={logoFileInputRef}
@@ -962,7 +999,7 @@ export function TeamsScreen() {
             </div>
 
             <div className="flex-1 min-w-0 space-y-2">
-              {isCaptain ? (
+              {isPrimaryCaptain ? (
                 teamDetailEditing ? (
                   <>
                     <label className="text-xs text-muted-foreground">
@@ -1061,11 +1098,16 @@ export function TeamsScreen() {
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">{levelLabels[team.level]}</Badge>
                 <span className="text-sm text-muted-foreground">{team.city}</span>
-                {isCaptain && (
+                {isPrimaryCaptain && (
                   <span className="text-xs text-muted-foreground">(Capitán)</span>
                 )}
+                {team.viceCaptainId === currentUser?.id && !isPrimaryCaptain && (
+                  <span className="text-xs text-muted-foreground">
+                    (Vicecapitán)
+                  </span>
+                )}
               </div>
-              {isCaptain && team.logo && (
+              {isPrimaryCaptain && team.logo && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -1081,16 +1123,16 @@ export function TeamsScreen() {
             </div>
           </div>
 
-          {(!isCaptain || !teamDetailEditing) && team.description && (
+          {(!isPrimaryCaptain || !teamDetailEditing) && team.description && (
             <p className="text-muted-foreground mb-6">{team.description}</p>
           )}
-          {isCaptain && !teamDetailEditing && !team.description && (
+          {isPrimaryCaptain && !teamDetailEditing && !team.description && (
             <p className="text-sm text-muted-foreground mb-6 italic">
               Sin descripción. Pulsa Editar para añadir una.
             </p>
           )}
 
-          {(!isCaptain || !teamDetailEditing) && (
+          {(!isPrimaryCaptain || !teamDetailEditing) && (
             <div className="mb-6 rounded-2xl border border-border/80 bg-gradient-to-b from-card via-card to-secondary/[0.18] p-5 shadow-sm space-y-5">
               <div className="flex items-center gap-2.5">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 border border-primary/25 shadow-sm">
@@ -1115,7 +1157,7 @@ export function TeamsScreen() {
             </div>
           )}
 
-          {isCaptain && incomingJoin.length > 0 && !teamDetailEditing && (
+          {isStaffCaptain && incomingJoin.length > 0 && !teamDetailEditing && (
             <div className="mb-6 rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
               <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                 <Handshake className="w-4 h-4 text-primary" />
@@ -1157,7 +1199,41 @@ export function TeamsScreen() {
             </div>
           )}
 
-          {!isCaptain &&
+          {isPrimaryCaptain && !teamDetailEditing && (
+            <div className="mb-6 rounded-xl border border-border bg-card/50 p-4 space-y-2">
+              <Label className="text-foreground">Vicecapitán</Label>
+              <p className="text-xs text-muted-foreground">
+                Designá a un miembro confirmado para que gestione plantilla,
+                solicitudes y desafíos. Solo vos podés editar nombre, escudo,
+                descripción, WhatsApp y reglas.
+              </p>
+              <select
+                className="w-full h-10 rounded-lg bg-secondary border border-border px-3 text-sm text-foreground"
+                value={team.viceCaptainId ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value
+                  void setTeamViceCaptain(
+                    team.id,
+                    v.length === 0 ? null : v
+                  )
+                }}
+              >
+                <option value="">Sin vicecapitán</option>
+                {team.members
+                  .filter(
+                    (m) =>
+                      m.status === 'confirmed' && m.id !== team.captainId
+                  )
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
+
+          {!isPrimaryCaptain &&
             !isMember &&
             team.gender === currentUser?.gender && (
               <div className="mb-6 rounded-xl border border-border bg-card/50 p-4">
@@ -1168,7 +1244,7 @@ export function TeamsScreen() {
                 ) : myJoin ? (
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm text-foreground">
-                      Tu solicitud está pendiente de aprobación del capitán.
+                      Tu solicitud está pendiente de aprobación del equipo.
                     </p>
                     <Button
                       variant="outline"
@@ -1201,7 +1277,7 @@ export function TeamsScreen() {
                 <div className="flex justify-center py-6">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
-              ) : editingCoordinacion && isCaptain ? (
+              ) : editingCoordinacion && isPrimaryCaptain ? (
                 <Card className="border-primary/30 bg-card">
                   <CardContent className="space-y-4 p-4">
                     <h3 className="font-semibold text-foreground">
@@ -1310,12 +1386,12 @@ export function TeamsScreen() {
                           </Button>
                         ) : (
                           <p className="text-sm italic text-muted-foreground">
-                            {isCaptain
+                            {isPrimaryCaptain
                               ? 'Añade el enlace de invitación del grupo.'
                               : 'El capitán aún no ha compartido el enlace.'}
                           </p>
                         )}
-                        {isCaptain && (
+                        {isPrimaryCaptain && (
                           <Button
                             type="button"
                             variant="secondary"
@@ -1368,7 +1444,7 @@ export function TeamsScreen() {
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-foreground">Plantilla</h3>
-              {isCaptain && slotsAvailable > 0 && (
+              {isStaffCaptain && slotsAvailable > 0 && (
                 <Button
                   size="sm"
                   onClick={() => setView('invite')}
@@ -1409,17 +1485,47 @@ export function TeamsScreen() {
                           {team.captainId === member.id && (
                             <Crown className="w-4 h-4 text-accent" />
                           )}
+                          {team.viceCaptainId === member.id &&
+                            member.id !== team.captainId && (
+                              <Award className="w-4 h-4 text-sky-500" />
+                            )}
                         </div>
                         <p className="text-sm text-muted-foreground">
                           {positionLabels[member.position]}
                         </p>
                       </div>
-                      <Badge
-                        variant={member.status === 'confirmed' ? 'default' : 'secondary'}
-                        className={member.status === 'confirmed' ? 'bg-primary' : ''}
-                      >
-                        {member.status === 'confirmed' ? 'Activo' : 'Pendiente'}
-                      </Badge>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isStaffCaptain &&
+                          member.id !== team.captainId &&
+                          member.id !== currentUser?.id && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-8 px-2"
+                              onClick={() =>
+                                void removeTeamMember(team.id, member.id)
+                              }
+                              aria-label={`Quitar a ${member.name} del equipo`}
+                            >
+                              <UserMinus className="w-4 h-4" />
+                            </Button>
+                          )}
+                        <Badge
+                          variant={
+                            member.status === 'confirmed'
+                              ? 'default'
+                              : 'secondary'
+                          }
+                          className={
+                            member.status === 'confirmed' ? 'bg-primary' : ''
+                          }
+                        >
+                          {member.status === 'confirmed'
+                            ? 'Activo'
+                            : 'Pendiente'}
+                        </Badge>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -1434,7 +1540,7 @@ export function TeamsScreen() {
                       </div>
                       <p className="text-muted-foreground">Cupo disponible</p>
                     </div>
-                    {isCaptain && (
+                    {isStaffCaptain && (
                       <div className="flex flex-wrap gap-2 border-t border-border pt-3">
                         <Button
                           type="button"

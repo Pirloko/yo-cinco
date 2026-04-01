@@ -21,6 +21,8 @@ type Props = {
   onOpenChange: (open: boolean) => void
   opportunity: MatchOpportunity | null
   onJoin: (isGoalkeeper: boolean) => Promise<void>
+  /** Revuelta privada: el jugador no es del equipo y envía solicitud al organizador. */
+  mode?: 'join' | 'request'
 }
 
 export function JoinRevueltaDialog({
@@ -28,6 +30,7 @@ export function JoinRevueltaDialog({
   onOpenChange,
   opportunity,
   onJoin,
+  mode = 'join',
 }: Props) {
   const [gkCount, setGkCount] = useState(0)
   const [fieldCount, setFieldCount] = useState(0)
@@ -117,9 +120,13 @@ export function JoinRevueltaDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Unirte a la revuelta</DialogTitle>
+          <DialogTitle>
+            {mode === 'request' ? 'Solicitar ingreso' : 'Unirte a la revuelta'}
+          </DialogTitle>
           <DialogDescription>
-            {opportunity.title} — selecciona tu rol.
+            {mode === 'request'
+              ? `${opportunity.title} — revuelta privada de equipo. Elegí rol; el organizador del partido aceptará o rechazará tu solicitud. No pasás a ser miembro del plantel.`
+              : `${opportunity.title} — selecciona tu rol.`}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2 text-sm text-muted-foreground">

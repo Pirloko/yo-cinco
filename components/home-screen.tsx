@@ -25,6 +25,10 @@ import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 import { fetchGeoCitiesWithVenuesInRegion } from '@/lib/supabase/venue-queries'
 import { compareMatchOpportunitiesByFillUrgency } from '@/lib/match-spots'
 import { TEAM_ROSTER_MAX } from '@/lib/team-roster'
+import {
+  userIsConfirmedMemberOfTeam,
+  userIsTeamStaffCaptain,
+} from '@/lib/team-membership'
 
 type FilterType = 'all' | MatchType
 
@@ -36,6 +40,7 @@ export function HomeScreen() {
     setCurrentScreen,
     setSelectedMatchOpportunityId,
     joinMatchOpportunity,
+    requestJoinPrivateRevuelta,
     acceptRivalOpportunityWithTeam,
     participatingOpportunityIds,
     setInitialMatchesTab,
@@ -92,7 +97,9 @@ export function HomeScreen() {
     [filteredMatches]
   )
 
-  const captainTeams = getUserTeams().filter((t) => t.captainId === currentUser?.id)
+  const staffTeamsForRival = getUserTeams().filter((t) =>
+    userIsTeamStaffCaptain(t, currentUser?.id ?? '')
+  )
 
   const handleJoin = async (
     opportunityId: string,
@@ -106,12 +113,15 @@ export function HomeScreen() {
     }
 
     if (type === 'rival') {
-      if (captainTeams.length === 0) {
+      if (staffTeamsForRival.length === 0) {
         setCurrentScreen('teams')
         return
       }
-      if (captainTeams.length === 1) {
-        await acceptRivalOpportunityWithTeam(opportunityId, captainTeams[0].id)
+      if (staffTeamsForRival.length === 1) {
+        await acceptRivalOpportunityWithTeam(
+          opportunityId,
+          staffTeamsForRival[0].id
+        )
       } else {
         setRivalPickOppId(opportunityId)
       }
@@ -277,7 +287,15 @@ export function HomeScreen() {
 
         {sortedFeedMatches.length > 0 ? (
           <div className="space-y-4">
-            {sortedFeedMatches.map((match) => (
+            {sortedFeedMatches.map((match) => {
+              const privTeam = match.privateRevueltaTeamId
+                ? getUserTeams().find((t) => t.id === match.privateRevueltaTeamId)
+                : undefined
+              const isPrivExt =
+                match.type === 'open' &&
+                !!match.privateRevueltaTeamId &&
+                !userIsConfirmedMemberOfTeam(privTeam, currentUser?.id ?? '')
+              return (
               <MatchCard
                 key={match.id}
                 match={match}
@@ -290,6 +308,7 @@ export function HomeScreen() {
                 }}
                 currentUserId={currentUser?.id}
                 showHomeFeedUrgency
+                isPrivateRevueltaExternal={isPrivExt}
                 onJoin={() =>
                   handleJoin(
                     match.id,
@@ -298,7 +317,7 @@ export function HomeScreen() {
                   )
                 }
               />
-            ))}
+            )})}
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-emerald-950/50 bg-black/25 px-6 py-14 text-center dark:border-emerald-900/45 dark:bg-black/40">
@@ -321,11 +340,34 @@ export function HomeScreen() {
           if (!open) setRevueltaJoinOpp(null)
         }}
         opportunity={revueltaJoinOpp}
+        mode={
+          revueltaJoinOpp?.privateRevueltaTeamId &&
+          !userIsConfirmedMemberOfTeam(
+            getUserTeams().find((t) => t.id === revueltaJoinOpp.privateRevueltaTeamId),
+            currentUser?.id ?? ''
+          )
+            ? 'request'
+            : 'join'
+        }
         onJoin={async (isGk) => {
           if (!revueltaJoinOpp) return
+          const ext =
+            revueltaJoinOpp.privateRevueltaTeamId &&
+            !userIsConfirmedMemberOfTeam(
+              getUserTeams().find(
+                (t) => t.id === revueltaJoinOpp.privateRevueltaTeamId
+              ),
+              currentUser?.id ?? ''
+            )
+          if (ext) {
+            const r = await requestJoinPrivateRevuelta(revueltaJoinOpp.id, isGk)
+            if (r.ok) setRevueltaJoinOpp(null)
+            return
+          }
           await joinMatchOpportunity(revueltaJoinOpp.id, {
             isGoalkeeper: isGk,
           })
+          setRevueltaJoinOpp(null)
         }}
       />
 
@@ -347,7 +389,7 @@ export function HomeScreen() {
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end">
           <div className="w-full rounded-t-2xl bg-card border-t border-border p-4 space-y-3">
             <p className="font-semibold text-foreground">Selecciona tu equipo para desafiar</p>
-            {captainTeams.map((team) => (
+            {staffTeamsForRival.map((team) => (
               <button
                 key={team.id}
                 type="button"

@@ -141,6 +141,7 @@ export type MatchOpportunityRow = {
   match_stats_applied_at?: string | null
   sports_venue_id?: string | null
   venue_reservation_id?: string | null
+  private_revuelta_team_id?: string | null
 }
 
 export type CreatorSnippet = {
@@ -179,6 +180,7 @@ export function mapMatchOpportunityFromDb(
     creatorName: c.name || 'Jugador',
     creatorPhoto: c.photo_url || DEFAULT_AVATAR,
     teamName: row.team_name ?? undefined,
+    privateRevueltaTeamId: row.private_revuelta_team_id ?? undefined,
     playersNeeded: row.players_needed ?? undefined,
     playersJoined: row.players_joined,
     playersSeekProfile: parsePlayersSeekProfile(row.players_seek_profile),

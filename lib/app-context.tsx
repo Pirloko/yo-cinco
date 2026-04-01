@@ -53,7 +53,11 @@ import {
   fetchTeamsWithMembers,
 } from '@/lib/supabase/team-queries'
 import { fetchParticipatingOpportunityIds } from '@/lib/supabase/message-queries'
-import { TEAM_ROSTER_MAX } from '@/lib/team-roster'
+import { TEAM_ROSTER_MAX, TEAM_USER_MAX_MEMBERSHIPS } from '@/lib/team-roster'
+import {
+  userIsConfirmedMemberOfTeam,
+  userIsTeamStaffCaptain,
+} from '@/lib/team-membership'
 import { fetchRivalChallengesForUser } from '@/lib/supabase/rival-challenge-queries'
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js'
 import {
@@ -90,7 +94,9 @@ function isTeamLimitReached(err: unknown): boolean {
 }
 
 function toastTeamLimitReached() {
-  toast.error('Llegaste al máximo de 5 equipos.')
+  toast.error(
+    `Llegaste al máximo de ${TEAM_USER_MAX_MEMBERSHIPS} equipos en los que podés participar.`
+  )
 }
 
 function getAuthUserEmail(u: SupabaseAuthUser): string | undefined {
@@ -206,6 +212,16 @@ interface AppContextType {
     opportunityId: string,
     options?: { isGoalkeeper?: boolean }
   ) => Promise<void>
+  /** Revuelta privada: jugador externo pide cupo; el organizador del partido acepta en detalle. */
+  requestJoinPrivateRevuelta: (
+    opportunityId: string,
+    isGoalkeeper: boolean
+  ) => Promise<{ ok: boolean; error?: string }>
+  /** Organizador de la revuelta privada: aceptar o rechazar solicitud externa. */
+  respondToRevueltaExternalRequest: (
+    requestId: string,
+    accept: boolean
+  ) => Promise<{ ok: boolean; error?: string }>
   /** Organizador revuelta (cupos llenos): sorteo aleatorio A/B + colores camiseta. */
   randomizeRevueltaTeams: (
     opportunityId: string,
@@ -297,6 +313,13 @@ interface AppContextType {
   respondToJoinRequest: (requestId: string, accept: boolean) => Promise<void>
   /** Jugador: retirar solicitud pendiente. */
   cancelJoinRequest: (requestId: string) => Promise<void>
+  /** Solo capitán principal: designar o quitar vicecapitán (debe ser miembro confirmado). */
+  setTeamViceCaptain: (
+    teamId: string,
+    viceUserId: string | null
+  ) => Promise<void>
+  /** Capitán o vice: quitar miembro (no al capitán principal). */
+  removeTeamMember: (teamId: string, memberUserId: string) => Promise<void>
   getUserTeams: () => Team[]
   getFilteredTeams: (gender: Gender) => Team[]
   /** Oportunidades donde el usuario se apuntó como participante (no incluye ser creador). */
@@ -715,6 +738,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toastReadOnly(ro.reason)
       return { ok: false as const, error: ro.reason || 'Cuenta restringida.' }
     }
+    if (m.privateRevueltaTeamId) {
+      if (m.type !== 'open') {
+        return {
+          ok: false as const,
+          error: 'La revuelta privada solo aplica a partidos tipo revuelta.',
+        }
+      }
+      const tm = teams.find((t) => t.id === m.privateRevueltaTeamId)
+      if (!userIsConfirmedMemberOfTeam(tm, currentUser.id)) {
+        toast.error('Debés ser miembro del equipo para crear una revuelta privada.')
+        return {
+          ok: false as const,
+          error: 'No eres miembro del equipo seleccionado.',
+        }
+      }
+    }
     const supabase = createClient()
 
     let reservationId: string | null = null
@@ -770,6 +809,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       status: m.status,
       sports_venue_id: m.sportsVenueId ?? null,
       venue_reservation_id: reservationId,
+      private_revuelta_team_id: m.privateRevueltaTeamId ?? null,
     }
     const { data, error } = await supabase
       .from('match_opportunities')
@@ -897,6 +937,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let insertAsGk = false
 
     if (opp.type === 'open') {
+      if (opp.privateRevueltaTeamId) {
+        const privTeam = teams.find((t) => t.id === opp.privateRevueltaTeamId)
+        if (!userIsConfirmedMemberOfTeam(privTeam, currentUser.id)) {
+          toast.error(
+            'Revuelta privada de equipo: pedí ingreso con «Solicitar» y el organizador del partido te aceptará.'
+          )
+          return
+        }
+      }
       const { data: partRows, error: partQErr } = await supabase
         .from('match_opportunity_participants')
         .select('is_goalkeeper, status')
@@ -1041,6 +1090,82 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? `¡Te uniste al partido! Coordina en el chat. ${payLine}`
         : '¡Te uniste al partido! Coordina aquí con el grupo.'
     )
+  }
+
+  const requestJoinPrivateRevuelta = async (
+    opportunityId: string,
+    isGoalkeeper: boolean
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser || !isSupabaseConfigured()) {
+      return { ok: false, error: 'Sesión no disponible.' }
+    }
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return { ok: false, error: ro.reason }
+    }
+    const opp = matchOpportunities.find((m) => m.id === opportunityId)
+    if (!opp || opp.type !== 'open' || !opp.privateRevueltaTeamId) {
+      toast.error('Esta revuelta no admite solicitud externa.')
+      return { ok: false, error: 'No aplica.' }
+    }
+    const privTeam = teams.find((t) => t.id === opp.privateRevueltaTeamId)
+    if (userIsConfirmedMemberOfTeam(privTeam, currentUser.id)) {
+      toast.info('Sos del equipo: unite con el flujo normal.')
+      return { ok: false, error: 'Miembro del equipo.' }
+    }
+    const supabase = createClient()
+    const { error } = await supabase.from('revuelta_external_join_requests').insert({
+      opportunity_id: opportunityId,
+      requester_id: currentUser.id,
+      is_goalkeeper: isGoalkeeper,
+      status: 'pending',
+    })
+    if (error) {
+      if (error.code === '23505') {
+        toast.info('Ya tenés una solicitud pendiente para este partido.')
+        return { ok: false, error: error.message }
+      }
+      toast.error(error.message)
+      return { ok: false, error: error.message }
+    }
+    toast.success('Solicitud enviada. El organizador del partido la revisará.')
+    return { ok: true }
+  }
+
+  const respondToRevueltaExternalRequest = async (
+    requestId: string,
+    accept: boolean
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!currentUser || !isSupabaseConfigured()) {
+      return { ok: false, error: 'Sesión no disponible.' }
+    }
+    const supabase = createClient()
+    const fn = accept
+      ? 'accept_revuelta_external_request'
+      : 'decline_revuelta_external_request'
+    const { data, error } = await supabase.rpc(fn, { p_request_id: requestId })
+    if (error) {
+      toast.error(error.message)
+      return { ok: false, error: error.message }
+    }
+    const payload = data as { ok?: boolean; error?: string } | null
+    if (!payload?.ok) {
+      const msg =
+        typeof payload?.error === 'string' ? payload.error : 'No se pudo procesar.'
+      toast.error(msg)
+      return { ok: false, error: msg }
+    }
+    toast.success(
+      accept ? 'Jugador agregado al partido.' : 'Solicitud rechazada.'
+    )
+    const [matches, partIds] = await Promise.all([
+      fetchMatchOpportunities(supabase),
+      fetchParticipatingOpportunityIds(supabase, currentUser.id),
+    ])
+    setMatchOpportunities(matches)
+    setParticipatingOpportunityIds(partIds)
+    return { ok: true }
   }
 
   const randomizeRevueltaTeams = async (
@@ -1625,6 +1750,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
     const supabase = createClient()
+    if (!userIsTeamStaffCaptain(payload.challengerTeam, currentUser.id)) {
+      toast.error(
+        'Solo el capitán o el vicecapitán del equipo pueden crear un desafío.'
+      )
+      return
+    }
+
     const title =
       payload.mode === 'direct' && payload.challengedTeam
         ? `${payload.challengerTeam.name} vs ${payload.challengedTeam.name}`
@@ -1814,6 +1946,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.error('No se encontró un desafío pendiente para este partido.')
       return
     }
+    const myTeam = teams.find((t) => t.id === myTeamId)
+    if (!myTeam || !userIsTeamStaffCaptain(myTeam, currentUser.id)) {
+      toast.error('Solo el capitán o vicecapitán del equipo puede aceptar el desafío.')
+      return
+    }
     await respondToRivalChallenge(challenge.id, true, myTeamId)
   }
 
@@ -1920,7 +2057,95 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     const list = await fetchTeamJoinRequestsForUser(supabase, currentUser.id)
     setTeamJoinRequests(list)
-    toast.success('Solicitud enviada al capitán')
+    toast.success('Solicitud enviada al equipo')
+  }
+
+  const setTeamViceCaptain = async (
+    teamId: string,
+    viceUserId: string | null
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
+    const team = teams.find((t) => t.id === teamId)
+    if (!team || team.captainId !== currentUser.id) {
+      toast.error('Solo el capitán del equipo puede designar al vicecapitán.')
+      return
+    }
+    if (viceUserId && viceUserId === team.captainId) return
+    if (viceUserId) {
+      const ok = team.members.some(
+        (m) => m.id === viceUserId && m.status === 'confirmed'
+      )
+      if (!ok) {
+        toast.error('El vicecapitán debe ser un miembro confirmado del plantel.')
+        return
+      }
+    }
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('teams')
+      .update({
+        vice_captain_id: viceUserId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', teamId)
+      .eq('captain_id', currentUser.id)
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    const freshTeams = await fetchTeamsWithMembers(supabase)
+    setTeams(freshTeams)
+    toast.success(
+      viceUserId ? 'Vicecapitán designado.' : 'Vicecapitán removido.'
+    )
+  }
+
+  const removeTeamMember = async (teamId: string, memberUserId: string) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
+    const team = teams.find((t) => t.id === teamId)
+    if (!team || !userIsTeamStaffCaptain(team, currentUser.id)) {
+      toast.error('No tenés permiso para quitar jugadores de este equipo.')
+      return
+    }
+    if (memberUserId === team.captainId) {
+      toast.error('No podés quitar al capitán del equipo.')
+      return
+    }
+    if (memberUserId === currentUser.id) {
+      toast.error('Para salir del equipo usá «Salir».')
+      return
+    }
+    const ok = confirm('¿Retirar a este jugador del plantel?')
+    if (!ok) return
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('team_members')
+      .delete()
+      .eq('team_id', teamId)
+      .eq('user_id', memberUserId)
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    const [freshTeams, invites, joinReqs] = await Promise.all([
+      fetchTeamsWithMembers(supabase),
+      fetchTeamInvitesForUser(supabase, currentUser.id),
+      fetchTeamJoinRequestsForUser(supabase, currentUser.id),
+    ])
+    setTeams(freshTeams)
+    setTeamInvites(invites)
+    setTeamJoinRequests(joinReqs)
+    toast.success('Jugador retirado del equipo')
   }
 
   const respondToJoinRequest = async (requestId: string, accept: boolean) => {
@@ -1934,7 +2159,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const req = teamJoinRequests.find((r) => r.id === requestId)
     if (!req || req.status !== 'pending') return
     const team = teams.find((t) => t.id === req.teamId)
-    if (!team || team.captainId !== currentUser.id) return
+    if (!team || !userIsTeamStaffCaptain(team, currentUser.id)) return
 
     if (!accept) {
       const { error } = await supabase
@@ -2489,6 +2714,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addMatchOpportunity,
         reserveVenueOnly,
         joinMatchOpportunity,
+        requestJoinPrivateRevuelta,
+        respondToRevueltaExternalRequest,
         randomizeRevueltaTeams,
         finalizeMatchOpportunity,
         submitRivalCaptainVote,
@@ -2516,6 +2743,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         requestToJoinTeam,
         respondToJoinRequest,
         cancelJoinRequest,
+        setTeamViceCaptain,
+        removeTeamMember,
         getUserTeams,
         getFilteredTeams,
         participatingOpportunityIds,

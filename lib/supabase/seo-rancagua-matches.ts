@@ -25,6 +25,11 @@ function createServiceClient() {
  */
 export async function fetchRancaguaSeoMatches(options: {
   typeFilter: 'all' | MatchType
+  /**
+   * Si se define, solo filas cuya `location` o `venue` contengan alguna cadena
+   * (sin distinguir mayúsculas). Útil para páginas por sector o recinto.
+   */
+  locationKeywords?: string[]
 }): Promise<RancaguaSeoMatchRow[]> {
   const supabase = createServiceClient()
   if (!supabase) return []
@@ -42,7 +47,7 @@ export async function fetchRancaguaSeoMatches(options: {
 
   let q = supabase
     .from('match_opportunities')
-    .select('id, title, location, date_time, type')
+    .select('id, title, location, venue, date_time, type')
     .in('status', ['pending', 'confirmed'])
     .gte('date_time', new Date().toISOString())
     .or(orParts.join(','))
@@ -56,7 +61,19 @@ export async function fetchRancaguaSeoMatches(options: {
   const { data, error } = await q
   if (error || !data) return []
 
-  return data.map((row) => ({
+  const needles = (options.locationKeywords ?? [])
+    .map((k) => k.trim().toLowerCase())
+    .filter(Boolean)
+
+  const filtered =
+    needles.length === 0
+      ? data
+      : data.filter((row) => {
+          const hay = `${(row.location as string) ?? ''} ${(row.venue as string) ?? ''}`.toLowerCase()
+          return needles.some((n) => hay.includes(n))
+        })
+
+  return filtered.map((row) => ({
     id: row.id as string,
     title: (row.title as string) ?? 'Partido',
     location: (row.location as string) ?? '',
