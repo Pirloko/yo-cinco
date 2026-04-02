@@ -1,6 +1,14 @@
-# Pichanga — Documentación del proyecto
+# Pichanga / SPORTMATCH — Documentación técnica del proyecto
 
-Plataforma web de matchmaking para fútbol amateur (6 vs 6): rivales, búsqueda de jugadores, revueltas, equipos, centros deportivos y reservas de cancha. Esta documentación resume **stack**, **arquitectura**, **base de datos (Supabase/PostgreSQL)** y **recursos** del repositorio.
+Documento de referencia único: **stack**, **arquitectura de la app**, **módulos y responsabilidades en `lib/`**, **rutas y APIs**, **Supabase (tablas, columnas, enums, funciones RPC y storage)**.  
+Actualizar este archivo cuando cambien migraciones, tipos en `lib/types.ts` o dependencias relevantes.
+
+| Campo | Valor |
+|--------|--------|
+| Paquete npm (`package.json`) | `sportmatch` 0.1.0 (privado) |
+| Marca en UI / metadatos | SPORTMATCH (`app/layout.tsx`; URL canónica por defecto `https://www.sportmatch.cl` si no hay `NEXT_PUBLIC_SITE_URL`) |
+| Node | `22.x` (`engines`) |
+| Gestor de paquetes | Recomendado **pnpm** (`pnpm-lock.yaml`; también puede existir `package-lock.json`) |
 
 ---
 
@@ -12,18 +20,20 @@ Plataforma web de matchmaking para fútbol amateur (6 vs 6): rivales, búsqueda 
 | UI | **React 19** |
 | Lenguaje | **TypeScript 5.7** |
 | Estilos | **Tailwind CSS 4** + **tw-animate-css** |
-| Componentes | **Radix UI** (primitivos) + **shadcn/ui** (patrón en `components/ui/`) |
-| Backend / datos | **Supabase** (`@supabase/supabase-js`, `@supabase/ssr`) |
-| Auth | Supabase Auth (email/contraseña); sesión en cliente con persistencia (`lib/supabase/client.ts`) |
+| Componentes | **Radix UI** + patrón **shadcn/ui** en `components/ui/` |
+| Backend / datos | **Supabase** (PostgreSQL, Auth, Storage, RLS, Realtime) |
+| Cliente Supabase | `@supabase/supabase-js`, `@supabase/ssr` |
 | Formularios | **react-hook-form**, **zod**, **@hookform/resolvers** |
-| Fechas | **date-fns** |
-| Notificaciones UI | **sonner** |
-| Temas | **next-themes** |
+| Fechas | **date-fns**, **date-fns-tz** |
+| Iconos | **lucide-react** |
+| Carruseles | **embla-carousel-react** |
 | Gráficos (admin) | **recharts** |
-| Analytics | **@vercel/analytics** |
-| Deploy típico | **Netlify** (`@netlify/plugin-nextjs` en devDependencies) |
+| Toasts | **sonner** |
+| Temas | **next-themes** |
+| Analytics | **@vercel/analytics** (típico con `VERCEL=1`) |
+| Deploy | Frecuente **Netlify** (`@netlify/plugin-nextjs` en devDependencies) |
 
-**Requisitos:** Node.js **≥ 20** (ver `package.json` → `engines`).
+**Scripts:** `pnpm dev` / `npm run dev`, `build`, `start`, `lint` (eslint).
 
 ---
 
@@ -31,11 +41,13 @@ Plataforma web de matchmaking para fútbol amateur (6 vs 6): rivales, búsqueda 
 
 | Variable | Uso |
 |----------|-----|
-| `NEXT_PUBLIC_SUPABASE_URL` | URL del proyecto Supabase (cliente browser y SSR) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clave anónima (solo operaciones permitidas por RLS) |
-| `SUPABASE_SERVICE_ROLE_KEY` | **Solo servidor** (API routes admin). **No** exponer al frontend ni con prefijo `NEXT_PUBLIC_` |
+| `NEXT_PUBLIC_SUPABASE_URL` | URL del proyecto Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clave anónima (RLS) |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Solo servidor** (API routes admin, scripts). Nunca `NEXT_PUBLIC_` |
+| `NEXT_PUBLIC_SITE_URL` | URL pública (metadata, OG, redirects) |
+| `NEXT_PUBLIC_APP_TIMEZONE` | Opcional; zona horaria por defecto (p. ej. `America/Santiago`) |
 
-Archivo local de ejemplo: `.env.local` (no versionar secretos).
+Archivo local: **`.env.local`** (no versionar secretos).
 
 ---
 
@@ -45,59 +57,113 @@ Archivo local de ejemplo: `.env.local` (no versionar secretos).
 
 | Ruta | Descripción |
 |------|-------------|
-| `/` | App principal: **SPA interna** con `AppProvider` (`lib/app-context.tsx`). Pantallas por estado (`currentScreen`), no por rutas anidadas. |
-| `/centro/[venueId]` | Página pública del centro: horarios, slots y enlace a crear partido con prefill. |
-| `/equipo/[teamId]` | Ficha pública de equipo (invitaciones). |
+| `/` | App principal tipo **SPA interna**: `AppProvider` (`lib/app-context.tsx`), pantallas por estado `currentScreen`. |
+| `/centro/[venueId]` | Ficha pública del centro deportivo. |
+| `/equipo/[teamId]` | Ficha pública de equipo. |
 | `/revuelta/[opportunityId]` | Vista pública de revuelta (tipo `open`). |
-| `app/api/admin/metrics` | Métricas de reservas (requiere service role / lógica admin). |
-| `app/api/admin/create-venue-user` | Alta de usuario centro (service role). |
+| `/swipe` | Pantalla swipe (experimento / flujo aparte). |
+| `/rancagua/*` | Páginas SEO (futbolito, buscar rival, revueltas, faltan jugadores, canchas concretas). |
 
-### 3.2 Middleware (`middleware.ts`)
+**API routes** (`app/api/`): ver sección 5.
 
-Refresca la sesión JWT de Supabase y sincroniza cookies entre request/response (patrón recomendado con `@supabase/ssr`).
+### 3.2 Proxy / sesión
+
+- **`proxy.ts`**: refresco de sesión JWT de Supabase y sincronización de cookies (patrón `@supabase/ssr` con Next 16).
 
 ### 3.3 Estado global
 
-- **`lib/app-context.tsx`**: usuario, partidos, equipos, chats, pantalla actual, login/logout, creación de oportunidades, reservas RPC, etc.
-- **Almacenamiento local**: tema (`pichanga-theme`), última pestaña de navegación (`pichanga-last-nav-screen`), prefill de crear partido, deep links de equipo/partido.
+- **`lib/app-context.tsx`**: usuario autenticado, partidos, equipos, chats, pantalla actual, flujos de creación, reservas, etc.
+- **LocalStorage (ejemplos)**: tema, última pestaña de navegación, prefill de crear partido, deep links.
 
 ### 3.4 Carpetas relevantes
 
 ```
-app/                 # Layout, página principal, rutas públicas, API routes
-components/          # Pantallas y UI (home, create, teams, matches, venue-dashboard, etc.)
-lib/                 # Contexto, tipos, queries Supabase, utilidades
+app/                 # Layout, páginas, API routes
+components/          # Pantallas (*-screen.tsx), UI compuesta, admin, venue, etc.
+lib/                 # Tipos, contexto, queries Supabase, utilidades
 supabase/migrations/ # Esquema PostgreSQL versionado
-middleware.ts        # Sesión Supabase en edge
+public/              # Estáticos (logos, team/*.png, etc.)
 ```
 
----
+### 3.5 Pantallas principales (componentes)
 
-## 4. Modelo de dominio (TypeScript)
-
-Referencia principal: **`lib/types.ts`**. Incluye entre otros:
-
-- `User`, `MatchOpportunity`, `MatchType`, `MatchStatus`, `Gender`, `Level`, `Position`
-- `Team`, `TeamMember`, `TeamInvite`, `TeamJoinRequest`, `TeamPrivateSettings`
-- `RivalChallenge`, `SportsVenue`, `VenueCourt`, `VenueWeeklyHour`, `VenueReservationRow`
-- `OnboardingData`, `VenueOnboardingData`, `AccountType` (`player` | `venue` | `admin`)
-
-Los mappers DB → app están en **`lib/supabase/mappers.ts`** (y queries específicas en `lib/supabase/*.ts`).
+Incluyen entre otros: `home-screen`, `explore-screen`, `swipe-screen`, `create-screen`, `matches-screen`, `teams-screen`, `venue-dashboard-screen`, `admin-dashboard-screen`, `admin-geo-catalog-panel`, navegación (`bottom-nav`), etc. La lista exacta evoluciona en `components/`.
 
 ---
 
-## 5. Base de datos (Supabase / PostgreSQL)
+## 4. Tipos y dominio (TypeScript)
 
-Motor: **PostgreSQL** (Supabase). El esquema evoluciona con migraciones en **`supabase/migrations/`** (orden cronológico por prefijo de fecha).
+Referencia canónica: **`lib/types.ts`**.
 
-### 5.1 Extensiones
+**Enums / unions:** `Gender`, `Position`, `Level`, `MatchType`, `PlayersSeekProfile`, `MatchStatus`, `MatchesHubTab`, `RivalResult`, `RevueltaResult`, `AccountType`, `RivalChallengeMode`, `RivalChallengeStatus`.
 
-- **`pgcrypto`**: `gen_random_uuid()`, etc.
+**Entidades principales:** `User`, `PublicPlayerProfile`, `SportsVenue`, `VenueCourt`, `VenueWeeklyHour`, `VenueReservationRow`, `Team`, `TeamMember`, `TeamPrivateSettings`, `TeamInvite`, `TeamJoinRequest`, `RivalChallenge`, `MatchOpportunity`, `Match`, `Message`, `OnboardingData`, `VenueOnboardingData`, catálogo geo `GeoCountry`, `GeoRegion`, `GeoCity`.
 
-### 5.2 Tipos ENUM (PostgreSQL)
+**Revuelta:** estructura de alineación en `lib/revuelta-lineup.ts` (`RevueltaLineup`).
 
-| Tipo | Valores (resumen) |
-|------|-------------------|
+---
+
+## 5. API routes (servidor)
+
+Todas bajo `app/api/admin/`; suelen exigir **service role** o comprobación admin según implementación.
+
+| Ruta | Rol típico |
+|------|------------|
+| `admin/metrics` | Métricas / agregados |
+| `admin/create-venue-user` | Alta usuario tipo centro |
+| `admin/geo` | CRUD / activación catálogo geo |
+| `admin/reports` | Moderación de reportes |
+| `admin/sanctions` | Sanciones (tarjetas / ban vía backend) |
+
+Revisar cada `route.ts` para body, auth y códigos de error.
+
+---
+
+## 6. Módulos `lib/` (funciones y responsabilidades)
+
+No lista exhaustiva de cada exportación; sí el **propósito** de cada archivo relevante.
+
+| Archivo / área | Función |
+|----------------|---------|
+| `app-context.tsx` | Estado global de la SPA, auth, datos de negocio en cliente. |
+| `types.ts` | Modelos TypeScript del dominio. |
+| `utils.ts` | Utilidades generales (p. ej. `cn` para clases). |
+| `site-url.ts`, `seo/*` | Origen público del sitio y SEO. |
+| `match-datetime-format.ts`, `match-spots.ts`, `time-slot-options.ts`, `venue-options.ts`, `venue-slots.ts`, `court-pricing.ts` | Fechas, cupos, horarios, precios de cancha. |
+| `age-birthday.ts` | Edad desde `birth_date`. |
+| `organizer-level.ts`, `team-rival-momentum.ts`, `team-membership.ts`, `team-roster.ts` | Reglas de nivel, rivales, membresía y plantilla. |
+| `players-seek-profile.ts`, `revuelta-lineup.ts`, `rival-prefill.ts`, `match-invite-url.ts`, `team-invite-url.ts`, `create-prefill.ts`, `player-nav-storage.ts` | Flujos de partidos, revuelta, invitaciones y navegación. |
+| `jersey-colors.ts`, `card-shell.ts`, `image-webp.ts` | UI / imágenes. |
+| `geo-constants.ts` | Constantes de geo. |
+| `mock-data.ts` | Datos de prueba / fallback. |
+| `supabase/client.ts` | Cliente browser Supabase. |
+| `supabase/server.ts` | Cliente servidor (cookies). |
+| `supabase/admin.ts` | Cliente con service role (solo servidor). |
+| `supabase/require-admin.ts` | Helpers para rutas admin. |
+| `supabase/auth-errors.ts` | Mensajes de error de auth. |
+| `supabase/queries.ts` | Consultas generales de oportunidades / app. |
+| `supabase/mappers.ts` | Mapeo filas DB → tipos de app. |
+| `supabase/message-queries.ts` | Chat por oportunidad. |
+| `supabase/team-queries.ts`, `team-logos.ts`, `team-stats-queries.ts` | Equipos, logos, estadísticas. |
+| `supabase/rival-challenge-queries.ts` | Desafíos rival. |
+| `supabase/rating-queries.ts` | Calificaciones post-partido. |
+| `supabase/venue-queries.ts`, `public-venue-server.ts` | Centros y lecturas públicas. |
+| `supabase/geo-queries.ts` | Catálogo geo en cliente. |
+| `supabase/public-team-server.ts`, `public-revuelta-server.ts` | SSR páginas públicas. |
+| `supabase/revuelta-external-requests.ts` | Solicitudes externas a revuelta privada. |
+| `supabase/profile-photo.ts` | Subida avatar. |
+| `supabase/seo-rancagua-matches.ts` | Datos para SEO Rancagua. |
+
+---
+
+## 7. Base de datos (Supabase / PostgreSQL)
+
+Origen: migraciones en **`supabase/migrations/`** (orden cronológico). Las columnas listadas son el **estado acumulado** tras aplicar todas.
+
+### 7.1 Tipos ENUM (PostgreSQL)
+
+| Tipo | Valores |
+|------|---------|
 | `gender` | `male`, `female` |
 | `position` | `portero`, `defensa`, `mediocampista`, `delantero` |
 | `skill_level` | `principiante`, `intermedio`, `avanzado`, `competitivo` |
@@ -107,98 +173,95 @@ Motor: **PostgreSQL** (Supabase). El esquema evoluciona con migraciones en **`su
 | `invite_status` | `pending`, `accepted`, `declined` |
 | `participant_status` | `pending`, `confirmed`, `cancelled` |
 | `rival_result` | `creator_team`, `rival_team`, `draw` |
+| `revuelta_result` | `team_a`, `team_b`, `draw` |
 | `rival_challenge_mode` | `direct`, `open` |
 | `rival_challenge_status` | `pending`, `accepted`, `declined`, `cancelled` |
-| `account_type` | `player`, `venue`; luego **`admin`** (migración admin) |
-| `venue_reservation_status` | `pending`, `confirmed`, `cancelled` (evolución por migraciones) |
+| `account_type` | `player`, `venue`, `admin` |
+| `venue_reservation_status` | `pending`, `confirmed`, `cancelled` |
 | `venue_payment_status` | `unpaid`, `deposit_paid`, `paid` |
+| `player_report_status` | `pending`, `reviewed`, `dismissed`, `action_taken` |
 
----
+### 7.2 Tabla `profiles`
 
-### 5.3 Tablas y columnas
-
-#### `public.profiles`
-
-Perfil 1:1 con `auth.users`.
+Extiende `auth.users` (1:1 por `id`).
 
 | Columna | Tipo | Notas |
 |---------|------|--------|
-| `id` | UUID PK | FK → `auth.users(id)` ON DELETE CASCADE |
+| `id` | UUID PK | FK → `auth.users.id` ON DELETE CASCADE |
 | `name` | TEXT | |
-| `age` | INTEGER | CHECK 0–120 |
+| `age` | INTEGER | CHECK 0–120; puede sincronizarse con `birth_date` |
 | `gender` | `gender` | |
 | `position` | `position` | |
 | `level` | `skill_level` | |
-| `city` | TEXT | |
+| `city` | TEXT | Texto legado / display; convive con `city_id` |
+| `city_id` | UUID FK | → `geo_cities.id` |
 | `availability` | TEXT[] | |
 | `photo_url` | TEXT | |
-| `bio` | TEXT | nullable |
-| `whatsapp_phone` | TEXT | registro / flujo app |
-| `account_type` | `account_type` | `player` por defecto; `venue`/`admin` según negocio |
-| `created_at`, `updated_at` | TIMESTAMPTZ | trigger `set_updated_at` |
+| `bio` | TEXT | |
+| `created_at`, `updated_at` | TIMESTAMPTZ | `updated_at` vía trigger |
+| `account_type` | `account_type` | default `player` |
+| `whatsapp_phone` | TEXT | |
+| `player_essentials_completed_at` | TIMESTAMPTZ | Onboarding jugador |
+| `birth_date` | DATE | Opcional; edad derivada |
+| `stats_player_wins`, `stats_player_draws`, `stats_player_losses` | INTEGER | ≥ 0 |
+| `stats_organized_completed`, `stats_organizer_wins` | INTEGER | ≥ 0 |
+| `mod_yellow_cards`, `mod_red_cards` | INTEGER | Moderación |
+| `mod_suspended_until` | TIMESTAMPTZ | |
+| `mod_banned_at` | TIMESTAMPTZ | |
+| `mod_ban_reason` | TEXT | |
 
-Trigger: **`handle_new_user`** en `auth.users` INSERT → crea fila en `profiles`.
-
----
-
-#### `public.match_opportunities`
-
-Oportunidades de partido (listados, crear, explorar).
+### 7.3 Tabla `match_opportunities`
 
 | Columna | Tipo | Notas |
 |---------|------|--------|
 | `id` | UUID PK | |
 | `type` | `match_type` | |
-| `title` | TEXT | |
-| `description` | TEXT | |
-| `location` | TEXT | |
-| `venue` | TEXT | nombre lugar (texto libre o derivado) |
+| `title`, `description` | TEXT | |
+| `location`, `venue` | TEXT | |
 | `date_time` | TIMESTAMPTZ | |
 | `level` | `skill_level` | |
-| `creator_id` | UUID FK → `profiles` | |
-| `team_name` | TEXT | nullable |
-| `players_needed` | INTEGER | nullable; revuelta `open`: típ. 10–12 |
-| `players_joined` | INTEGER | mantenido por trigger según participantes |
+| `creator_id` | UUID FK | → `profiles` |
+| `team_name` | TEXT | |
+| `players_needed`, `players_joined` | INTEGER | `players_joined` mantenido por trigger |
 | `gender` | `gender` | |
 | `status` | `match_status` | |
 | `created_at`, `updated_at` | TIMESTAMPTZ | |
-| `finalized_at` | TIMESTAMPTZ | cierre por organizador (calificaciones 48 h) |
-| `rival_result` | `rival_result` | solo tipo rival |
-| `casual_completed` | BOOLEAN | players/open “jugado” |
-| `suspended_at` | TIMESTAMPTZ | |
-| `suspended_reason` | TEXT | longitud validada |
-| `players_seek_profile` | TEXT | `gk_only`, `field_only`, `gk_and_field` o NULL |
-| `revuelta_lineup` | JSONB | equipos A/B sorteados |
-| `sports_venue_id` | UUID FK | nullable → `sports_venues` |
-| `venue_reservation_id` | UUID FK | nullable → `venue_reservations` |
+| `sports_venue_id` | UUID FK | → `sports_venues` |
+| `venue_reservation_id` | UUID FK | → `venue_reservations` |
+| `city_id` | UUID FK | → `geo_cities` |
+| `players_seek_profile` | TEXT | p. ej. `gk_only`, `field_only`, `gk_and_field` |
+| `revuelta_lineup` | JSONB | Equipos A/B |
+| `finalized_at` | TIMESTAMPTZ | Cierre por organizador |
+| `rival_result` | `rival_result` | Solo tipo `rival` |
+| `casual_completed` | BOOLEAN | Tipos `players` / `open` |
+| `suspended_at`, `suspended_reason` | TIMESTAMPTZ, TEXT | |
+| `revuelta_result` | `revuelta_result` | |
+| `rival_captain_vote_challenger`, `rival_captain_vote_accepted` | `rival_result` | |
+| `rival_outcome_disputed` | BOOLEAN | |
+| `match_stats_applied_at` | TIMESTAMPTZ | Anti doble conteo stats |
+| `private_revuelta_team_id` | UUID FK | → `teams`; solo con `type = open` |
 
-Realtime: publicado en migración inicial (y uso en app).
+### 7.4 Tabla `match_opportunity_participants`
 
----
+| Columna | Tipo |
+|---------|------|
+| `opportunity_id` | UUID FK → `match_opportunities` (PK parte) |
+| `user_id` | UUID FK → `profiles` (PK parte) |
+| `status` | `participant_status` |
+| `created_at` | TIMESTAMPTZ |
+| `is_goalkeeper` | BOOLEAN | Revuelta |
 
-#### `public.match_opportunity_participants`
+### 7.5 Tablas `matches`, `match_participants`
 
-| Columna | Tipo | Notas |
-|---------|------|--------|
-| `opportunity_id` | UUID | FK → `match_opportunities`, parte de PK |
-| `user_id` | UUID | FK → `profiles`, parte de PK |
-| `status` | `participant_status` | |
-| `created_at` | TIMESTAMPTZ | |
-| `is_goalkeeper` | BOOLEAN | revuelta `open`; límites por triggers |
+Instancia de partido opcional; enlazada a oportunidad.
 
-Triggers: refresco de `players_joined`, cupos revuelta, límite arqueros.
+| `matches` | `id`, `opportunity_id`, `status`, `created_at` |
+|-----------|--------------------------------------------------|
+| `match_participants` | `match_id`, `user_id` (PK compuesta) |
 
----
+### 7.6 Tabla `messages`
 
-#### `public.matches` y `public.match_participants`
-
-Instancia opcional de partido confirmado (esquema inicial; políticas RLS enlazan a creador de oportunidad).
-
----
-
-#### `public.messages`
-
-Chat por oportunidad (`opportunity_id` = id de `match_opportunities` en el front).
+Chat por oportunidad (`matchId` en la app = `opportunity_id`).
 
 | Columna | Tipo |
 |---------|------|
@@ -208,281 +271,199 @@ Chat por oportunidad (`opportunity_id` = id de `match_opportunities` en el front
 | `content` | TEXT (1–8000 chars) |
 | `created_at` | TIMESTAMPTZ |
 
----
-
-#### `public.teams`
-
-| Columna | Tipo |
-|---------|------|
-| `id` | UUID PK |
-| `name` | TEXT |
-| `logo_url` | TEXT |
-| `level` | `skill_level` |
-| `captain_id` | UUID FK → `profiles` |
-| `city` | TEXT |
-| `gender` | `gender` |
-| `description` | TEXT |
-| `created_at`, `updated_at` | TIMESTAMPTZ |
-
-Límite: capitán con máx. 5 equipos (trigger en `teams`).
-
----
-
-#### `public.team_members`
-
-| Columna | Tipo |
-|---------|------|
-| `team_id`, `user_id` | PK compuesta, FKs |
-| `position` | `position` |
-| `photo_url` | TEXT |
-| `status` | `team_member_status` |
-| `created_at` | TIMESTAMPTZ |
-
-Límite: máx. 5 equipos por usuario (trigger en INSERT).
-
----
-
-#### `public.team_invites`
-
-| Columna | Tipo |
-|---------|------|
-| `id` | UUID PK |
-| `team_id` | UUID FK |
-| `inviter_id`, `invitee_id` | UUID FK → `profiles` |
-| `status` | `invite_status` |
-| `created_at` | TIMESTAMPTZ |
-
-Índice único parcial: un `pending` por `(team_id, invitee_id)`.
-
----
-
-#### `public.team_join_requests`
-
-| Columna | Tipo |
-|---------|------|
-| `id` | UUID PK |
-| `team_id` | UUID FK |
-| `requester_id` | UUID FK |
-| `status` | `invite_status` |
-| `created_at`, `updated_at` | TIMESTAMPTZ |
-
----
-
-#### `public.team_private_settings`
-
-| Columna | Tipo |
-|---------|------|
-| `team_id` | UUID PK FK → `teams` |
-| `whatsapp_invite_url` | TEXT |
-| `rules_text` | TEXT |
-| `updated_at` | TIMESTAMPTZ |
-
-RLS: lectura miembros/capitán; escritura capitán.
-
----
-
-#### `public.rival_challenges`
-
-Desafíos rival (directo u open).
-
-| Columna | Tipo |
-|---------|------|
-| `id` | UUID PK |
-| `opportunity_id` | UUID UNIQUE FK |
-| `challenger_team_id` | UUID FK |
-| `challenger_captain_id` | UUID FK |
-| `challenged_team_id`, `challenged_captain_id` | nullable |
-| `accepted_team_id`, `accepted_captain_id` | nullable |
-| `mode` | `rival_challenge_mode` |
-| `status` | `rival_challenge_status` |
-| `created_at`, `responded_at` | TIMESTAMPTZ |
-
----
-
-#### `public.match_opportunity_ratings`
+### 7.7 Tabla `match_opportunity_ratings`
 
 | Columna | Tipo |
 |---------|------|
 | `id` | UUID PK |
 | `opportunity_id` | UUID FK |
 | `rater_id` | UUID FK |
-| `organizer_rating` | SMALLINT 1–5 o NULL |
-| `match_rating` | SMALLINT 1–5 |
-| `level_rating` | SMALLINT 1–5 |
-| `comment` | TEXT |
+| `organizer_rating` | SMALLINT NULL (1–5) |
+| `match_rating`, `level_rating` | SMALLINT (1–5) |
+| `comment` | TEXT NULL |
 | `created_at` | TIMESTAMPTZ |
+| | UNIQUE (`opportunity_id`, `rater_id`) |
 
-UNIQUE `(opportunity_id, rater_id)`. Trigger valida ventana 48 h y reglas organizador/participante.
-
----
-
-#### `public.sports_venues`
+### 7.8 Tabla `rival_challenges`
 
 | Columna | Tipo |
 |---------|------|
 | `id` | UUID PK |
-| `owner_id` | UUID FK → `profiles` |
-| `name`, `address`, `phone`, `city` | TEXT |
-| `maps_url` | TEXT |
-| `slot_duration_minutes` | INTEGER 15–180 |
-| `created_at`, `updated_at` | TIMESTAMPTZ |
+| `opportunity_id` | UUID FK UNIQUE |
+| `challenger_team_id` | UUID FK → `teams` |
+| `challenger_captain_id` | UUID FK |
+| `challenged_team_id`, `challenged_captain_id` | UUID FK NULL |
+| `accepted_team_id`, `accepted_captain_id` | UUID FK NULL |
+| `mode` | `rival_challenge_mode` |
+| `status` | `rival_challenge_status` |
+| `created_at`, `responded_at` | TIMESTAMPTZ |
 
----
+### 7.9 Tablas `teams`, `team_members`, `team_invites`
 
-#### `public.venue_courts`
+**`teams`**
 
 | Columna | Tipo |
 |---------|------|
 | `id` | UUID PK |
-| `venue_id` | UUID FK |
 | `name` | TEXT |
-| `sort_order` | INTEGER |
+| `logo_url` | TEXT NULL |
+| `level` | `skill_level` |
+| `captain_id` | UUID FK → `profiles` |
+| `vice_captain_id` | UUID FK NULL → `profiles` |
+| `city` | TEXT |
+| `city_id` | UUID FK → `geo_cities` |
+| `gender` | `gender` |
+| `description` | TEXT NULL |
+| `created_at`, `updated_at` | TIMESTAMPTZ |
+| `stats_wins`, `stats_draws`, `stats_losses` | INTEGER |
+| `stats_win_streak`, `stats_loss_streak` | INTEGER |
 
----
-
-#### `public.venue_weekly_hours`
-
-| Columna | Tipo |
-|---------|------|
-| `id` | UUID PK |
-| `venue_id` | UUID FK |
-| `day_of_week` | SMALLINT 0–6 |
-| `open_time`, `close_time` | TIME |
-| UNIQUE `(venue_id, day_of_week)` |
-
----
-
-#### `public.venue_reservations`
+**`team_members`**
 
 | Columna | Tipo |
 |---------|------|
-| `id` | UUID PK |
-| `court_id` | UUID FK → `venue_courts` |
-| `starts_at`, `ends_at` | TIMESTAMPTZ |
-| `booker_user_id` | UUID FK → `profiles`, nullable |
-| `match_opportunity_id` | UUID FK, nullable |
-| `status` | `venue_reservation_status` |
-| `notes` | TEXT |
-| `created_at` | TIMESTAMPTZ |
-| `payment_status` | `venue_payment_status` |
-| `price_per_hour` | INTEGER |
-| `currency` | TEXT |
-| `deposit_amount`, `paid_amount` | INTEGER |
-| `confirmed_at`, `cancelled_at` | TIMESTAMPTZ |
-| `cancelled_reason` | TEXT |
-| `confirmed_by_user_id` | UUID FK |
-| `confirmation_source` | TEXT | `venue_owner`, `booker_self`, `admin` |
-| `confirmation_note` | TEXT |
-
-Triggers: solapamiento de franjas; cambio de estado (p. ej. cancelar partido vinculado).
-
----
-
-#### `public.venue_reservation_events` (historial)
-
-| Columna | Tipo |
-|---------|------|
-| `id` | UUID PK |
-| `reservation_id` | UUID FK |
-| `actor_user_id` | UUID FK |
-| `kind` | TEXT |
-| `payload` | JSONB |
+| `team_id`, `user_id` | UUID (PK compuesta) |
+| `position` | `position` |
+| `photo_url` | TEXT |
+| `status` | `team_member_status` |
 | `created_at` | TIMESTAMPTZ |
 
+**`team_invites`**
+
+| Columna | Tipo |
+|---------|------|
+| `id` | UUID PK |
+| `team_id`, `inviter_id`, `invitee_id` | UUID FK |
+| `status` | `invite_status` |
+| `created_at` | TIMESTAMPTZ |
+
+### 7.10 Tablas `team_join_requests`, `team_private_settings`
+
+**`team_join_requests`:** `id`, `team_id`, `requester_id`, `status` (`invite_status`), `created_at`, `updated_at`.
+
+**`team_private_settings`:** `team_id` PK FK, `whatsapp_invite_url`, `rules_text`, `updated_at`.
+
+### 7.11 Centros deportivos
+
+**`sports_venues`:** `id`, `owner_id`, `name`, `address`, `maps_url`, `phone`, `city`, `city_id`, `slot_duration_minutes`, `created_at`, `updated_at`.
+
+**`venue_courts`:** `id`, `venue_id`, `name`, `sort_order`, `price_per_hour` (INTEGER NULL).
+
+**`venue_weekly_hours`:** `id`, `venue_id`, `day_of_week` (0–6), `open_time`, `close_time`, UNIQUE (`venue_id`, `day_of_week`).
+
+**`venue_reservations`:** `id`, `court_id`, `starts_at`, `ends_at`, `booker_user_id`, `match_opportunity_id`, `status` (`venue_reservation_status`), `notes`, `created_at`, `payment_status`, `price_per_hour`, `currency`, `deposit_amount`, `paid_amount`, `confirmed_at`, `cancelled_at`, `cancelled_reason`, `confirmed_by_user_id`, `confirmation_source`, `confirmation_note`.
+
+**`venue_reservation_events`:** `id`, `reservation_id`, `actor_user_id`, `kind`, `payload` JSONB, `created_at`.
+
+### 7.12 Catálogo geográfico
+
+**`geo_countries`:** `id`, `iso_code` (2 minúsculas), `name`, `is_active`, `created_at`.
+
+**`geo_regions`:** `id`, `country_id`, `code`, `name`, `is_active`, `created_at`.
+
+**`geo_cities`:** `id`, `region_id`, `name`, `slug`, `is_active`, `created_at`.
+
+Seed y ampliación: migraciones `20260329120000_*`, `20260409120000_*` (Chile / regiones / comunas).
+
+### 7.13 Revuelta privada — `revuelta_external_join_requests`
+
+| Columna | Tipo |
+|---------|------|
+| `id` | UUID PK |
+| `opportunity_id` | UUID FK |
+| `requester_id` | UUID FK |
+| `is_goalkeeper` | BOOLEAN |
+| `status` | TEXT CHECK `pending` / `accepted` / `declined` |
+| `created_at`, `responded_at` | TIMESTAMPTZ |
+
+### 7.14 Moderación — `player_reports`
+
+| Columna | Tipo |
+|---------|------|
+| `id` | UUID PK |
+| `reporter_id`, `reported_user_id` | UUID FK |
+| `context_type` | TEXT |
+| `context_id` | UUID NULL |
+| `reason` | TEXT |
+| `details` | TEXT NULL |
+| `status` | `player_report_status` |
+| `reviewed_by` | UUID FK NULL |
+| `reviewed_at` | TIMESTAMPTZ NULL |
+| `resolution` | TEXT NULL |
+| `created_at` | TIMESTAMPTZ |
+
 ---
 
-### 5.4 Funciones y RPC destacadas
+## 8. Funciones, triggers y RPC (resumen)
+
+Aplicación de negocio repartida entre triggers y funciones `SECURITY DEFINER`. Lista orientativa (nombre exacto en SQL):
 
 | Nombre | Rol |
 |--------|-----|
-| `set_updated_at()` | Trigger genérico `updated_at` |
-| `handle_new_user()` | INSERT perfil al registrarse en Auth |
-| `refresh_opportunity_players_joined()` | Recalcula `players_joined` |
-| `is_match_opportunity_creator(uuid)` | RLS / lógica |
-| `can_access_opportunity_thread(uuid)` | Chat: creador o participante |
-| `is_team_captain(uuid)` | RLS equipos |
-| `is_team_member(uuid, uuid)` | RLS solicitudes |
-| `is_venue_owner(uuid)` | Dueño de centro |
-| `book_venue_slot(venue, starts, ends)` | Reserva cancha (SECURITY DEFINER); crea fila `pending` + pago |
-| `venue_public_reservations_in_range(venue, from, to)` | Solo **confirmed**; uso público `/centro` |
-| `venue_public_reservations_in_range` | expuesta a `anon` + `authenticated` |
-| `enforce_match_rating_rules` | Trigger ratings |
-| `enforce_open_revuelta_*` | Cupos y arqueros revuelta |
-| `handle_venue_reservation_status_change` | Cancelación y efecto en partido |
-| `is_admin()` | Cuenta `admin` (comparación segura con enum) |
+| `set_updated_at` | Actualiza `updated_at` en tablas con trigger. |
+| `handle_new_user` | Crea fila en `profiles` al registrarse en Auth. |
+| `refresh_opportunity_players_joined` | Recalcula `players_joined` en oportunidades. |
+| `enforce_match_rating_rules` | Valida inserción en `match_opportunity_ratings`. |
+| `venue_reservations_check_overlap` | Evita solapamiento de reservas activas en la misma cancha. |
+| `handle_venue_reservation_status_change` | Efectos al cambiar estado de reserva. |
+| `book_venue_slot` | RPC reserva de franja (evoluciona en migraciones; precio por hora, pending, etc.). |
+| `venue_public_reservations_in_range` | Lectura de reservas públicas en rango temporal. |
+| `is_venue_owner` | Dueño del centro. |
+| `is_admin` | Perfil `account_type = admin`. |
+| `is_team_member`, `is_confirmed_team_member` | Pertenencia a equipo. |
+| `is_team_captain`, `is_team_primary_captain`, `is_team_staff_captain` | Capitán / vice (políticas y escritura). |
+| `enforce_team_roster_max_18`, `enforce_team_members_limit_5`, `enforce_teams_limit_5_on_insert` | Límites de plantilla y equipos por usuario. |
+| `enforce_teams_vice_captain_member`, `trg_team_members_clear_vice_on_delete` | Integridad vicecapitán. |
+| `prevent_team_city_change` | Ciudad de equipo inmutable tras creación. |
+| `team_completed_rival_counts` | Conteos de rivales para UI/momentum. |
+| `enforce_open_revuelta_goalkeeper_limit`, `enforce_open_revuelta_role_slots` | Cupos revuelta. |
+| `enforce_private_revuelta_creator_is_team_member` | Revuelta privada. |
+| `apply_match_stats_from_outcome` | Stats en perfiles/equipos al cerrar partido. |
+| `trg_match_completed_apply_stats` | Dispara aplicación de stats. |
+| `submit_rival_captain_vote`, `finalize_rival_organizer_override`, `finalize_revuelta_match`, `finalize_rival_match` | Cierre rival/revuelta y desempates. |
+| `accept_revuelta_external_request`, `decline_revuelta_external_request` | Solicitudes externas revuelta privada. |
+| `fetch_public_player_profile` | Perfil público sin datos sensibles. |
+| `admin_apply_card`, `admin_ban_user` | Moderación (solo admin). |
+| `default_geo_city_id` | Ciudad por defecto (Chile / VI / Rancagua). |
+| `profiles_sync_age_from_birth_date` | Edad desde fecha de nacimiento. |
+| `sync_team_member_position_from_profile`, `sync_team_member_photo_from_profile` | Coherencia plantilla ↔ perfil. |
+
+Para firmas y cuerpo exacto, abrir la migración correspondiente en `supabase/migrations/`.
 
 ---
 
-### 5.5 Storage (Supabase Storage)
+## 9. Row Level Security (RLS)
 
-| Bucket | Uso | Política resumida |
-|--------|-----|-------------------|
-| `profile-avatars` | Fotos de perfil | Lectura pública; escritura solo objeto bajo prefijo `auth.uid()` |
-| `team-logos` | Escudos de equipo | Lectura pública; capitán del equipo puede escribir en carpeta `teamId` |
+RLS está habilitado en la mayoría de tablas públicas de negocio. Las políticas concretas viven en:
 
----
+- `20250322180001_rls_policies.sql` (base)
+- Migraciones posteriores que hacen `DROP POLICY` / `CREATE POLICY`
 
-### 5.6 Row Level Security (RLS)
-
-- RLS **habilitado** en tablas de aplicación (`profiles`, `match_*`, `teams`, `messages`, `rival_challenges`, `match_opportunity_ratings`, reservas, etc.).
-- Políticas detalladas en **`20250322180001_rls_policies.sql`** y migraciones posteriores (venues, anon para `/equipo` y revueltas abiertas, admin sobre reservas, etc.).
-- **`anon`**: lectura selectiva de `teams` + `team_members`; oportunidades `open` activas + participantes asociados; ejecución de `venue_public_reservations_in_range`.
-- **`authenticated`**: resto según dueño, capitán, creador, participante o `booker`.
+El rol **`service_role`** bypass RLS (solo servidor). El cliente usa **`anon`** / **`authenticated`** según políticas.
 
 ---
 
-### 5.7 Realtime (publicación)
+## 10. Realtime (Supabase)
 
-Tablas añadidas a `supabase_realtime` (según migraciones): entre otras `messages`, `match_opportunities`, `match_opportunity_participants`, `match_opportunity_ratings`, `rival_challenges`, `sports_venues`, `venue_reservations`.
-
----
-
-### 5.8 Índice de migraciones (referencia)
-
-Aplicar en orden los archivos bajo `supabase/migrations/`:
-
-1. `20250322180000_initial_schema.sql` — tablas núcleo, triggers perfil/participantes  
-2. `20250322180001_rls_policies.sql` — RLS base  
-3. `20250322190000_match_completion_and_ratings.sql` — finalización y ratings  
-4. `20250322193000_rival_challenges.sql`  
-5. `20250322194000_match_suspension_reason.sql`  
-6. `20250324120000_team_logos_storage.sql`  
-7. `20250325140000_anon_public_team_invite_read.sql`  
-8. `20250325160000_revuelta_goalkeeper_and_public_read.sql`  
-9. `20250325180000_revuelta_lineup.sql`  
-10. `20250326120000_players_seek_profile.sql`  
-11. `20250326140000_profile_avatars_storage.sql`  
-12. `20250326160000_team_join_requests.sql`  
-13. `20250326170000_team_private_settings.sql`  
-14. `20250327100000_sports_venues_and_bookings.sql`  
-15. `20250327110000_venue_public_reservations_rpc.sql`  
-16. `20250327120000_team_members_limit_5.sql`  
-17. `20250327120001_teams_limit_5.sql`  
-18. `20250327130000_revuelta_roles_and_capacity.sql`  
-19. `20260326112000_profiles_whatsapp_required_signup.sql`  
-20. `20260326123000_allow_auth_user_creation_without_whatsapp.sql`  
-21. `20260326200000_venue_reservations_payments_and_history.sql`  
-22. `20260327001000_admin_and_self_confirmed_reservations.sql`  
-23. `20260327012000_venue_manual_reservations_insert_policy.sql`  
+Publicación `supabase_realtime` incluye entre otras (según migraciones): `messages`, `match_opportunities`, `match_opportunity_participants`, `match_opportunity_ratings`, `rival_challenges`, y suscripciones relacionadas en `profiles` / equipos en migraciones recientes. Ver migraciones `*_realtime_*`.
 
 ---
 
-## 6. Scripts npm
+## 11. Storage
 
-| Script | Comando |
-|--------|---------|
-| Desarrollo | `npm run dev` |
-| Build producción | `npm run build` |
-| Servidor producción | `npm run start` |
-| Lint | `npm run lint` |
+| Bucket | Uso |
+|--------|-----|
+| `profile-avatars` | Fotos de perfil (políticas por usuario propietario). |
+| `team-logos` | Escudos de equipo (capitán del equipo). |
 
----
-
-## 7. Mantenimiento de esta documentación
-
-- El **esquema real** es el que resulta de aplicar **todas** las migraciones en un proyecto Supabase limpio; si añades migraciones nuevas, actualiza las secciones 5.2–5.8.
-- Los **tipos TypeScript** pueden adelantarse o diferir ligeramente del SQL; la fuente de verdad en runtime es PostgreSQL + RLS.
+Definición en `20250324120000_team_logos_storage.sql` y `20250326140000_profile_avatars_storage.sql`.
 
 ---
 
-*Documento generado a partir del código y migraciones del repositorio Pichanga.*
+## 12. Mantenimiento de esta documentación
+
+1. Tras **nueva migración**: actualizar secciones 7–11.  
+2. Tras **cambios en `lib/types.ts` o APIs**: secciones 4–6.  
+3. Tras **cambios en `package.json`**: sección 1.  
+
+El archivo **`DOCUMENTACION-PROYECTO.txt`** es un borrador histórico en texto plano; **esta `DOCUMENTACION.md` es la referencia consolidada** recomendada en el repositorio.

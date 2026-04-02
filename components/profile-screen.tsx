@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, useRef } from 'react'
+import { toast } from 'sonner'
 import { useApp } from '@/lib/app-context'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { BottomNav } from '@/components/bottom-nav'
@@ -33,6 +34,9 @@ import {
   Camera,
   Phone,
   Palette,
+  AlertTriangle,
+  OctagonAlert,
+  Ban,
 } from 'lucide-react'
 import type { Level } from '@/lib/types'
 import { getOrganizerTierProgress } from '@/lib/organizer-level'
@@ -58,6 +62,15 @@ const DAY_ORDER = [
   'sabado',
   'domingo',
 ] as const
+
+const MS_24H = 24 * 60 * 60 * 1000
+
+function within24hSince(d?: Date | null): boolean {
+  if (!d) return false
+  const t = d.getTime()
+  const now = Date.now()
+  return now >= t && now - t < MS_24H
+}
 
 function formatDayLabel(day: string): string {
   const map: Record<string, string> = {
@@ -168,6 +181,17 @@ export function ProfileScreen() {
     )
   }, [currentUser?.availability])
 
+  const isBanned = Boolean(currentUser?.modBannedAt)
+
+  const showYellowAlert = useMemo(
+    () => !isBanned && within24hSince(currentUser?.modLastYellowAt ?? null),
+    [currentUser?.modLastYellowAt, isBanned]
+  )
+  const showRedAlert = useMemo(
+    () => !isBanned && within24hSince(currentUser?.modLastRedAt ?? null),
+    [currentUser?.modLastRedAt, isBanned]
+  )
+
   const menuItems: Array<{
     label: string
     icon: typeof Edit
@@ -178,19 +202,35 @@ export function ProfileScreen() {
       label: 'Editar perfil',
       icon: Edit,
       description: 'Nombre, posición, nivel, foto…',
-      onClick: () => openProfileEditor(),
+      onClick: () => {
+        if (isBanned) {
+          toast.error('No disponible mientras tu cuenta está restringida.')
+          return
+        }
+        openProfileEditor()
+      },
     },
     {
       label: 'Mis equipos',
       icon: Users,
       description: 'Crear o gestionar equipos',
-      onClick: () => setCurrentScreen('teams'),
+      onClick: () => {
+        if (isBanned) {
+          toast.error('No disponible mientras tu cuenta está restringida.')
+          return
+        }
+        setCurrentScreen('teams')
+      },
     },
     {
       label: 'Historial de partidos',
       icon: Clock,
       description: 'Partidos terminados',
       onClick: () => {
+        if (isBanned) {
+          toast.error('No disponible mientras tu cuenta está restringida.')
+          return
+        }
         setInitialMatchesTab('finished')
         setCurrentScreen('matches')
       },
@@ -287,6 +327,54 @@ export function ProfileScreen() {
 
       <div className="px-4 pt-4 pb-2 relative z-[2]">
         <div className="bg-card rounded-2xl border border-border shadow-lg shadow-black/20 p-6 pt-8">
+          {isBanned ? (
+            <div className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-center">
+              <div className="flex items-center justify-center gap-2 text-red-600 dark:text-red-400">
+                <Ban className="h-5 w-5 shrink-0" />
+                <p className="text-sm font-semibold">Cuenta restringida</p>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+                Por moderación solo puedes ver esta pantalla. El resto de la app está deshabilitado.
+                {currentUser.modBanReason?.trim()
+                  ? ` Motivo: ${currentUser.modBanReason.trim()}`
+                  : ''}
+              </p>
+            </div>
+          ) : null}
+          {!isBanned && showRedAlert ? (
+            <div className="mb-4 rounded-xl border border-red-500/35 bg-red-500/10 px-4 py-3">
+              <div className="flex gap-2">
+                <OctagonAlert className="h-5 w-5 shrink-0 text-red-600 dark:text-red-400" />
+                <div>
+                  <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                    Recibiste una tarjeta roja
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Se aplicó una suspensión de acceso de 3 días según las reglas de la comunidad.
+                    Este aviso desaparece en 24 horas; el contador de tarjetas se mantiene en tu
+                    perfil.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          {!isBanned && showYellowAlert ? (
+            <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+              <div className="flex gap-2">
+                <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                    Recibiste una tarjeta amarilla
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Es un aviso por reportes de conducta. Cada 3 amarillas acumuladas suman además
+                    una roja automática; el total de amarillas no se borra. Este mensaje se oculta en
+                    24 horas.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
           <div className="flex flex-col items-center">
             <h1 className="mb-6 w-full text-center text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
               Hola,{' '}
@@ -297,7 +385,7 @@ export function ProfileScreen() {
               <button
                 type="button"
                 onClick={() => pickProfilePhoto()}
-                disabled={photoWorking}
+                disabled={photoWorking || isBanned}
                 className="group rounded-full p-1 bg-gradient-to-br from-primary/40 to-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-70"
                 aria-label="Cambiar foto de perfil"
               >
@@ -324,7 +412,7 @@ export function ProfileScreen() {
                   e.stopPropagation()
                   pickProfilePhoto()
                 }}
-                disabled={photoWorking}
+                disabled={photoWorking || isBanned}
                 className="absolute bottom-1 right-1 flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-4 ring-card transition-transform active:scale-95 hover:bg-primary/90 disabled:opacity-60"
                 aria-label="Subir nueva foto"
               >
@@ -342,7 +430,7 @@ export function ProfileScreen() {
               size="sm"
               className="text-xs text-muted-foreground mb-3 h-auto py-1"
               onClick={() => pickProfilePhoto()}
-              disabled={photoWorking}
+              disabled={photoWorking || isBanned}
             >
               Cambiar foto
             </Button>
@@ -435,6 +523,31 @@ export function ProfileScreen() {
                 <p className="text-[10px] text-muted-foreground mt-0.5">{hint}</p>
               </div>
             ))}
+          </div>
+
+          <div className="mt-6 pt-6 border-t border-border">
+            <p className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 mb-3">
+              <Shield className="w-3.5 h-3.5 text-primary" />
+              Historial de amonestaciones por reportes
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-center">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mx-auto mb-1" />
+                <p className="text-2xl font-bold text-foreground tabular-nums">
+                  {currentUser.modYellowCards ?? 0}
+                </p>
+                <p className="text-[11px] font-medium text-foreground">Amarillas</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Acumuladas en cuenta</p>
+              </div>
+              <div className="rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-3 text-center">
+                <OctagonAlert className="w-4 h-4 text-red-600 dark:text-red-400 mx-auto mb-1" />
+                <p className="text-2xl font-bold text-foreground tabular-nums">
+                  {currentUser.modRedCards ?? 0}
+                </p>
+                <p className="text-[11px] font-medium text-foreground">Rojas</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Acumuladas en cuenta</p>
+              </div>
+            </div>
           </div>
 
           <div className="mt-6 pt-6 border-t border-border space-y-3">

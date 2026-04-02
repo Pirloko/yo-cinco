@@ -27,7 +27,7 @@ export async function GET(req: Request) {
           )
           .gte('starts_at', from.toISOString()),
         admin.from('venue_courts').select('id, venue_id, name'),
-        admin.from('sports_venues').select('id, name'),
+        admin.from('sports_venues').select('id, name, city_id, city'),
       ])
 
     const reservationRows =
@@ -46,7 +46,59 @@ export async function GET(req: Request) {
         | null) ?? []
     const courtRows =
       (courts as Array<{ id: string; venue_id: string; name?: string }> | null) ?? []
-    const venueRows = (venues as Array<{ id: string; name: string }> | null) ?? []
+    const venueRows =
+      (venues as
+        | Array<{ id: string; name: string; city_id: string | null; city: string | null }>
+        | null) ?? []
+
+    const cityIds = [...new Set(venueRows.map((v) => v.city_id).filter(Boolean))] as string[]
+    let cityRows: Array<{ id: string; name: string; region_id: string }> = []
+    let regionRows: Array<{ id: string; name: string }> = []
+    if (cityIds.length > 0) {
+      const { data: cities } = await admin
+        .from('geo_cities')
+        .select('id, name, region_id')
+        .in('id', cityIds)
+      cityRows = (cities as typeof cityRows | null) ?? []
+      const regionIds = [...new Set(cityRows.map((c) => c.region_id).filter(Boolean))]
+      if (regionIds.length > 0) {
+        const { data: regions } = await admin
+          .from('geo_regions')
+          .select('id, name')
+          .in('id', regionIds)
+        regionRows = (regions as typeof regionRows | null) ?? []
+      }
+    }
+
+    const regionNameById = new Map(regionRows.map((r) => [r.id, r.name]))
+    const cityMetaById = new Map(
+      cityRows.map((c) => [
+        c.id,
+        { name: c.name, regionId: c.region_id, regionName: regionNameById.get(c.region_id) ?? null },
+      ]),
+    )
+
+    function venueGeo(venue: (typeof venueRows)[number]) {
+      if (venue.city_id) {
+        const cm = cityMetaById.get(venue.city_id)
+        if (cm) {
+          return {
+            cityId: venue.city_id as string,
+            cityName: cm.name,
+            regionId: cm.regionId,
+            regionName: cm.regionName,
+          }
+        }
+      }
+      return {
+        cityId: venue.city_id,
+        cityName: (venue.city?.trim() || '—') as string,
+        regionId: null as string | null,
+        regionName: null as string | null,
+      }
+    }
+
+    const venueById = new Map(venueRows.map((v) => [v.id, v]))
 
     const courtToVenue = new Map(courtRows.map((c) => [c.id, c.venue_id]))
     const courtNameById = new Map(courtRows.map((c) => [c.id, c.name ?? 'Cancha']))
@@ -128,6 +180,13 @@ export async function GET(req: Request) {
     const details = reservationRows
       .map((r) => {
         const venueId = courtToVenue.get(r.court_id) ?? null
+        const venueRow = venueId ? venueById.get(venueId) : undefined
+        const geo = venueRow ? venueGeo(venueRow) : {
+          cityId: null as string | null,
+          cityName: '—',
+          regionId: null as string | null,
+          regionName: null as string | null,
+        }
         const matchType = r.match_opportunity_id
           ? (matchTypeById.get(r.match_opportunity_id) ?? null)
           : null
@@ -140,6 +199,10 @@ export async function GET(req: Request) {
           confirmationSource: r.confirmation_source ?? null,
           venueId,
           venueName: venueId ? venueNameById.get(venueId) ?? 'Centro' : 'Centro',
+          cityId: geo.cityId,
+          cityName: geo.cityName,
+          regionId: geo.regionId,
+          regionName: geo.regionName,
           courtName: courtNameById.get(r.court_id) ?? 'Cancha',
           matchId: r.match_opportunity_id,
           matchType: matchType ?? 'reserve_only',

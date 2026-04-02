@@ -31,6 +31,14 @@ import {
   minBirthDateForPlayers,
   toIsoDateLocal,
 } from '@/lib/age-birthday'
+import {
+  PLAYER_WHATSAPP_PREFIX,
+  buildFullPlayerWhatsapp,
+  extractWhatsappSuffix8,
+  isCompleteWhatsappSuffix,
+  isValidFullPlayerWhatsapp,
+  sanitizeWhatsappSuffixInput,
+} from '@/lib/player-whatsapp'
 
 /** Imágenes en `public/onboarding/` (servidas en producción con el mismo build). */
 const ONBOARDING_HERO_BY_STEP: Record<1 | 2 | 3, string> = {
@@ -121,7 +129,7 @@ export function OnboardingScreen() {
     name: '',
     birthDate: maxBirthDateForPlayers(),
     gender: currentUser?.gender || 'male',
-    whatsappPhone: currentUser?.whatsappPhone || '',
+    whatsappPhone: extractWhatsappSuffix8(currentUser?.whatsappPhone),
     position: 'mediocampista',
     level: 'intermedio',
     availability: [],
@@ -141,7 +149,7 @@ export function OnboardingScreen() {
         ? toIsoDateLocal(currentUser.birthDate)
         : maxBirthDateForPlayers(),
       gender: currentUser.gender,
-      whatsappPhone: currentUser.whatsappPhone || '',
+      whatsappPhone: extractWhatsappSuffix8(currentUser.whatsappPhone),
       position: currentUser.position,
       level: currentUser.level,
       availability: [...currentUser.availability],
@@ -156,8 +164,15 @@ export function OnboardingScreen() {
     if (step < totalSteps) {
       setStep(step + 1)
     } else {
+      const fullWa = buildFullPlayerWhatsapp(data.whatsappPhone)
+      if (!isValidFullPlayerWhatsapp(fullWa)) {
+        toast.error(
+          `Ingresa los 8 dígitos de tu móvil después de ${PLAYER_WHATSAPP_PREFIX}.`
+        )
+        return
+      }
       try {
-        await completeOnboarding(data)
+        await completeOnboarding({ ...data, whatsappPhone: fullWa })
       } catch {
         toast.error('No se pudo guardar el perfil')
       }
@@ -219,7 +234,7 @@ export function OnboardingScreen() {
         return (
           data.name.length >= 2 &&
           isValidPlayerAgeFromBirthDate(data.birthDate) &&
-          data.whatsappPhone.trim().length >= 8
+          isCompleteWhatsappSuffix(data.whatsappPhone)
         )
       case 2:
         return true
@@ -309,19 +324,32 @@ export function OnboardingScreen() {
                   <Phone className="w-4 h-4 text-primary" />
                   WhatsApp (obligatorio)
                 </Label>
-                <Input
-                  id="whatsappPhone"
-                  type="tel"
-                  inputMode="tel"
-                  placeholder="+56912345678"
-                  value={data.whatsappPhone}
-                  onChange={(e) =>
-                    setData({ ...data, whatsappPhone: e.target.value })
-                  }
-                  className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
-                />
+                <div className="flex h-12 min-w-0 rounded-xl border border-border bg-secondary overflow-hidden focus-within:ring-2 focus-within:ring-primary/40">
+                  <span
+                    className="flex shrink-0 items-center border-r border-border bg-muted/50 px-3 text-sm font-medium text-foreground tabular-nums"
+                    aria-hidden
+                  >
+                    {PLAYER_WHATSAPP_PREFIX}
+                  </span>
+                  <Input
+                    id="whatsappPhone"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel-national"
+                    placeholder="12345678"
+                    maxLength={8}
+                    value={data.whatsappPhone}
+                    onChange={(e) =>
+                      setData({
+                        ...data,
+                        whatsappPhone: sanitizeWhatsappSuffixInput(e.target.value),
+                      })
+                    }
+                    className="h-12 flex-1 min-w-0 border-0 bg-transparent shadow-none rounded-none focus-visible:ring-0 focus-visible:ring-offset-0 text-foreground placeholder:text-muted-foreground"
+                  />
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  Lo usaremos para coordinar partidos.
+                  Solo los 8 dígitos de tu celular (Chile). Lo usaremos para coordinar partidos.
                 </p>
               </div>
 

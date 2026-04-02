@@ -2,7 +2,18 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { ShieldAlert, Flag, Calendar, MapPin, Star, Trophy } from 'lucide-react'
+import {
+  ShieldAlert,
+  Flag,
+  Calendar,
+  MapPin,
+  Star,
+  Trophy,
+  Shield,
+  AlertTriangle,
+  OctagonAlert,
+  Ban,
+} from 'lucide-react'
 
 import { useApp } from '@/lib/app-context'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
@@ -11,7 +22,21 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { getOrganizerTierProgress } from '@/lib/organizer-level'
-import type { PublicPlayerProfile } from '@/lib/types'
+import type { Level, Position, PublicPlayerProfile } from '@/lib/types'
+
+const LEVEL_LABELS: Record<Level, string> = {
+  principiante: 'Principiante',
+  intermedio: 'Intermedio',
+  avanzado: 'Avanzado',
+  competitivo: 'Competitivo',
+}
+
+const POSITION_LABELS: Record<Position, string> = {
+  portero: 'Portero',
+  defensa: 'Defensa',
+  mediocampista: 'Mediocampista',
+  delantero: 'Delantero',
+}
 
 function formatDayLabel(day: string): string {
   const map: Record<string, string> = {
@@ -67,7 +92,12 @@ export function PublicPlayerProfileSheet() {
     return getOrganizerTierProgress(n)
   }, [profile?.statsOrganizedCompleted])
 
-  const canReport = !!currentUser && !!profile && currentUser.id !== profile.id
+  const isAdminViewer = currentUser?.accountType === 'admin'
+  const canReport =
+    !!currentUser &&
+    !!profile &&
+    currentUser.id !== profile.id &&
+    !isAdminViewer
 
   const submitReport = async () => {
     if (!canReport || !profile || !isSupabaseConfigured()) return
@@ -125,14 +155,14 @@ export function PublicPlayerProfileSheet() {
                 </p>
                 <div className="flex flex-wrap items-center gap-2 mt-1">
                   <Badge variant="secondary" className="text-xs">
-                    {profile.level}
+                    {LEVEL_LABELS[profile.level] ?? profile.level}
                   </Badge>
                   <span className="text-xs text-muted-foreground flex items-center gap-1">
                     <MapPin className="h-3.5 w-3.5 text-primary" aria-hidden />
                     {profile.city}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {profile.position}
+                    {POSITION_LABELS[profile.position] ?? profile.position}
                   </span>
                 </div>
               </div>
@@ -221,6 +251,42 @@ export function PublicPlayerProfileSheet() {
                 </span>
               </p>
             </div>
+
+            {isAdminViewer ? (
+              <div className="rounded-2xl border border-border bg-card/60 p-4 space-y-3">
+                <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-primary" aria-hidden />
+                  Historial de amonestaciones por reportes
+                </p>
+                {profile.modBannedAt ? (
+                  <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 flex items-start gap-2">
+                    <Ban className="h-4 w-4 shrink-0 text-red-500 mt-0.5" />
+                    <p className="text-xs text-red-700 dark:text-red-300 font-medium">
+                      Cuenta baneada
+                    </p>
+                  </div>
+                ) : null}
+                {profile.modSuspendedUntil &&
+                new Date(profile.modSuspendedUntil) > new Date() ? (
+                  <p className="text-xs text-amber-700 dark:text-amber-300 rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2">
+                    Suspensión activa hasta{' '}
+                    {new Date(profile.modSuspendedUntil).toLocaleString('es-CL')}.
+                  </p>
+                ) : null}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-center">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mx-auto mb-1" />
+                    <p className="text-xl font-bold tabular-nums">{profile.modYellowCards}</p>
+                    <p className="text-[11px] text-muted-foreground">Amarillas</p>
+                  </div>
+                  <div className="rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-3 text-center">
+                    <OctagonAlert className="w-4 h-4 text-red-600 dark:text-red-400 mx-auto mb-1" />
+                    <p className="text-xl font-bold tabular-nums">{profile.modRedCards}</p>
+                    <p className="text-[11px] text-muted-foreground">Rojas</p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {canReport ? (
               <div className="rounded-2xl border border-border bg-secondary/10 p-4 space-y-3">

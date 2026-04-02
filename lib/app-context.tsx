@@ -89,6 +89,7 @@ import {
   isValidPlayerAgeFromBirthDate,
   parseBirthDateLocal,
 } from '@/lib/age-birthday'
+import { isValidFullPlayerWhatsapp } from '@/lib/player-whatsapp'
 
 function isTeamLimitReached(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
@@ -650,6 +651,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       )
       return
     }
+    const waTrim = data.whatsappPhone.trim()
+    if (!isValidFullPlayerWhatsapp(waTrim)) {
+      toast.error(
+        'WhatsApp debe ser chileno: +569 y 8 dígitos (completa el número en tu perfil).'
+      )
+      return
+    }
     const supabase = createClient()
     const birth = parseBirthDateLocal(data.birthDate)
     let nextCityId = data.cityId?.trim()
@@ -663,7 +671,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...(onboardingSource === 'profile_edit'
           ? {}
           : { gender: data.gender }),
-        whatsapp_phone: data.whatsappPhone.trim(),
+        whatsapp_phone: waTrim,
         position: data.position,
         level: data.level,
         city: data.city,
@@ -699,7 +707,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         city: data.city,
         cityId: nextCityId,
         availability: data.availability,
-        whatsappPhone: data.whatsappPhone.trim(),
+        whatsappPhone: waTrim,
         photo,
         playerEssentialsCompletedAt: new Date(),
         email: currentUser.email,
@@ -2619,6 +2627,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [authLoading, currentUser, currentScreen])
 
+  /** Jugador baneado: solo pantalla Perfil (resto de la app deshabilitada en UI). */
+  useEffect(() => {
+    if (authLoading || !currentUser) return
+    if (currentUser.accountType !== 'player') return
+    if (!currentUser.modBannedAt) return
+    if (currentScreen !== 'profile') {
+      setCurrentScreen('profile')
+    }
+  }, [authLoading, currentUser, currentScreen])
+
   /** Invitación con registro: abrir auth desde landing */
   useEffect(() => {
     if (authLoading || currentUser) return
@@ -2640,6 +2658,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (authLoading || !currentUser) return
     if (currentUser.accountType !== 'player') return
     if (currentScreen !== 'landing' && currentScreen !== 'auth') return
+    if (currentUser.modBannedAt) {
+      setCurrentScreen('profile')
+      return
+    }
     if (needsOnboardingProfile(currentUser)) {
       setOnboardingSource('registration')
       setCurrentScreen('onboarding')
@@ -2656,6 +2678,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (authLoading || !currentUser) return
     if (currentUser.accountType !== 'player') return
+    if (currentUser.modBannedAt) return
     if (needsOnboardingProfile(currentUser)) return
     let tid: string | null = null
     let mid: string | null = null
@@ -2763,7 +2786,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (!u || !id || u.id !== id || !row) return u
             const photo = row.photo_url
             const name = row.name
-            return {
+            const next: typeof u = {
               ...u,
               photo:
                 typeof photo === 'string' && photo.trim()
@@ -2772,6 +2795,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
               name:
                 typeof name === 'string' && name.trim() ? name : u.name,
             }
+            if ('mod_banned_at' in row) {
+              const v = row.mod_banned_at
+              next.modBannedAt =
+                v != null && String(v).trim() !== '' ? new Date(String(v)) : undefined
+            }
+            if ('mod_ban_reason' in row && typeof row.mod_ban_reason === 'string') {
+              next.modBanReason = row.mod_ban_reason
+            }
+            if ('mod_yellow_cards' in row && typeof row.mod_yellow_cards === 'number') {
+              next.modYellowCards = row.mod_yellow_cards
+            }
+            if ('mod_red_cards' in row && typeof row.mod_red_cards === 'number') {
+              next.modRedCards = row.mod_red_cards
+            }
+            if ('mod_last_yellow_at' in row) {
+              const v = row.mod_last_yellow_at
+              next.modLastYellowAt =
+                v != null && String(v).trim() !== '' ? new Date(String(v)) : null
+            }
+            if ('mod_last_red_at' in row) {
+              const v = row.mod_last_red_at
+              next.modLastRedAt =
+                v != null && String(v).trim() !== '' ? new Date(String(v)) : null
+            }
+            return next
           })
         }
       )

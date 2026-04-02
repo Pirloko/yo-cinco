@@ -21,6 +21,7 @@ import {
   Shield,
   Table2,
   Trophy,
+  Unlock,
   UserPlus,
   XCircle,
 } from 'lucide-react'
@@ -40,6 +41,13 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
 type AdminMetrics = {
@@ -69,6 +77,10 @@ type AdminMetrics = {
     confirmationSource: 'venue_owner' | 'booker_self' | 'admin' | null
     venueId: string | null
     venueName: string
+    cityId: string | null
+    cityName: string
+    regionId: string | null
+    regionName: string | null
     courtName: string
     matchId: string | null
     matchType: 'rival' | 'players' | 'open' | 'reserve_only'
@@ -76,7 +88,62 @@ type AdminMetrics = {
     bookerName: string
   }>
 }
+type ModReportProfile = {
+  id: string
+  name: string
+  photo_url: string
+  mod_banned_at: string | null
+}
+
+type AdminPlayerReport = {
+  id: string
+  reporter_id: string
+  reported_user_id: string
+  context_type: string
+  context_id: string | null
+  reason: string
+  details: string | null
+  status: string
+  reviewed_by: string | null
+  reviewed_at: string | null
+  resolution: string | null
+  created_at: string
+  reporter_profile: ModReportProfile | null
+  reported_profile: ModReportProfile | null
+}
+
 type RangeKey = 'day' | '7d' | '15d' | 'month' | 'semester' | 'year'
+
+const DEFAULT_PLAYER_AVATAR =
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face'
+
+/** `player_reports.status` (enum en BD) → texto para el panel. */
+function playerReportStatusLabel(status: string): string {
+  switch (status) {
+    case 'pending':
+      return 'Pendiente'
+    case 'reviewed':
+      return 'Revisado'
+    case 'dismissed':
+      return 'Descartado'
+    case 'action_taken':
+      return 'Acción aplicada'
+    default:
+      return status.replace(/_/g, ' ')
+  }
+}
+
+function playerReportReasonLabel(reason: string): string {
+  const k = reason.trim().toLowerCase()
+  const map: Record<string, string> = {
+    conducta: 'Conducta',
+    spam: 'Spam',
+    suplantacion: 'Suplantación',
+    otro: 'Otro',
+  }
+  return map[k] ?? reason
+}
+
 const RANGE_OPTIONS: Array<{ id: RangeKey; label: string }> = [
   { id: 'day', label: 'Día' },
   { id: '7d', label: '7 días' },
@@ -87,26 +154,17 @@ const RANGE_OPTIONS: Array<{ id: RangeKey; label: string }> = [
 ]
 
 export function AdminDashboardScreen() {
-  const { currentUser, logout } = useApp()
+  const { currentUser, logout, openPublicProfile } = useApp()
   const [loading, setLoading] = useState(true)
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null)
   const [range, setRange] = useState<RangeKey>('month')
   const [creating, setCreating] = useState(false)
-  const [reports, setReports] = useState<
-    Array<{
-      id: string
-      reporter_id: string
-      reported_user_id: string
-      context_type: string
-      context_id: string | null
-      reason: string
-      details: string | null
-      status: string
-      created_at: string
-    }>
-  >([])
+  const [reports, setReports] = useState<AdminPlayerReport[]>([])
   const [reportsLoading, setReportsLoading] = useState(false)
-  const [reportsStatus, setReportsStatus] = useState<'pending' | 'all'>('pending')
+  const [reportsStatus, setReportsStatus] = useState<'pending' | 'history' | 'all'>(
+    'pending'
+  )
+  const [pendingOpenCount, setPendingOpenCount] = useState(0)
   const [modNoteByReportId, setModNoteByReportId] = useState<Record<string, string>>(
     {}
   )
@@ -125,6 +183,109 @@ export function AdminDashboardScreen() {
   const [adminNewPassword, setAdminNewPassword] = useState('')
   const [adminConfirmPassword, setAdminConfirmPassword] = useState('')
   const [adminPwSaving, setAdminPwSaving] = useState(false)
+  const [resFilterRegion, setResFilterRegion] = useState('all')
+  const [resFilterCity, setResFilterCity] = useState('all')
+  const [resFilterVenue, setResFilterVenue] = useState('all')
+
+  const reservationFilterLists = useMemo(() => {
+    const empty = {
+      regions: [] as Array<{ id: string; name: string }>,
+      cities: [] as Array<{ id: string; name: string; regionId: string | null }>,
+      venues: [] as Array<{
+        id: string
+        name: string
+        regionId: string | null
+        cityId: string | null
+      }>,
+    }
+    if (!metrics?.details.length) return empty
+    const regions = new Map<string, string>()
+    const cities = new Map<string, { id: string; name: string; regionId: string | null }>()
+    const venues = new Map<
+      string,
+      { id: string; name: string; regionId: string | null; cityId: string | null }
+    >()
+    for (const row of metrics.details) {
+      if (row.regionId && row.regionName) regions.set(row.regionId, row.regionName)
+      if (row.cityId) {
+        cities.set(row.cityId, {
+          id: row.cityId,
+          name: row.cityName,
+          regionId: row.regionId ?? null,
+        })
+      }
+      if (row.venueId) {
+        venues.set(row.venueId, {
+          id: row.venueId,
+          name: row.venueName,
+          regionId: row.regionId ?? null,
+          cityId: row.cityId ?? null,
+        })
+      }
+    }
+    return {
+      regions: [...regions.entries()]
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'es')),
+      cities: [...cities.values()].sort((a, b) => a.name.localeCompare(b.name, 'es')),
+      venues: [...venues.values()].sort((a, b) => a.name.localeCompare(b.name, 'es')),
+    }
+  }, [metrics])
+
+  const reservationCityOptions = useMemo(() => {
+    if (resFilterRegion === 'all') return reservationFilterLists.cities
+    return reservationFilterLists.cities.filter((c) => c.regionId === resFilterRegion)
+  }, [reservationFilterLists, resFilterRegion])
+
+  const reservationVenueOptions = useMemo(() => {
+    let list = reservationFilterLists.venues
+    if (resFilterRegion !== 'all') list = list.filter((v) => v.regionId === resFilterRegion)
+    if (resFilterCity !== 'all') list = list.filter((v) => v.cityId === resFilterCity)
+    return list
+  }, [reservationFilterLists, resFilterRegion, resFilterCity])
+
+  const filteredReservationDetails = useMemo(() => {
+    if (!metrics) return []
+    return metrics.details.filter((row) => {
+      if (resFilterVenue !== 'all' && row.venueId !== resFilterVenue) return false
+      if (resFilterCity !== 'all' && row.cityId !== resFilterCity) return false
+      if (resFilterRegion !== 'all' && row.regionId !== resFilterRegion) return false
+      return true
+    })
+  }, [metrics, resFilterVenue, resFilterCity, resFilterRegion])
+
+  useEffect(() => {
+    if (!metrics) return
+    const regionOk =
+      resFilterRegion === 'all' ||
+      reservationFilterLists.regions.some((r) => r.id === resFilterRegion)
+    if (!regionOk) {
+      setResFilterRegion('all')
+      setResFilterCity('all')
+      setResFilterVenue('all')
+      return
+    }
+    const cityOk =
+      resFilterCity === 'all' ||
+      reservationCityOptions.some((c) => c.id === resFilterCity)
+    if (!cityOk) {
+      setResFilterCity('all')
+      setResFilterVenue('all')
+      return
+    }
+    const venueOk =
+      resFilterVenue === 'all' ||
+      reservationVenueOptions.some((v) => v.id === resFilterVenue)
+    if (!venueOk) setResFilterVenue('all')
+  }, [
+    metrics,
+    resFilterRegion,
+    resFilterCity,
+    resFilterVenue,
+    reservationFilterLists,
+    reservationCityOptions,
+    reservationVenueOptions,
+  ])
 
   const resetVenueForm = useCallback(() => {
     setForm({
@@ -158,16 +319,26 @@ export function AdminDashboardScreen() {
     setReportsLoading(true)
     try {
       const headers = await buildAdminAuthHeaders()
-      const r = await fetch(`/api/admin/reports?status=${reportsStatus}`, {
-        method: 'GET',
-        headers,
-      })
-      const json = (await r.json()) as { reports?: any[]; error?: string }
-      if (!r.ok) {
+      const statusParam =
+        reportsStatus === 'history'
+          ? 'history'
+          : reportsStatus === 'all'
+            ? 'all'
+            : 'pending'
+      const [rMain, rPend] = await Promise.all([
+        fetch(`/api/admin/reports?status=${statusParam}`, { method: 'GET', headers }),
+        fetch('/api/admin/reports?status=pending', { method: 'GET', headers }),
+      ])
+      const json = (await rMain.json()) as { reports?: AdminPlayerReport[]; error?: string }
+      const jPend = (await rPend.json()) as { reports?: AdminPlayerReport[]; error?: string }
+      if (!rMain.ok) {
         toast.error(json.error ?? 'No se pudieron cargar reportes.')
         return
       }
-      setReports((json.reports ?? []) as any)
+      setReports(json.reports ?? [])
+      if (rPend.ok) {
+        setPendingOpenCount((jPend.reports ?? []).length)
+      }
     } finally {
       setReportsLoading(false)
     }
@@ -210,7 +381,12 @@ export function AdminDashboardScreen() {
         const r = await fetch('/api/admin/sanctions', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ action: 'applyCard', userId, card }),
+          body: JSON.stringify({
+            action: 'applyCard',
+            userId,
+            card,
+            reason: modNoteByReportId[reportId]?.trim() || undefined,
+          }),
         })
         const json = (await r.json()) as { ok?: boolean; error?: string }
         if (!r.ok || !json.ok) {
@@ -224,7 +400,32 @@ export function AdminDashboardScreen() {
         setSanctionBusyId(null)
       }
     },
-    [buildAdminAuthHeaders, loadReports, updateReportStatus]
+    [buildAdminAuthHeaders, loadReports, modNoteByReportId, updateReportStatus]
+  )
+
+  const unbanUser = useCallback(
+    async (userId: string) => {
+      const busyKey = `unban:${userId}`
+      setSanctionBusyId(busyKey)
+      try {
+        const headers = await buildAdminAuthHeaders()
+        const r = await fetch('/api/admin/sanctions', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ action: 'clearBan', userId }),
+        })
+        const json = (await r.json()) as { ok?: boolean; error?: string }
+        if (!r.ok || !json.ok) {
+          toast.error(json.error ?? 'No se pudo quitar el baneo.')
+          return
+        }
+        toast.success('Baneo levantado. El jugador recupera el acceso completo.')
+        void loadReports()
+      } finally {
+        setSanctionBusyId(null)
+      }
+    },
+    [buildAdminAuthHeaders, loadReports]
   )
 
   const banUser = useCallback(
@@ -310,10 +511,7 @@ export function AdminDashboardScreen() {
     return t.rival + t.players + t.open + t.reserve_only
   }, [metrics])
 
-  const pendingReportsCount = useMemo(
-    () => reports.filter((r) => r.status === 'pending').length,
-    [reports]
-  )
+  const pendingReportsCount = pendingOpenCount
 
   const handleCreateVenueUser = async () => {
     if (!form.email.trim() || !form.password || !form.venueName.trim()) {
@@ -675,6 +873,101 @@ export function AdminDashboardScreen() {
                   <p className="p-6 text-sm text-muted-foreground">Cargando…</p>
                 ) : (
                   <div className="space-y-0">
+                    <div className="flex flex-col gap-3 border-b border-border/60 bg-muted/20 px-3 py-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4 sm:px-4">
+                      <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:min-w-[160px] sm:max-w-[220px] sm:flex-none">
+                        <Label htmlFor="admin-res-filter-region" className="text-xs text-muted-foreground">
+                          Región
+                        </Label>
+                        <Select
+                          value={resFilterRegion}
+                          onValueChange={(v) => {
+                            setResFilterRegion(v)
+                            setResFilterCity('all')
+                            setResFilterVenue('all')
+                          }}
+                        >
+                          <SelectTrigger id="admin-res-filter-region" size="sm" className="w-full min-w-0">
+                            <SelectValue placeholder="Todas" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todas</SelectItem>
+                            {reservationFilterLists.regions.map((r) => (
+                              <SelectItem key={r.id} value={r.id}>
+                                {r.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:min-w-[160px] sm:max-w-[220px] sm:flex-none">
+                        <Label htmlFor="admin-res-filter-city" className="text-xs text-muted-foreground">
+                          Ciudad
+                        </Label>
+                        <Select
+                          value={resFilterCity}
+                          onValueChange={(v) => {
+                            setResFilterCity(v)
+                            setResFilterVenue('all')
+                          }}
+                        >
+                          <SelectTrigger id="admin-res-filter-city" size="sm" className="w-full min-w-0">
+                            <SelectValue placeholder="Todas" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todas</SelectItem>
+                            {reservationCityOptions.map((c) => (
+                              <SelectItem key={c.id} value={c.id}>
+                                {c.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:min-w-[160px] sm:max-w-[240px] sm:flex-none">
+                        <Label htmlFor="admin-res-filter-venue" className="text-xs text-muted-foreground">
+                          Centro deportivo
+                        </Label>
+                        <Select value={resFilterVenue} onValueChange={setResFilterVenue}>
+                          <SelectTrigger id="admin-res-filter-venue" size="sm" className="w-full min-w-0">
+                            <SelectValue placeholder="Todos" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todos</SelectItem>
+                            {reservationVenueOptions.map((v) => (
+                              <SelectItem key={v.id} value={v.id}>
+                                {v.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {resFilterRegion !== 'all' ||
+                      resFilterCity !== 'all' ||
+                      resFilterVenue !== 'all' ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 shrink-0 self-end text-muted-foreground"
+                          onClick={() => {
+                            setResFilterRegion('all')
+                            setResFilterCity('all')
+                            setResFilterVenue('all')
+                          }}
+                        >
+                          Limpiar filtros
+                        </Button>
+                      ) : null}
+                    </div>
+                    {metrics.details.length > 0 &&
+                    (resFilterRegion !== 'all' ||
+                      resFilterCity !== 'all' ||
+                      resFilterVenue !== 'all') ? (
+                      <p className="border-b border-border/40 px-3 py-1.5 text-[11px] text-muted-foreground sm:px-4">
+                        Mostrando {filteredReservationDetails.length} de {metrics.details.length}{' '}
+                        reservas en este rango.
+                      </p>
+                    ) : null}
                     <p className="border-b border-border/60 bg-muted/30 px-3 py-2 text-center text-[11px] text-muted-foreground sm:hidden">
                       Desliza horizontalmente para ver todas las columnas
                     </p>
@@ -702,8 +995,17 @@ export function AdminDashboardScreen() {
                               Sin reservas para este rango.
                             </td>
                           </tr>
+                        ) : filteredReservationDetails.length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={8}
+                              className="px-6 py-10 text-center text-muted-foreground"
+                            >
+                              Ninguna reserva coincide con los filtros.
+                            </td>
+                          </tr>
                         ) : (
-                          metrics.details.map((row) => (
+                          filteredReservationDetails.map((row) => (
                             <tr
                               key={row.id}
                               className="border-b border-border/60 transition-colors hover:bg-muted/40"
@@ -858,6 +1160,14 @@ export function AdminDashboardScreen() {
                     </Button>
                     <Button
                       type="button"
+                      variant={reportsStatus === 'history' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setReportsStatus('history')}
+                    >
+                      Historial
+                    </Button>
+                    <Button
+                      type="button"
                       variant={reportsStatus === 'all' ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => setReportsStatus('all')}
@@ -893,96 +1203,199 @@ export function AdminDashboardScreen() {
                   </p>
                 ) : (
                   <div className="space-y-4">
-                    {reports.map((r) => (
-                      <div
-                        key={r.id}
-                        className="rounded-xl border border-border bg-card p-4 shadow-sm"
-                      >
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="min-w-0 space-y-1">
-                            <p className="font-semibold text-foreground">
-                              {r.reason}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(r.created_at).toLocaleString('es-CL')} · Estado:{' '}
-                              <Badge variant="outline" className="ml-1 align-middle">
-                                {r.status}
-                              </Badge>
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Reportado:{' '}
-                              <code className="rounded bg-muted px-1 py-0.5 text-foreground">
-                                {r.reported_user_id}
-                              </code>
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Reportante:{' '}
-                              <code className="rounded bg-muted px-1 py-0.5 text-foreground">
-                                {r.reporter_id}
-                              </code>
-                            </p>
+                    {reports.map((r) => {
+                      const rep = r.reported_profile
+                      const repBy = r.reporter_profile
+                      const reportedPhoto = rep?.photo_url?.trim()
+                        ? rep.photo_url
+                        : DEFAULT_PLAYER_AVATAR
+                      const reporterPhoto = repBy?.photo_url?.trim()
+                        ? repBy.photo_url
+                        : DEFAULT_PLAYER_AVATAR
+                      const isPending = r.status === 'pending'
+                      const isBanned = Boolean(rep?.mod_banned_at)
+                      return (
+                        <div
+                          key={r.id}
+                          className="rounded-xl border border-border bg-card p-4 shadow-sm"
+                        >
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0 flex-1 space-y-3">
+                              <div>
+                                <p className="font-semibold text-foreground">
+                                  {playerReportReasonLabel(r.reason)}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {new Date(r.created_at).toLocaleString('es-CL')} ·{' '}
+                                  <Badge variant="outline" className="ml-1 align-middle">
+                                    {playerReportStatusLabel(r.status)}
+                                  </Badge>
+                                </p>
+                              </div>
+                              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => openPublicProfile(r.reported_user_id)}
+                                  className="flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-left transition-colors hover:bg-amber-500/10 hover:ring-2 hover:ring-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                >
+                                  <img
+                                    src={reportedPhoto}
+                                    alt=""
+                                    className="h-12 w-12 shrink-0 rounded-full object-cover ring-2 ring-amber-500/30"
+                                  />
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                      Reportado · ver perfil
+                                    </p>
+                                    <p className="truncate font-semibold text-foreground">
+                                      {rep?.name ?? 'Usuario'}
+                                    </p>
+                                    {isBanned ? (
+                                      <Badge variant="destructive" className="mt-1 text-[10px]">
+                                        Baneado
+                                      </Badge>
+                                    ) : null}
+                                  </div>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openPublicProfile(r.reporter_id)}
+                                  className="flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-left transition-colors hover:bg-muted/50 hover:ring-2 hover:ring-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                >
+                                  <img
+                                    src={reporterPhoto}
+                                    alt=""
+                                    className="h-10 w-10 shrink-0 rounded-full object-cover"
+                                  />
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                      Reportante · ver perfil
+                                    </p>
+                                    <p className="truncate text-sm font-medium text-foreground">
+                                      {repBy?.name ?? 'Usuario'}
+                                    </p>
+                                  </div>
+                                </button>
+                              </div>
+                              {!isPending && (r.reviewed_at || r.resolution) ? (
+                                <p className="text-xs text-muted-foreground">
+                                  {r.reviewed_at
+                                    ? `Resuelto: ${new Date(r.reviewed_at).toLocaleString('es-CL')}`
+                                    : null}
+                                  {r.resolution ? (
+                                    <span className="mt-1 block whitespace-pre-wrap rounded-md bg-muted/50 p-2 text-foreground">
+                                      {r.resolution}
+                                    </span>
+                                  ) : null}
+                                </p>
+                              ) : null}
+                            </div>
+                            {isPending ? (
+                              <div className="flex flex-col gap-2">
+                                {!isBanned ? (
+                                  <div className="flex flex-wrap gap-2">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="secondary"
+                                      disabled={sanctionBusyId === r.id}
+                                      onClick={() =>
+                                        void applyCard(r.reported_user_id, 'yellow', r.id)
+                                      }
+                                    >
+                                      Amarilla
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="secondary"
+                                      disabled={sanctionBusyId === r.id}
+                                      onClick={() =>
+                                        void applyCard(r.reported_user_id, 'red', r.id)
+                                      }
+                                    >
+                                      Roja (3 días)
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="destructive"
+                                      disabled={sanctionBusyId === r.id}
+                                      onClick={() => void banUser(r.reported_user_id, r.id)}
+                                    >
+                                      Banear
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <p className="max-w-xs text-xs text-muted-foreground">
+                                    Usuario baneado: usa «Quitar baneo» para revertir, o descarta el
+                                    reporte.
+                                  </p>
+                                )}
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={sanctionBusyId === r.id}
+                                    onClick={() => void dismissReport(r.id)}
+                                  >
+                                    Descartar
+                                  </Button>
+                                  {isBanned ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="gap-1.5 border-primary/40"
+                                      disabled={sanctionBusyId === `unban:${r.reported_user_id}`}
+                                      onClick={() => void unbanUser(r.reported_user_id)}
+                                    >
+                                      <Unlock className="h-3.5 w-3.5" />
+                                      Quitar baneo
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            ) : isBanned ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="shrink-0 gap-1.5 border-primary/40"
+                                disabled={sanctionBusyId === `unban:${r.reported_user_id}`}
+                                onClick={() => void unbanUser(r.reported_user_id)}
+                              >
+                                <Unlock className="h-3.5 w-3.5" />
+                                Quitar baneo
+                              </Button>
+                            ) : null}
                           </div>
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              disabled={sanctionBusyId === r.id}
-                              onClick={() => void applyCard(r.reported_user_id, 'yellow', r.id)}
-                            >
-                              Amarilla
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              disabled={sanctionBusyId === r.id}
-                              onClick={() => void applyCard(r.reported_user_id, 'red', r.id)}
-                            >
-                              Roja (3 días)
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="destructive"
-                              disabled={sanctionBusyId === r.id}
-                              onClick={() => void banUser(r.reported_user_id, r.id)}
-                            >
-                              Banear
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={sanctionBusyId === r.id}
-                              onClick={() => void dismissReport(r.id)}
-                            >
-                              Descartar
-                            </Button>
-                          </div>
+                          {r.details ? (
+                            <p className="mt-3 whitespace-pre-wrap rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
+                              {r.details}
+                            </p>
+                          ) : (
+                            <p className="mt-3 text-xs italic text-muted-foreground">
+                              Sin detalle adicional.
+                            </p>
+                          )}
+                          {isPending ? (
+                            <Textarea
+                              value={modNoteByReportId[r.id] ?? ''}
+                              onChange={(e) =>
+                                setModNoteByReportId((prev) => ({
+                                  ...prev,
+                                  [r.id]: e.target.value,
+                                }))
+                              }
+                              placeholder="Nota o resolución (opcional, útil para banear o archivo)."
+                              className="mt-3 min-h-[72px] border-border bg-background"
+                            />
+                          ) : null}
                         </div>
-                        {r.details ? (
-                          <p className="mt-3 whitespace-pre-wrap rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
-                            {r.details}
-                          </p>
-                        ) : (
-                          <p className="mt-3 text-xs italic text-muted-foreground">
-                            Sin detalle adicional.
-                          </p>
-                        )}
-                        <Textarea
-                          value={modNoteByReportId[r.id] ?? ''}
-                          onChange={(e) =>
-                            setModNoteByReportId((prev) => ({
-                              ...prev,
-                              [r.id]: e.target.value,
-                            }))
-                          }
-                          placeholder="Nota o resolución (opcional, útil para banear o archivo)."
-                          className="mt-3 min-h-[72px] border-border bg-background"
-                        />
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </CardContent>

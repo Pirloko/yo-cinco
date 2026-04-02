@@ -89,6 +89,10 @@ export interface User {
   modSuspendedUntil?: Date
   modBannedAt?: Date
   modBanReason?: string
+  /** Última tarjeta amarilla (alerta en perfil ~24 h). */
+  modLastYellowAt?: Date | null
+  /** Última tarjeta roja (alerta en perfil ~24 h). */
+  modLastRedAt?: Date | null
   createdAt: Date
   /** Por defecto jugador; `venue` solo vía administración en Supabase. */
   accountType?: AccountType
@@ -331,6 +335,7 @@ export interface OnboardingData {
   /** YYYY-MM-DD; edad 16–60 años según fecha. */
   birthDate: string
   gender: Gender
+  /** WhatsApp móvil CL: siempre `+569` + 8 dígitos al guardar (`completeOnboarding`). */
   whatsappPhone: string
   position: Position
   level: Level

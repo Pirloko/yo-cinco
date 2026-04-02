@@ -52,6 +52,8 @@ export type ProfileRow = {
   mod_suspended_until?: string | null
   mod_banned_at?: string | null
   mod_ban_reason?: string | null
+  mod_last_yellow_at?: string | null
+  mod_last_red_at?: string | null
   created_at: string
   account_type?: 'player' | 'venue' | 'admin' | null
 }
@@ -92,6 +94,10 @@ export function profileRowToUser(row: ProfileRow, email: string): User {
     modSuspendedUntil: row.mod_suspended_until ? new Date(row.mod_suspended_until) : undefined,
     modBannedAt: row.mod_banned_at ? new Date(row.mod_banned_at) : undefined,
     modBanReason: row.mod_ban_reason ?? undefined,
+    modLastYellowAt: row.mod_last_yellow_at
+      ? new Date(row.mod_last_yellow_at)
+      : null,
+    modLastRedAt: row.mod_last_red_at ? new Date(row.mod_last_red_at) : null,
     createdAt: new Date(row.created_at),
     accountType:
       row.account_type === 'venue'

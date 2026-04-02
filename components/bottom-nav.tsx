@@ -1,6 +1,7 @@
 'use client'
 
 import { usePathname, useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 
 import { useApp } from '@/lib/app-context'
 import { persistPlayerLastNav } from '@/lib/player-nav-storage'
@@ -15,6 +16,9 @@ export function BottomNav() {
 
   if (currentUser?.accountType === 'venue' || currentUser?.accountType === 'admin')
     return null
+
+  const playerBanned =
+    currentUser?.accountType === 'player' && Boolean(currentUser.modBannedAt)
 
   const navItems: { id: NavItem; icon: React.ReactNode; label: string }[] = [
     { id: 'home', icon: <Home className="w-5 h-5 sm:w-6 sm:h-6" />, label: 'Inicio' },
@@ -40,11 +44,19 @@ export function BottomNav() {
           const isActive = currentScreen === item.id
           const isCreate = item.id === 'create'
 
+          const lockedByBan = playerBanned && item.id !== 'profile'
+
           return (
             <button
               key={item.id}
               type="button"
               onClick={() => {
+                if (lockedByBan) {
+                  toast.error(
+                    'Tu cuenta está restringida: solo puedes ver tu perfil. Si crees que es un error, contacta soporte.'
+                  )
+                  return
+                }
                 persistPlayerLastNav(item.id)
                 if (pathname !== '/') {
                   router.push('/')
@@ -52,11 +64,13 @@ export function BottomNav() {
                 setCurrentScreen(item.id)
               }}
               className={`flex flex-col items-center justify-center flex-1 min-w-0 py-1 transition-colors ${
-                isCreate
-                  ? 'text-primary'
-                  : isActive
+                lockedByBan
+                  ? 'opacity-40 text-muted-foreground'
+                  : isCreate
                     ? 'text-primary'
-                    : 'text-muted-foreground hover:text-foreground'
+                    : isActive
+                      ? 'text-primary'
+                      : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <div className={isCreate ? 'relative' : ''}>
