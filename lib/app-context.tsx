@@ -757,6 +757,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       city_id: venueCityId,
       maps_url: data.mapsUrl?.trim() || null,
       slot_duration_minutes: slot,
+      is_paused: false,
     })
     if (insErr) {
       toast.error(insErr.message)
@@ -2510,6 +2511,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [clearSessionState, loadAppStateForAuthUser])
 
+  /** Heartbeat de presencia para `profiles.last_seen_at` (panel admin / “en línea”). */
+  useEffect(() => {
+    if (authLoading || !currentUser || !isSupabaseConfigured()) return
+    if (typeof window === 'undefined') return
+
+    const ping = () => {
+      void (async () => {
+        try {
+          const supabase = createClient()
+          const {
+            data: { session },
+          } = await supabase.auth.getSession()
+          if (!session?.access_token) return
+          await fetch('/api/presence', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          })
+        } catch {
+          // red / offline
+        }
+      })()
+    }
+
+    ping()
+    const interval = window.setInterval(ping, 75_000)
+    const onVis = () => {
+      if (document.visibilityState === 'visible') ping()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [authLoading, currentUser])
+
   /** ?joinTeam= & ?register=1 → sessionStorage y URL limpia */
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -2537,6 +2573,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     capturePrefillCreateQuery()
   }, [])
+
+  /** Sin sesión: `/?screen=auth` abre login/registro (p. ej. enlace desde `/centro/...`). */
+  useEffect(() => {
+    if (authLoading) return
+    if (currentUser) return
+    if (typeof window === 'undefined') return
+    try {
+      const sp = new URLSearchParams(window.location.search)
+      if (sp.get('screen') !== 'auth') return
+      setCurrentScreen('auth')
+      window.history.replaceState({}, '', '/')
+    } catch {
+      // ignore
+    }
+  }, [authLoading, currentUser])
 
   /** `/?screen=...`: navegación directa desde páginas públicas (ej: centro). */
   useEffect(() => {
@@ -2567,15 +2618,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     persistPlayerLastNav(currentScreen as PlayerNavId)
   }, [currentUser, currentScreen])
 
-  /** Jugador ya con sesión: abrir Crear si venía de un centro (`/?prefillCreate=1`). */
-  useEffect(() => {
-    if (authLoading || !currentUser) return
-    if (currentUser.accountType !== 'player') return
-    if (needsOnboardingProfile(currentUser)) return
-    if (tryNavigateCreateAfterPlayerReady()) {
-      setCurrentScreen('create')
-    }
-  }, [authLoading, currentUser])
+  /** Abrir Crear tras `/?prefillCreate=1` solo en el efecto landing/auth → home más abajo.
+   *  Un segundo efecto aquí llamaba también a `tryNavigateCreateAfterPlayerReady`, vaciaba
+   *  sessionStorage y el otro efecto acababa en `setCurrentScreen('home')`. */
 
   /** Cuenta centro: onboarding sin `sports_venues` o panel si ya existe. */
   useEffect(() => {

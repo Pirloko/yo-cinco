@@ -84,6 +84,7 @@ export async function POST(req: Request) {
       city_id: resolvedCityId,
       maps_url: body.mapsUrl?.trim() || null,
       slot_duration_minutes: 60,
+      is_paused: false,
     })
     if (venueErr) {
       return NextResponse.json(

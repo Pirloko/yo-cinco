@@ -1,10 +1,12 @@
 /** Horarios en bloques de 1 hora (09:00–23:00). Valor = HH:00 en 24 h para combinar con la fecha. */
 
-function labelForHour24(h: number): string {
+/**
+ * Etiqueta tipo `09:00 am`, `12:00 pm`, `13:00 pm` (hora 24 h + am si h<12, pm si h≥12).
+ */
+export function formatHmAmPm(hours24: number, minutes: number): string {
   const pad = (n: number) => String(n).padStart(2, '0')
-  if (h < 12) return `${pad(h)}:00 a. m.`
-  if (h === 12) return '12:00 p. m.'
-  return `${pad(h - 12)}:00 p. m.`
+  const suffix = hours24 < 12 ? 'am' : 'pm'
+  return `${pad(hours24)}:${pad(minutes)} ${suffix}`
 }
 
 export const TIME_SLOT_OPTIONS: { value: string; label: string }[] = (() => {
@@ -12,7 +14,7 @@ export const TIME_SLOT_OPTIONS: { value: string; label: string }[] = (() => {
   for (let h = 9; h <= 23; h++) {
     out.push({
       value: `${String(h).padStart(2, '0')}:00`,
-      label: labelForHour24(h),
+      label: formatHmAmPm(h, 0),
     })
   }
   return out

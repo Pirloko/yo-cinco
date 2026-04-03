@@ -252,41 +252,45 @@ export function PublicPlayerProfileSheet() {
               </p>
             </div>
 
-            {isAdminViewer ? (
-              <div className="rounded-2xl border border-border bg-card/60 p-4 space-y-3">
-                <p className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-primary" aria-hidden />
-                  Historial de amonestaciones por reportes
-                </p>
-                {profile.modBannedAt ? (
-                  <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 flex items-start gap-2">
-                    <Ban className="h-4 w-4 shrink-0 text-red-500 mt-0.5" />
-                    <p className="text-xs text-red-700 dark:text-red-300 font-medium">
-                      Cuenta baneada
-                    </p>
-                  </div>
-                ) : null}
-                {profile.modSuspendedUntil &&
-                new Date(profile.modSuspendedUntil) > new Date() ? (
-                  <p className="text-xs text-amber-700 dark:text-amber-300 rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2">
-                    Suspensión activa hasta{' '}
-                    {new Date(profile.modSuspendedUntil).toLocaleString('es-CL')}.
+            <div className="rounded-2xl border border-border bg-card/60 p-4 space-y-3">
+              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Shield className="h-4 w-4 text-primary" aria-hidden />
+                Historial de amonestaciones por reportes
+              </p>
+              {profile.modBannedAt ? (
+                <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 flex items-start gap-2">
+                  <Ban className="h-4 w-4 shrink-0 text-red-500 mt-0.5" />
+                  <p className="text-xs text-red-700 dark:text-red-300 font-medium">
+                    Cuenta baneada en la plataforma
                   </p>
-                ) : null}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-center">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mx-auto mb-1" />
-                    <p className="text-xl font-bold tabular-nums">{profile.modYellowCards}</p>
-                    <p className="text-[11px] text-muted-foreground">Amarillas</p>
-                  </div>
-                  <div className="rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-3 text-center">
-                    <OctagonAlert className="w-4 h-4 text-red-600 dark:text-red-400 mx-auto mb-1" />
-                    <p className="text-xl font-bold tabular-nums">{profile.modRedCards}</p>
-                    <p className="text-[11px] text-muted-foreground">Rojas</p>
-                  </div>
+                </div>
+              ) : null}
+              {profile.modSuspendedUntil &&
+              new Date(profile.modSuspendedUntil) > new Date() ? (
+                <p className="text-xs text-amber-700 dark:text-amber-300 rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2">
+                  Suspensión activa hasta{' '}
+                  {new Date(profile.modSuspendedUntil).toLocaleString('es-CL')}.
+                </p>
+              ) : null}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-center">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mx-auto mb-1" />
+                  <p className="text-xl font-bold tabular-nums">{profile.modYellowCards}</p>
+                  <p className="text-[11px] font-medium text-foreground">Amarillas</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Acumuladas en cuenta
+                  </p>
+                </div>
+                <div className="rounded-xl border border-red-500/30 bg-red-500/5 px-3 py-3 text-center">
+                  <OctagonAlert className="w-4 h-4 text-red-600 dark:text-red-400 mx-auto mb-1" />
+                  <p className="text-xl font-bold tabular-nums">{profile.modRedCards}</p>
+                  <p className="text-[11px] font-medium text-foreground">Rojas</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Acumuladas en cuenta
+                  </p>
                 </div>
               </div>
-            ) : null}
+            </div>
 
             {canReport ? (
               <div className="rounded-2xl border border-border bg-secondary/10 p-4 space-y-3">

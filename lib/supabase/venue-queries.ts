@@ -20,6 +20,7 @@ export function mapVenueRow(r: Record<string, unknown>): SportsVenue {
     phone: (r.phone as string) ?? '',
     cityId: (r.city_id as string) ?? '',
     city: geo?.name?.trim() || (r.city as string) || 'Rancagua',
+    isPaused: (r.is_paused as boolean) ?? false,
     slotDurationMinutes: (r.slot_duration_minutes as number) ?? 60,
     createdAt: new Date(r.created_at as string),
   }
@@ -31,6 +32,7 @@ export async function fetchSportsVenuesList(
   const { data, error } = await supabase
     .from('sports_venues')
     .select(SPORTS_VENUE_SELECT_WITH_GEO)
+    .eq('is_paused', false)
     .order('name', { ascending: true })
   if (error || !data?.length) return []
   return data.map((r) => mapVenueRow(r as Record<string, unknown>))
@@ -52,6 +54,7 @@ export async function fetchGeoCitiesWithVenuesInRegion(
   const { data: used, error: uErr } = await supabase
     .from('sports_venues')
     .select('city_id')
+    .eq('is_paused', false)
     .in('city_id', cityIds)
   if (uErr || !used?.length) return []
   const withVenue = new Set(
@@ -77,6 +80,7 @@ export async function fetchSportsVenuesInRegion(
   const { data, error } = await supabase
     .from('sports_venues')
     .select(SPORTS_VENUE_SELECT_WITH_GEO)
+    .eq('is_paused', false)
     .in('city_id', ids)
     .order('name', { ascending: true })
   if (error || !data?.length) return []
@@ -91,6 +95,7 @@ export async function fetchVenueById(
     .from('sports_venues')
     .select(SPORTS_VENUE_SELECT_WITH_GEO)
     .eq('id', venueId)
+    .eq('is_paused', false)
     .maybeSingle()
   if (error || !data) return null
   return mapVenueRow(data as Record<string, unknown>)

@@ -17,17 +17,23 @@ import {
   KeyRound,
   LogOut,
   MapPinned,
+  Pause,
+  Pencil,
+  Play,
   RefreshCw,
   Shield,
   Table2,
+  Trash2,
   Trophy,
   Unlock,
   UserPlus,
+  Users,
   XCircle,
 } from 'lucide-react'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { GeoLocationSelect } from '@/components/geo-location-select'
 import { AdminGeoCatalogPanel } from '@/components/admin-geo-catalog-panel'
+import { AdminPlayersDashboardPanel } from '@/components/admin-players-dashboard-panel'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 import { formatAuthError } from '@/lib/supabase/auth-errors'
@@ -48,6 +54,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 
 type AdminMetrics = {
@@ -113,6 +137,23 @@ type AdminPlayerReport = {
 }
 
 type RangeKey = 'day' | '7d' | '15d' | 'month' | 'semester' | 'year'
+
+type AdminVenueListItem = {
+  id: string
+  ownerId: string
+  name: string
+  address: string
+  phone: string
+  city: string
+  cityId: string
+  cityName: string
+  regionId: string | null
+  regionName: string | null
+  mapsUrl: string | null
+  isPaused: boolean
+  slotDurationMinutes: number
+  createdAt: string
+}
 
 const DEFAULT_PLAYER_AVATAR =
   'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face'
@@ -183,6 +224,23 @@ export function AdminDashboardScreen() {
   const [adminNewPassword, setAdminNewPassword] = useState('')
   const [adminConfirmPassword, setAdminConfirmPassword] = useState('')
   const [adminPwSaving, setAdminPwSaving] = useState(false)
+  const [adminVenues, setAdminVenues] = useState<AdminVenueListItem[]>([])
+  const [venuesLoading, setVenuesLoading] = useState(false)
+  const [venueNameFilter, setVenueNameFilter] = useState('')
+  const [venueListRegion, setVenueListRegion] = useState('all')
+  const [venueListCity, setVenueListCity] = useState('all')
+  const [editVenue, setEditVenue] = useState<AdminVenueListItem | null>(null)
+  const [editVenueForm, setEditVenueForm] = useState({
+    name: '',
+    cityId: '',
+    city: '',
+    address: '',
+    phone: '',
+    mapsUrl: '',
+  })
+  const [venueSaving, setVenueSaving] = useState(false)
+  const [venueBusyId, setVenueBusyId] = useState<string | null>(null)
+  const [deleteVenueId, setDeleteVenueId] = useState<string | null>(null)
   const [resFilterRegion, setResFilterRegion] = useState('all')
   const [resFilterCity, setResFilterCity] = useState('all')
   const [resFilterVenue, setResFilterVenue] = useState('all')
@@ -287,6 +345,63 @@ export function AdminDashboardScreen() {
     reservationVenueOptions,
   ])
 
+  const venueListFilterLists = useMemo(() => {
+    const regions = new Map<string, string>()
+    const cities = new Map<string, { id: string; name: string; regionId: string | null }>()
+    for (const v of adminVenues) {
+      if (v.regionId && v.regionName) regions.set(v.regionId, v.regionName)
+      if (v.cityId) {
+        cities.set(v.cityId, {
+          id: v.cityId,
+          name: v.cityName || v.city,
+          regionId: v.regionId,
+        })
+      }
+    }
+    return {
+      regions: [...regions.entries()]
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'es')),
+      cities: [...cities.values()].sort((a, b) => a.name.localeCompare(b.name, 'es')),
+    }
+  }, [adminVenues])
+
+  const venueListCityOptions = useMemo(() => {
+    if (venueListRegion === 'all') return venueListFilterLists.cities
+    return venueListFilterLists.cities.filter((c) => c.regionId === venueListRegion)
+  }, [venueListFilterLists, venueListRegion])
+
+  const filteredAdminVenues = useMemo(() => {
+    const q = venueNameFilter.trim().toLowerCase()
+    return adminVenues.filter((v) => {
+      if (q && !v.name.toLowerCase().includes(q)) return false
+      if (venueListRegion !== 'all' && v.regionId !== venueListRegion) return false
+      if (venueListCity !== 'all' && v.cityId !== venueListCity) return false
+      return true
+    })
+  }, [adminVenues, venueNameFilter, venueListRegion, venueListCity])
+
+  useEffect(() => {
+    const regionOk =
+      venueListRegion === 'all' ||
+      venueListFilterLists.regions.some((r) => r.id === venueListRegion)
+    if (!regionOk) {
+      setVenueListRegion('all')
+      setVenueListCity('all')
+      return
+    }
+    const cityOk =
+      venueListCity === 'all' ||
+      venueListCityOptions.some((c) => c.id === venueListCity)
+    if (!cityOk) setVenueListCity('all')
+  }, [
+    adminVenues,
+    venueListRegion,
+    venueListCity,
+    venueListFilterLists,
+    venueListCityOptions,
+  ])
+
   const resetVenueForm = useCallback(() => {
     setForm({
       email: '',
@@ -313,6 +428,21 @@ export function AdminDashboardScreen() {
     }
     return h
   }, [])
+
+  const loadAdminVenues = useCallback(async () => {
+    setVenuesLoading(true)
+    try {
+      const headers = await buildAdminAuthHeaders()
+      const r = await fetch('/api/admin/venues', { method: 'GET', headers })
+      const json = (await r.json()) as { venues?: AdminVenueListItem[]; error?: string }
+      if (!r.ok) throw new Error(json.error ?? 'No se pudo cargar centros')
+      setAdminVenues(json.venues ?? [])
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al cargar centros')
+    } finally {
+      setVenuesLoading(false)
+    }
+  }, [buildAdminAuthHeaders])
 
   const loadReports = useCallback(async () => {
     if (!currentUser || currentUser.accountType !== 'admin') return
@@ -347,6 +477,10 @@ export function AdminDashboardScreen() {
   useEffect(() => {
     void loadReports()
   }, [loadReports])
+
+  useEffect(() => {
+    if (adminTab === 'centro') void loadAdminVenues()
+  }, [adminTab, loadAdminVenues])
 
   const updateReportStatus = useCallback(
     async (
@@ -554,11 +688,96 @@ export function AdminDashboardScreen() {
         mapsUrl: '',
       }))
       await loadMetrics()
+      await loadAdminVenues()
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Error al crear usuario centro'
       toast.error(msg)
     } finally {
       setCreating(false)
+    }
+  }
+
+  const saveEditVenue = async () => {
+    if (!editVenue) return
+    if (!editVenueForm.name.trim()) {
+      toast.error('El nombre del centro es obligatorio.')
+      return
+    }
+    if (!editVenueForm.cityId.trim()) {
+      toast.error('Elige una ciudad en el catálogo.')
+      return
+    }
+    setVenueSaving(true)
+    try {
+      const headers = await buildAdminAuthHeaders()
+      const r = await fetch(`/api/admin/venues/${editVenue.id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          name: editVenueForm.name.trim(),
+          address: editVenueForm.address.trim(),
+          phone: editVenueForm.phone.trim(),
+          cityId: editVenueForm.cityId.trim(),
+          mapsUrl: editVenueForm.mapsUrl.trim() || null,
+        }),
+      })
+      const json = (await r.json()) as { ok?: boolean; error?: string }
+      if (!r.ok || !json.ok) {
+        throw new Error(json.error ?? 'No se pudo guardar')
+      }
+      toast.success('Centro actualizado.')
+      setEditVenue(null)
+      await loadAdminVenues()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al guardar')
+    } finally {
+      setVenueSaving(false)
+    }
+  }
+
+  const togglePauseVenue = async (row: AdminVenueListItem) => {
+    const next = !row.isPaused
+    setVenueBusyId(row.id)
+    try {
+      const headers = await buildAdminAuthHeaders()
+      const r = await fetch(`/api/admin/venues/${row.id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ isPaused: next }),
+      })
+      const json = (await r.json()) as { ok?: boolean; error?: string }
+      if (!r.ok || !json.ok) {
+        throw new Error(json.error ?? 'No se pudo actualizar')
+      }
+      toast.success(next ? 'Centro pausado (no visible en exploración).' : 'Centro reactivado.')
+      await loadAdminVenues()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error')
+    } finally {
+      setVenueBusyId(null)
+    }
+  }
+
+  const confirmDeleteVenue = async () => {
+    if (!deleteVenueId) return
+    setVenueBusyId(deleteVenueId)
+    try {
+      const headers = await buildAdminAuthHeaders()
+      const r = await fetch(`/api/admin/venues/${deleteVenueId}`, {
+        method: 'DELETE',
+        headers,
+      })
+      const json = (await r.json()) as { ok?: boolean; error?: string }
+      if (!r.ok || !json.ok) {
+        throw new Error(json.error ?? 'No se pudo eliminar')
+      }
+      toast.success('Centro eliminado.')
+      setDeleteVenueId(null)
+      await loadAdminVenues()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al eliminar')
+    } finally {
+      setVenueBusyId(null)
     }
   }
 
@@ -618,7 +837,7 @@ export function AdminDashboardScreen() {
             <AppScreenBrandHeading
               className="min-w-0 flex-1"
               title="Panel Admin"
-              subtitle="Reservas, centros, moderación y geo."
+              subtitle="Reservas, jugadores, centros, moderación y geo."
               titleClassName="text-base sm:text-xl md:text-2xl"
             />
           </div>
@@ -639,6 +858,10 @@ export function AdminDashboardScreen() {
               <BarChart3 className="h-4 w-4 shrink-0" />
               <span className="whitespace-nowrap">Resumen</span>
             </TabsTrigger>
+            <TabsTrigger value="jugadores" className="shrink-0 gap-1.5 px-2.5 py-2 text-xs sm:px-3 sm:text-sm">
+              <Users className="h-4 w-4 shrink-0" />
+              <span className="whitespace-nowrap">Jugadores</span>
+            </TabsTrigger>
             <TabsTrigger value="reservas" className="shrink-0 gap-1.5 px-2.5 py-2 text-xs sm:px-3 sm:text-sm">
               <Table2 className="h-4 w-4 shrink-0" />
               <span className="whitespace-nowrap">Reservas</span>
@@ -650,7 +873,7 @@ export function AdminDashboardScreen() {
             </TabsTrigger>
             <TabsTrigger value="centro" className="shrink-0 gap-1.5 px-2.5 py-2 text-xs sm:px-3 sm:text-sm">
               <UserPlus className="h-4 w-4 shrink-0" />
-              <span className="whitespace-nowrap">Alta centro</span>
+              <span className="whitespace-nowrap">+ nuevo centro</span>
             </TabsTrigger>
             <TabsTrigger value="moderacion" className="shrink-0 gap-1.5 px-2.5 py-2 text-xs sm:px-3 sm:text-sm">
               <Gavel className="h-4 w-4 shrink-0" />
@@ -834,6 +1057,10 @@ export function AdminDashboardScreen() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="jugadores" className="mt-0">
+            <AdminPlayersDashboardPanel />
           </TabsContent>
 
           <TabsContent value="reservas" className="mt-0">
@@ -1054,7 +1281,7 @@ export function AdminDashboardScreen() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="centro" className="mt-0">
+          <TabsContent value="centro" className="mt-0 space-y-6">
             <Card className="gap-0 overflow-hidden border-border py-0 shadow-sm">
               <CardHeader className="border-b border-border bg-secondary/20 px-4 py-4 sm:px-6">
                 <CardTitle className="text-lg">Crear usuario de centro deportivo</CardTitle>
@@ -1136,6 +1363,300 @@ export function AdminDashboardScreen() {
                 </Button>
               </CardFooter>
             </Card>
+
+            <Card className="gap-0 overflow-hidden border-border py-0 shadow-sm">
+              <CardHeader className="border-b border-border bg-secondary/20 px-4 py-4 sm:px-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle className="text-lg">Centros registrados</CardTitle>
+                    <CardDescription>
+                      Editar datos, pausar visibilidad en la app o eliminar el registro del centro.
+                    </CardDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="shrink-0 gap-1.5"
+                    onClick={() => void loadAdminVenues()}
+                    disabled={venuesLoading}
+                  >
+                    <RefreshCw
+                      className={cn('h-3.5 w-3.5', venuesLoading && 'animate-spin')}
+                    />
+                    Actualizar
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4 p-4 sm:p-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                  <div className="min-w-0 flex-1 sm:max-w-xs">
+                    <Label htmlFor="admin-venue-name-filter" className="text-xs text-muted-foreground">
+                      Nombre
+                    </Label>
+                    <Input
+                      id="admin-venue-name-filter"
+                      value={venueNameFilter}
+                      onChange={(e) => setVenueNameFilter(e.target.value)}
+                      placeholder="Buscar por nombre…"
+                      className="mt-1.5 h-9"
+                    />
+                  </div>
+                  <div className="w-full min-w-[160px] sm:w-auto sm:max-w-[220px]">
+                    <Label htmlFor="admin-venue-region-filter" className="text-xs text-muted-foreground">
+                      Región
+                    </Label>
+                    <Select
+                      value={venueListRegion}
+                      onValueChange={(v) => {
+                        setVenueListRegion(v)
+                        setVenueListCity('all')
+                      }}
+                    >
+                      <SelectTrigger id="admin-venue-region-filter" size="sm" className="mt-1.5 w-full">
+                        <SelectValue placeholder="Todas" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas</SelectItem>
+                        {venueListFilterLists.regions.map((r) => (
+                          <SelectItem key={r.id} value={r.id}>
+                            {r.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-full min-w-[160px] sm:w-auto sm:max-w-[220px]">
+                    <Label htmlFor="admin-venue-city-filter" className="text-xs text-muted-foreground">
+                      Ciudad
+                    </Label>
+                    <Select value={venueListCity} onValueChange={setVenueListCity}>
+                      <SelectTrigger id="admin-venue-city-filter" size="sm" className="mt-1.5 w-full">
+                        <SelectValue placeholder="Todas" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas</SelectItem>
+                        {venueListCityOptions.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {venueNameFilter.trim() ||
+                  venueListRegion !== 'all' ||
+                  venueListCity !== 'all' ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 self-end text-muted-foreground"
+                      onClick={() => {
+                        setVenueNameFilter('')
+                        setVenueListRegion('all')
+                        setVenueListCity('all')
+                      }}
+                    >
+                      Limpiar filtros
+                    </Button>
+                  ) : null}
+                </div>
+
+                {venuesLoading ? (
+                  <p className="text-sm text-muted-foreground">Cargando centros…</p>
+                ) : adminVenues.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+                    No hay centros registrados.
+                  </p>
+                ) : filteredAdminVenues.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+                    Ningún centro coincide con los filtros.
+                  </p>
+                ) : (
+                  <div className="max-h-[min(55dvh,480px)] overflow-auto rounded-lg border border-border">
+                    <table className="w-full min-w-[640px] text-sm">
+                      <thead className="sticky top-0 z-10 border-b border-border bg-muted/95 backdrop-blur-sm">
+                        <tr className="text-left text-xs font-medium text-muted-foreground">
+                          <th className="px-3 py-2.5">Centro</th>
+                          <th className="px-3 py-2.5">Región</th>
+                          <th className="px-3 py-2.5">Ciudad</th>
+                          <th className="px-3 py-2.5">Estado</th>
+                          <th className="px-3 py-2.5 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredAdminVenues.map((row) => (
+                          <tr
+                            key={row.id}
+                            className="border-b border-border/60 transition-colors hover:bg-muted/40"
+                          >
+                            <td className="max-w-[180px] px-3 py-2 font-medium text-foreground">
+                              <span className="line-clamp-2">{row.name}</span>
+                            </td>
+                            <td className="max-w-[140px] px-3 py-2 text-muted-foreground">
+                              {row.regionName ?? '—'}
+                            </td>
+                            <td className="max-w-[120px] px-3 py-2 text-muted-foreground">
+                              {row.cityName || row.city}
+                            </td>
+                            <td className="px-3 py-2">
+                              {row.isPaused ? (
+                                <Badge variant="secondary">Pausado</Badge>
+                              ) : (
+                                <Badge variant="outline" className="font-normal">
+                                  Activo
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex flex-wrap items-center justify-end gap-1">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 shrink-0"
+                                  title="Editar"
+                                  disabled={venueBusyId === row.id}
+                                  onClick={() => {
+                                    setEditVenue(row)
+                                    setEditVenueForm({
+                                      name: row.name,
+                                      cityId: row.cityId,
+                                      city: row.cityName || row.city,
+                                      address: row.address,
+                                      phone: row.phone,
+                                      mapsUrl: row.mapsUrl ?? '',
+                                    })
+                                  }}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 shrink-0"
+                                  title={row.isPaused ? 'Reactivar' : 'Pausar'}
+                                  disabled={venueBusyId === row.id}
+                                  onClick={() => void togglePauseVenue(row)}
+                                >
+                                  {row.isPaused ? (
+                                    <Play className="h-4 w-4" />
+                                  ) : (
+                                    <Pause className="h-4 w-4" />
+                                  )}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                  title="Eliminar"
+                                  disabled={venueBusyId === row.id}
+                                  onClick={() => setDeleteVenueId(row.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Dialog
+              open={editVenue != null}
+              onOpenChange={(open) => {
+                if (!open) setEditVenue(null)
+              }}
+            >
+              <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg" showCloseButton>
+                <DialogHeader>
+                  <DialogTitle>Editar centro deportivo</DialogTitle>
+                  <DialogDescription>
+                    Datos del centro y ubicación. La pausa se gestiona desde la tabla.
+                  </DialogDescription>
+                </DialogHeader>
+                {editVenue ? (
+                  <div className="grid gap-4 py-2">
+                    <Field
+                      label="Nombre del centro"
+                      value={editVenueForm.name}
+                      onChange={(v) => setEditVenueForm((f) => ({ ...f, name: v }))}
+                    />
+                    <GeoLocationSelect
+                      cityId={editVenueForm.cityId}
+                      onChange={(next) =>
+                        setEditVenueForm((f) => ({
+                          ...f,
+                          cityId: next.cityId,
+                          city: next.cityLabel,
+                        }))
+                      }
+                      label="Ubicación"
+                    />
+                    <Field
+                      label="Dirección"
+                      value={editVenueForm.address}
+                      onChange={(v) => setEditVenueForm((f) => ({ ...f, address: v }))}
+                    />
+                    <Field
+                      label="Teléfono"
+                      value={editVenueForm.phone}
+                      onChange={(v) => setEditVenueForm((f) => ({ ...f, phone: v }))}
+                    />
+                    <Field
+                      label="URL de Google Maps (opcional)"
+                      value={editVenueForm.mapsUrl}
+                      onChange={(v) => setEditVenueForm((f) => ({ ...f, mapsUrl: v }))}
+                    />
+                  </div>
+                ) : null}
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button type="button" variant="outline" onClick={() => setEditVenue(null)}>
+                    Cancelar
+                  </Button>
+                  <Button type="button" onClick={() => void saveEditVenue()} disabled={venueSaving}>
+                    {venueSaving ? 'Guardando…' : 'Guardar cambios'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            <AlertDialog
+              open={deleteVenueId != null}
+              onOpenChange={(open) => {
+                if (!open) setDeleteVenueId(null)
+              }}
+            >
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>¿Eliminar este centro?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Se borrarán canchas, horarios y datos asociados en cascada. Esta acción no se
+                    puede deshacer. El usuario dueño del centro seguirá existiendo; solo se elimina
+                    el registro del centro.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      void confirmDeleteVenue()
+                    }}
+                  >
+                    Eliminar
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </TabsContent>
 
           <TabsContent value="moderacion" className="mt-0">

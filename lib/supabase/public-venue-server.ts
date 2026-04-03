@@ -28,6 +28,7 @@ export async function fetchPublicVenuePageData(
     .from('sports_venues')
     .select(SPORTS_VENUE_SELECT_WITH_GEO)
     .eq('id', venueId)
+    .eq('is_paused', false)
     .maybeSingle()
 
   if (vErr || !row) return null

@@ -3,9 +3,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { cn } from '@/lib/utils'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
-import { writeCreatePrefill } from '@/lib/create-prefill'
+import {
+  OPEN_CREATE_AFTER_AUTH_KEY,
+  writeCreatePrefill,
+} from '@/lib/create-prefill'
+import { JOIN_REGISTER_STORAGE_KEY } from '@/lib/team-invite-url'
 import { computeDaySlots, WEEKDAY_SHORT_ES } from '@/lib/venue-slots'
 import type { SportsVenue, VenueCourt, VenueWeeklyHour } from '@/lib/types'
 import type { VenueReservationRow } from '@/lib/types'
@@ -44,16 +56,39 @@ function fromDateInputValue(s: string): Date {
   return d
 }
 
+function queueCreatePrefillAfterAuth(venue: SportsVenue, slotStart: Date) {
+  const date = toDateInputValue(slotStart)
+  const time = `${pad2(slotStart.getHours())}:${pad2(slotStart.getMinutes())}`
+  writeCreatePrefill({
+    sportsVenueId: venue.id,
+    venueLabel: venue.name,
+    city: venue.city,
+    date,
+    time,
+    bookCourtSlot: true,
+  })
+  try {
+    sessionStorage.setItem(OPEN_CREATE_AFTER_AUTH_KEY, '1')
+  } catch {
+    // ignore
+  }
+}
+
 type Props = {
   venue: SportsVenue
   courts: VenueCourt[]
   weeklyHours: VenueWeeklyHour[]
 }
 
+type AuthGateReason = 'create' | 'nav'
+
 export function VenueCentroClient({ venue, courts, weeklyHours }: Props) {
   const [dayStr, setDayStr] = useState(() => toDateInputValue(new Date()))
   const [reservations, setReservations] = useState<VenueReservationRow[]>([])
   const [loading, setLoading] = useState(false)
+  const [selectedSlotStartIso, setSelectedSlotStartIso] = useState<string | null>(null)
+  const [hasSession, setHasSession] = useState(false)
+  const [authGateReason, setAuthGateReason] = useState<AuthGateReason | null>(null)
 
   const day = useMemo(() => fromDateInputValue(dayStr), [dayStr])
 
@@ -96,12 +131,28 @@ export function VenueCentroClient({ venue, courts, weeklyHours }: Props) {
     void loadRes()
   }, [loadRes])
 
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setHasSession(false)
+      return
+    }
+    const supabase = createClient()
+    let cancelled = false
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!cancelled) setHasSession(Boolean(session?.user))
+    })
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setHasSession(Boolean(session?.user))
+    })
+    return () => {
+      cancelled = true
+      subscription.unsubscribe()
+    }
+  }, [])
+
   const courtIds = courts.map((c) => c.id)
-  const courtName = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const c of courts) m.set(c.id, c.name)
-    return m
-  }, [courts])
 
   const slots = useMemo(
     () =>
@@ -115,9 +166,27 @@ export function VenueCentroClient({ venue, courts, weeklyHours }: Props) {
     [day, weeklyHours, courtIds, reservations, venue.slotDurationMinutes]
   )
 
+  useEffect(() => {
+    setSelectedSlotStartIso(null)
+  }, [dayStr])
+
+  useEffect(() => {
+    setSelectedSlotStartIso((prev) => {
+      if (!prev) return null
+      const match = slots.find((s) => s.start.toISOString() === prev)
+      if (!match || match.freeCourtIds.length === 0) return null
+      return prev
+    })
+  }, [slots])
+
+  const selectedSlot = useMemo(() => {
+    if (!selectedSlotStartIso) return null
+    return slots.find((s) => s.start.toISOString() === selectedSlotStartIso) ?? null
+  }, [slots, selectedSlotStartIso])
+
   const dow = WEEKDAY_SHORT_ES[day.getDay()]
 
-  const handleCreateFromSlot = (slotStart: Date, slotEnd: Date) => {
+  const proceedCreateLoggedIn = (slotStart: Date) => {
     const date = toDateInputValue(slotStart)
     const time = `${pad2(slotStart.getHours())}:${pad2(slotStart.getMinutes())}`
     writeCreatePrefill({
@@ -129,6 +198,27 @@ export function VenueCentroClient({ venue, courts, weeklyHours }: Props) {
       bookCourtSlot: true,
     })
     window.location.href = '/?prefillCreate=1'
+  }
+
+  const goToAppAuth = (signup: boolean, attachPrefill: boolean) => {
+    try {
+      if (signup) {
+        sessionStorage.setItem(JOIN_REGISTER_STORAGE_KEY, '1')
+      } else {
+        sessionStorage.removeItem(JOIN_REGISTER_STORAGE_KEY)
+      }
+    } catch {
+      // ignore
+    }
+    if (
+      attachPrefill &&
+      selectedSlot &&
+      selectedSlot.freeCourtIds.length > 0
+    ) {
+      queueCreatePrefillAfterAuth(venue, selectedSlot.start)
+    }
+    setAuthGateReason(null)
+    window.location.href = '/?screen=auth'
   }
 
   return (
@@ -170,87 +260,209 @@ export function VenueCentroClient({ venue, courts, weeklyHours }: Props) {
         ) : null}
       </div>
 
-      <div className="rounded-xl border border-border bg-secondary/30 p-4 text-sm text-muted-foreground space-y-3">
+      <div className="rounded-xl border border-border bg-secondary/30 p-4 text-sm text-muted-foreground space-y-2">
         <p className="text-foreground font-medium">
-          ¿Quieres organizar un partido en {venue.name}?
+          ¿Organizar un partido en {venue.name}?
         </p>
         <p>
-          Mira los <strong className="text-foreground">horarios disponibles</strong> y pulsa{' '}
-          <strong className="text-foreground">“Crear partido aquí”</strong> en el
-          tramo que te acomode.
-        </p>
-        <p>
-          Si <strong className="text-foreground">no tienes cuenta</strong>, primero
-          regístrate en la app. Si ya tienes cuenta, inicia sesión y te llevamos a{' '}
-          <strong className="text-foreground">Crear</strong> con la fecha y hora
-          seleccionadas.
+          Elige un <strong className="text-foreground">horario libre</strong> en la grilla y
+          confirma con <strong className="text-foreground">Crear partido</strong>. Te
+          llevamos a <strong className="text-foreground">Crear</strong> con fecha y hora
+          listas (inicia sesión o regístrate si hace falta).
         </p>
       </div>
 
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Calendar className="w-5 h-5 text-primary" />
-          <h2 className="text-lg font-semibold">Horarios disponibles ({dow})</h2>
+      <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border bg-muted/30 px-4 py-3 sm:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Calendar className="h-5 w-5" aria-hidden />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold tracking-tight text-foreground">
+                  Horarios disponibles
+                </h2>
+                <p className="text-xs text-muted-foreground">{dow}</p>
+              </div>
+            </div>
+            <InputDate value={dayStr} onChange={setDayStr} />
+          </div>
         </div>
-        <InputDate value={dayStr} onChange={setDayStr} />
-        <p className="text-xs text-muted-foreground">
-          Tramos de {venue.slotDurationMinutes} min según horario declarado y reservas
-          confirmadas. Al publicar un partido se asigna una cancha libre si hay cupo.
-        </p>
 
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Cargando…</p>
-        ) : weeklyHours.length === 0 || courts.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Este centro aún no tiene horario o canchas configurados en la app.
+        <div className="space-y-4 p-4 sm:p-5">
+          <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground sm:text-sm">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
+            <span>
+              Tramos de <span className="font-medium text-foreground">{venue.slotDurationMinutes} min</span>.
+              Los ocupados aparecen deshabilitados. Al publicar se asigna una cancha libre si hay cupo.
+            </span>
           </p>
-        ) : slots.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No hay horario de apertura este día o ya no quedan tramos.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {slots.map((s) => {
-              const free = s.freeCourtIds.length
-              const label = `${pad2(s.start.getHours())}:${pad2(s.start.getMinutes())} – ${pad2(s.end.getHours())}:${pad2(s.end.getMinutes())}`
-              const available = free > 0
-              return (
-                <li key={s.start.toISOString()}>
-                  <Card className="bg-card border-border">
-                    <CardContent className="p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Clock className="w-4 h-4 text-primary shrink-0" />
-                        <span className="font-medium">{label}</span>
-                        <span className="text-muted-foreground">
-                          {available
-                            ? `${free} cancha(s) libre(s) de ${s.totalCourts}`
-                            : 'Completo'}
-                        </span>
-                      </div>
+
+          {loading ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">Cargando horarios…</p>
+          ) : weeklyHours.length === 0 || courts.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              Este centro aún no tiene horario o canchas configurados en la app.
+            </p>
+          ) : slots.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No hay apertura este día o no quedan tramos.
+            </p>
+          ) : (
+            <>
+              <div
+                className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5"
+                role="list"
+                aria-label="Horarios del día"
+              >
+                {slots.map((s) => {
+                  const free = s.freeCourtIds.length
+                  const available = free > 0
+                  const startLabel = `${pad2(s.start.getHours())}:${pad2(s.start.getMinutes())}`
+                  const endLabel = `${pad2(s.end.getHours())}:${pad2(s.end.getMinutes())}`
+                  const rangeLabel = `${startLabel} – ${endLabel}`
+                  const iso = s.start.toISOString()
+                  const isSelected = selectedSlotStartIso === iso
+                  return (
+                    <button
+                      key={iso}
+                      type="button"
+                      role="listitem"
+                      disabled={!available}
+                      aria-label={
+                        available
+                          ? `${rangeLabel}, ${free} de ${s.totalCourts} canchas libres`
+                          : `${rangeLabel}, sin cupo`
+                      }
+                      aria-pressed={available ? isSelected : undefined}
+                      onClick={() => {
+                        if (!available) return
+                        setSelectedSlotStartIso(isSelected ? null : iso)
+                      }}
+                      className={cn(
+                        'flex min-h-[3.25rem] flex-col items-center justify-center rounded-xl border px-1.5 py-2 text-center transition-all',
+                        !available &&
+                          'cursor-not-allowed border-border/50 bg-muted/20 text-muted-foreground opacity-60',
+                        available &&
+                          !isSelected &&
+                          'border-border bg-background shadow-xs hover:border-primary/35 hover:bg-primary/[0.04]',
+                        available &&
+                          isSelected &&
+                          'border-primary bg-primary/10 shadow-sm ring-2 ring-primary/25',
+                      )}
+                    >
+                      <span className="text-sm font-semibold tabular-nums text-foreground">
+                        {startLabel}
+                      </span>
                       {available ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="shrink-0 bg-primary text-primary-foreground"
-                          onClick={() => handleCreateFromSlot(s.start, s.end)}
-                        >
-                          Crear partido aquí
-                        </Button>
-                      ) : null}
-                    </CardContent>
-                  </Card>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </div>
-      <PublicAppBottomNav />
+                        <span className="mt-0.5 text-[10px] font-medium leading-none text-muted-foreground">
+                          {free}/{s.totalCourts} canchas libres
+                        </span>
+                      ) : (
+                        <span className="mt-0.5 text-[10px] font-medium text-muted-foreground">
+                          Lleno
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {selectedSlot && selectedSlot.freeCourtIds.length > 0 ? (
+                <div className="rounded-xl border border-primary/20 bg-primary/[0.06] p-4">
+                  <div className="mb-3 flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-primary">
+                        Horario elegido
+                      </p>
+                      <p className="text-lg font-semibold tabular-nums text-foreground">
+                        {pad2(selectedSlot.start.getHours())}:
+                        {pad2(selectedSlot.start.getMinutes())} –{' '}
+                        {pad2(selectedSlot.end.getHours())}:
+                        {pad2(selectedSlot.end.getMinutes())}
+                      </p>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedSlot.freeCourtIds.length} cancha(s) libre(s) de{' '}
+                      {selectedSlot.totalCourts}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="lg"
+                    className="h-11 w-full font-semibold shadow-sm"
+                    onClick={() => {
+                      if (hasSession) {
+                        proceedCreateLoggedIn(selectedSlot.start)
+                        return
+                      }
+                      setAuthGateReason('create')
+                    }}
+                  >
+                    Crear partido en este horario
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-center text-xs text-muted-foreground">
+                  Selecciona un horario disponible para continuar.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </section>
+
+      <Dialog
+        open={authGateReason !== null}
+        onOpenChange={(open) => {
+          if (!open) setAuthGateReason(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md" showCloseButton>
+          <DialogHeader>
+            <DialogTitle>Entra a SPORTMATCH</DialogTitle>
+            <DialogDescription>
+              {authGateReason === 'create'
+                ? 'Para crear un partido en este centro e intentar reservar la cancha necesitas una cuenta.'
+                : 'Para usar Inicio, Explorar, Partidos y el resto de la app necesitas iniciar sesión o registrarte.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col gap-2 sm:flex-col">
+            <Button
+              type="button"
+              className="w-full"
+              onClick={() => goToAppAuth(false, authGateReason === 'create')}
+            >
+              Iniciar sesión
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => goToAppAuth(true, authGateReason === 'create')}
+            >
+              Crear cuenta
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <PublicAppBottomNav
+        hasSession={hasSession}
+        onRequireAuth={() => setAuthGateReason('nav')}
+      />
     </div>
   )
 }
 
-function PublicAppBottomNav() {
+function PublicAppBottomNav({
+  hasSession,
+  onRequireAuth,
+}: {
+  hasSession: boolean
+  onRequireAuth: () => void
+}) {
   const [activeId, setActiveId] = useState<PlayerNavId | null>(null)
 
   useEffect(() => {
@@ -289,7 +501,12 @@ function PublicAppBottomNav() {
             <Link
               key={item.id}
               href={item.href}
-              onClick={() => {
+              onClick={(e) => {
+                if (!hasSession) {
+                  e.preventDefault()
+                  onRequireAuth()
+                  return
+                }
                 persistPlayerLastNav(item.id)
                 setActiveId(item.id)
               }}
@@ -334,7 +551,7 @@ function InputDate({
       type="date"
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full max-w-xs h-11 rounded-md border border-border bg-background px-3 text-foreground"
+      className="h-10 w-full max-w-[11.5rem] rounded-lg border border-input bg-background px-3 text-sm font-medium text-foreground shadow-xs outline-none transition-[box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
     />
   )
 }

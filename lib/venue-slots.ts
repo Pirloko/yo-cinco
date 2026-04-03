@@ -1,4 +1,4 @@
-import { TIME_SLOT_OPTIONS } from '@/lib/time-slot-options'
+import { formatHmAmPm, TIME_SLOT_OPTIONS } from '@/lib/time-slot-options'
 import type { VenueReservationRow, VenueWeeklyHour } from '@/lib/types'
 
 export function hmToMinutes(hm: string): number {
@@ -19,10 +19,8 @@ export function labelForHm(hm: string): string {
   if (byPreset) return byPreset.label
   const [hhRaw, mmRaw] = hm.split(':')
   const hh = Number(hhRaw)
-  const mm = Number(mmRaw)
-  const suffix = hh >= 12 ? 'p. m.' : 'a. m.'
-  const h12 = hh % 12 === 0 ? 12 : hh % 12
-  return `${String(h12).padStart(2, '0')}:${String(mm).padStart(2, '0')} ${suffix}`
+  const mm = Number(mmRaw) || 0
+  return formatHmAmPm(hh, mm)
 }
 
 export function computeVenueAvailableSlots({

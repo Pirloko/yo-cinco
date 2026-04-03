@@ -1,9 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
+import type { LucideIcon } from 'lucide-react'
 import {
+  Building2,
   ChevronDown,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Globe2,
+  Layers,
   Loader2,
   MapPinned,
   Pencil,
@@ -13,6 +19,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -39,6 +46,68 @@ import {
 } from '@/components/ui/collapsible'
 import { Checkbox } from '@/components/ui/checkbox'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import { cn } from '@/lib/utils'
+
+/** Misma lógica que `slugify` en `/api/admin/geo` (vista previa al crear ciudad). */
+function slugifyGeoPreview(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+}
+
+function GeoSubsection({
+  title,
+  subtitle,
+  icon: Icon,
+  badge,
+  actions,
+  children,
+  className,
+}: {
+  title: string
+  subtitle?: string
+  icon: LucideIcon
+  badge?: string
+  actions?: ReactNode
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        'overflow-hidden rounded-xl border border-border/80 bg-card/90 shadow-sm ring-1 ring-black/[0.04] dark:ring-white/[0.06]',
+        className
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border/60 bg-gradient-to-r from-muted/50 via-muted/25 to-transparent px-4 py-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-primary">
+            <Icon className="h-4 w-4" aria-hidden />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold tracking-tight text-foreground">{title}</h3>
+              {badge ? (
+                <Badge variant="secondary" className="font-mono text-[10px] font-normal tabular-nums">
+                  {badge}
+                </Badge>
+              ) : null}
+            </div>
+            {subtitle ? (
+              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{subtitle}</p>
+            ) : null}
+          </div>
+        </div>
+        {actions ? <div className="flex shrink-0 flex-wrap gap-2">{actions}</div> : null}
+      </div>
+      <div className="p-4">{children}</div>
+    </div>
+  )
+}
 
 type GeoCountryRow = {
   id: string
@@ -110,6 +179,9 @@ export function AdminGeoCatalogPanel() {
   const [cityRegionFilter, setCityRegionFilter] = useState<string>('')
   const [citiesInactiveOnly, setCitiesInactiveOnly] = useState(false)
   const [selectedCityIds, setSelectedCityIds] = useState<Set<string>>(() => new Set())
+  const [regionSectionQuery, setRegionSectionQuery] = useState('')
+  const [cityCollapsibleKey, setCityCollapsibleKey] = useState(0)
+  const [defaultExpandAllCityRegions, setDefaultExpandAllCityRegions] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -274,6 +346,42 @@ export function AdminGeoCatalogPanel() {
     [cities]
   )
 
+  const filteredRegionsForList = useMemo(() => {
+    const q = regionSectionQuery.trim().toLowerCase()
+    if (!q) return regions
+    return regions.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.code.toLowerCase().includes(q) ||
+        (countries.find((c) => c.id === r.country_id)?.name.toLowerCase().includes(q) ?? false)
+    )
+  }, [regions, regionSectionQuery, countries])
+
+  const inactiveFilteredCityIds = useMemo(
+    () => filteredCities.filter((c) => !c.is_active).map((c) => c.id),
+    [filteredCities]
+  )
+
+  const selectInactiveVisible = () => {
+    setSelectedCityIds((prev) => {
+      const next = new Set(prev)
+      for (const id of inactiveFilteredCityIds) next.add(id)
+      return next
+    })
+  }
+
+  const clearCitySelection = () => setSelectedCityIds(new Set())
+
+  const expandAllCityRegionGroups = () => {
+    setDefaultExpandAllCityRegions(true)
+    setCityCollapsibleKey((k) => k + 1)
+  }
+
+  const collapseAllCityRegionGroups = () => {
+    setDefaultExpandAllCityRegions(false)
+    setCityCollapsibleKey((k) => k + 1)
+  }
+
   const useGroupedCityList = !cityQuery.trim() && !cityRegionFilter
 
   const citiesByRegion = useMemo(() => {
@@ -339,8 +447,14 @@ export function AdminGeoCatalogPanel() {
           </div>
         ) : (
           <>
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">Países</h3>
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)] xl:items-start">
+              <div className="flex min-w-0 flex-col gap-6">
+                <GeoSubsection
+                  title="Países"
+                  icon={Globe2}
+                  badge={String(countries.length)}
+                  subtitle="ISO de 2 letras y nombre. Desactivar oculta el país en selects sin borrar datos."
+                >
               <div className="flex flex-wrap gap-2 items-end">
                 <div className="space-y-1">
                   <Label className="text-xs">ISO (2 letras)</Label>
@@ -385,7 +499,7 @@ export function AdminGeoCatalogPanel() {
                   Agregar
                 </Button>
               </div>
-              <ul className="divide-y divide-border rounded-md border border-border">
+              <ul className="divide-y divide-border rounded-lg border border-border/80 bg-background/40">
                 {countries.map((c) => (
                   <CountryLine
                     key={c.id}
@@ -406,10 +520,41 @@ export function AdminGeoCatalogPanel() {
                   />
                 ))}
               </ul>
-            </section>
+                </GeoSubsection>
 
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">Regiones</h3>
+                <GeoSubsection
+                  title="Regiones"
+                  icon={Layers}
+                  badge={
+                    regionSectionQuery.trim()
+                      ? `${filteredRegionsForList.length}/${regions.length}`
+                      : String(regions.length)
+                  }
+                  subtitle="Lista con scroll y filtro local. Código en mayúsculas (ej. RM, VIII)."
+                >
+              <div className="relative mb-3">
+                <Search
+                  className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden
+                />
+                <Input
+                  className="h-9 bg-secondary pl-9 pr-9"
+                  placeholder="Filtrar por nombre, código o país…"
+                  value={regionSectionQuery}
+                  onChange={(e) => setRegionSectionQuery(e.target.value)}
+                  autoComplete="off"
+                />
+                {regionSectionQuery ? (
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onClick={() => setRegionSectionQuery('')}
+                    aria-label="Limpiar filtro de regiones"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
               <div className="flex flex-wrap gap-2 items-end">
                 <div className="space-y-1 min-w-[160px]">
                   <Label className="text-xs">País</Label>
@@ -474,8 +619,13 @@ export function AdminGeoCatalogPanel() {
                   Agregar
                 </Button>
               </div>
-              <ul className="divide-y divide-border rounded-md border border-border">
-                {regions.map((r) => (
+              <ul className="mt-3 max-h-[min(42vh,440px)] divide-y divide-border overflow-y-auto rounded-lg border border-border/80 bg-background/40 [scrollbar-width:thin]">
+                {filteredRegionsForList.length === 0 ? (
+                  <li className="px-3 py-6 text-center text-xs text-muted-foreground">
+                    Ninguna región coincide con el filtro.
+                  </li>
+                ) : null}
+                {filteredRegionsForList.map((r) => (
                   <RegionLine
                     key={r.id}
                     row={r}
@@ -498,32 +648,91 @@ export function AdminGeoCatalogPanel() {
                   />
                 ))}
               </ul>
-            </section>
-
-            <section className="space-y-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                <div className="min-w-0 space-y-1">
-                  <h3 className="text-sm font-semibold text-foreground">Ciudades</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Búsqueda y filtros abajo. Casillas en cada fila; botón para activar las marcadas.
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-9 w-full shrink-0 sm:w-auto"
-                  disabled={saving || selectedCityIds.size === 0}
-                  onClick={() => void bulkActivateSelected()}
-                >
-                  {selectedCityIds.size === 0
-                    ? 'Activar ciudad(es) marcadas'
-                    : selectedCityIds.size === 1
-                      ? 'Activar 1 marcada'
-                      : `Activar ${selectedCityIds.size} marcadas`}
-                </Button>
+                </GeoSubsection>
               </div>
 
-              <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-3 sm:p-4">
+              <div className="min-w-0 space-y-4">
+                <GeoSubsection
+                  title="Ciudades"
+                  icon={Building2}
+                  badge={`${filteredCities.length} / ${cities.length}`}
+                  subtitle="Casillas para activar en bloque. Vista agrupada por región: expande o contrae todo cuando no hay búsqueda por región."
+                  actions={
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-9 shrink-0"
+                      disabled={saving || selectedCityIds.size === 0}
+                      onClick={() => void bulkActivateSelected()}
+                    >
+                      {selectedCityIds.size === 0
+                        ? 'Activar marcadas'
+                        : selectedCityIds.size === 1
+                          ? 'Activar 1'
+                          : `Activar ${selectedCityIds.size}`}
+                    </Button>
+                  }
+                >
+              <div className="mb-4 flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/15 p-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <p className="text-[11px] font-medium text-muted-foreground sm:mr-auto">
+                  Acciones rápidas
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {useGroupedCityList ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 text-xs"
+                        disabled={saving}
+                        onClick={expandAllCityRegionGroups}
+                      >
+                        <ChevronsDownUp className="h-3.5 w-3.5" />
+                        Expandir grupos
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 text-xs"
+                        disabled={saving}
+                        onClick={collapseAllCityRegionGroups}
+                      >
+                        <ChevronsUpDown className="h-3.5 w-3.5" />
+                        Contraer grupos
+                      </Button>
+                    </>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    disabled={saving || inactiveFilteredCityIds.length === 0}
+                    onClick={selectInactiveVisible}
+                  >
+                    Marcar inactivas visibles
+                    {inactiveFilteredCityIds.length > 0 ? (
+                      <span className="ml-1 tabular-nums text-muted-foreground">
+                        ({inactiveFilteredCityIds.length})
+                      </span>
+                    ) : null}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs"
+                    disabled={saving || selectedCityIds.size === 0}
+                    onClick={clearCitySelection}
+                  >
+                    Quitar selección
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-xl border border-border/70 bg-muted/20 p-3 sm:p-4">
                 <p className="text-xs font-medium text-foreground">Buscar y filtrar</p>
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
                   <div className="relative min-w-0 flex-1 space-y-1">
@@ -608,65 +817,99 @@ export function AdminGeoCatalogPanel() {
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-2 items-end">
-                <div className="space-y-1 min-w-[220px] flex-1">
-                  <Label className="text-xs">Nueva ciudad — Región</Label>
-                  <Select
-                    value={newCity.regionId}
-                    onValueChange={(v) => setNewCity((s) => ({ ...s, regionId: v }))}
+              <div className="space-y-3 rounded-xl border border-dashed border-primary/20 bg-gradient-to-br from-primary/[0.04] to-transparent p-3 sm:p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-foreground">Alta rápida de ciudad</p>
+                  {cityRegionFilter ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() =>
+                        setNewCity((s) => ({ ...s, regionId: cityRegionFilter }))
+                      }
+                    >
+                      Aplicar región del filtro
+                    </Button>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2 items-end">
+                  <div className="space-y-1 min-w-[200px] flex-1">
+                    <Label className="text-xs">Región</Label>
+                    <Select
+                      value={newCity.regionId}
+                      onValueChange={(v) => setNewCity((s) => ({ ...s, regionId: v }))}
+                    >
+                      <SelectTrigger className="h-9 w-full bg-secondary">
+                        <SelectValue placeholder="Región" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[min(280px,50vh)]">
+                        {regions.map((r) => (
+                          <SelectItem key={r.id} value={r.id}>
+                            {regionLabel(r)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1 min-w-[140px] flex-1">
+                    <Label className="text-xs">Nombre</Label>
+                    <Input
+                      className="h-9 bg-secondary"
+                      placeholder="Ej. Rancagua"
+                      value={newCity.name}
+                      onChange={(e) =>
+                        setNewCity((s) => ({ ...s, name: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1 w-full min-[420px]:w-32">
+                    <Label className="text-xs">Slug (opcional)</Label>
+                    <Input
+                      className="h-9 bg-secondary font-mono text-xs"
+                      placeholder="Vacío = auto"
+                      value={newCity.slug}
+                      onChange={(e) =>
+                        setNewCity((s) => ({ ...s, slug: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-9"
+                    disabled={saving || !newCity.regionId}
+                    onClick={() => {
+                      void (async () => {
+                        const ok = await postAction({
+                          action: 'createCity',
+                          regionId: newCity.regionId,
+                          name: newCity.name,
+                          ...(newCity.slug.trim() ? { slug: newCity.slug } : {}),
+                        })
+                        if (ok) setNewCity((s) => ({ ...s, name: '', slug: '' }))
+                      })()
+                    }}
                   >
-                    <SelectTrigger className="h-9 w-full bg-secondary">
-                      <SelectValue placeholder="Región" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[min(280px,50vh)]">
-                      {regions.map((r) => (
-                        <SelectItem key={r.id} value={r.id}>
-                          {regionLabel(r)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    <Plus className="mr-1 h-4 w-4" />
+                    Agregar
+                  </Button>
                 </div>
-                <div className="space-y-1 flex-1 min-w-[120px]">
-                  <Label className="text-xs">Nombre</Label>
-                  <Input
-                    className="h-9 bg-secondary"
-                    value={newCity.name}
-                    onChange={(e) =>
-                      setNewCity((s) => ({ ...s, name: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="space-y-1 w-28">
-                  <Label className="text-xs">Slug (opc.)</Label>
-                  <Input
-                    className="h-9 bg-secondary"
-                    placeholder="auto"
-                    value={newCity.slug}
-                    onChange={(e) =>
-                      setNewCity((s) => ({ ...s, slug: e.target.value }))
-                    }
-                  />
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={saving || !newCity.regionId}
-                  onClick={() => {
-                    void (async () => {
-                      const ok = await postAction({
-                        action: 'createCity',
-                        regionId: newCity.regionId,
-                        name: newCity.name,
-                        ...(newCity.slug.trim() ? { slug: newCity.slug } : {}),
-                      })
-                      if (ok) setNewCity((s) => ({ ...s, name: '', slug: '' }))
-                    })()
-                  }}
-                >
-                  <Plus className="mr-1 h-4 w-4" />
-                  Agregar
-                </Button>
+                {newCity.name.trim() ? (
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    Slug que aplicará el servidor:{' '}
+                    <code className="rounded-md border border-border/60 bg-muted/60 px-2 py-0.5 font-mono text-[11px] text-foreground">
+                      {newCity.slug.trim()
+                        ? slugifyGeoPreview(newCity.slug)
+                        : slugifyGeoPreview(newCity.name) || '—'}
+                    </code>
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    Si dejas el slug vacío, se genera a partir del nombre (misma regla que en API).
+                  </p>
+                )}
               </div>
 
               {filteredCities.length === 0 ? (
@@ -675,16 +918,21 @@ export function AdminGeoCatalogPanel() {
                   inactivas&quot;.
                 </p>
               ) : useGroupedCityList ? (
-                <div className="max-h-[min(70dvh,640px)] space-y-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
+                <div className="max-h-[min(70dvh,680px)] space-y-2 overflow-y-auto rounded-lg border border-border/50 bg-muted/5 p-2 pr-1 [scrollbar-width:thin]">
                   {citiesByRegion.map(({ regionId, region, cities: groupCities }) => {
                     const inactiveInGroup = groupCities.filter((c) => !c.is_active).length
                     return (
                       <Collapsible
-                        key={regionId}
-                        defaultOpen={inactiveInGroup > 0 && citiesInactiveOnly}
-                        className="group rounded-lg border border-border bg-card data-[state=open]:shadow-sm"
+                        key={`${regionId}-${cityCollapsibleKey}`}
+                        defaultOpen={
+                          defaultExpandAllCityRegions ||
+                          (!defaultExpandAllCityRegions &&
+                            inactiveInGroup > 0 &&
+                            citiesInactiveOnly)
+                        }
+                        className="group rounded-xl border border-border/80 bg-card/90 shadow-sm data-[state=open]:ring-1 data-[state=open]:ring-primary/15"
                       >
-                        <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm hover:bg-muted/50">
+                        <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 rounded-t-xl px-3 py-2.5 text-left text-sm hover:bg-muted/40">
                           <span className="min-w-0 font-medium text-foreground">
                             {region ? region.name : regionId}
                             <span className="ml-2 font-normal text-muted-foreground">
@@ -701,13 +949,14 @@ export function AdminGeoCatalogPanel() {
                           <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
                         </CollapsibleTrigger>
                         <CollapsibleContent>
-                          <ul className="divide-y divide-border border-t border-border">
+                          <ul className="divide-y divide-border border-t border-border/60">
                             {groupCities.map((ci) => {
                               const reg = regions.find((r) => r.id === ci.region_id)
                               return (
                                 <CityLine
                                   key={ci.id}
                                   row={ci}
+                                  showRegionColumn={false}
                                   regionHint={reg ? regionLabel(reg) : ci.region_id}
                                   disabled={saving}
                                   bulkSelected={selectedCityIds.has(ci.id)}
@@ -732,7 +981,7 @@ export function AdminGeoCatalogPanel() {
                   })}
                 </div>
               ) : (
-                <ul className="max-h-[min(70dvh,640px)] divide-y divide-border overflow-y-auto rounded-md border border-border [scrollbar-width:thin]">
+                <ul className="max-h-[min(70dvh,680px)] divide-y divide-border overflow-y-auto rounded-xl border border-border/70 bg-card/40 [scrollbar-width:thin]">
                   {[...filteredCities]
                     .sort((a, b) => {
                       const ra = regions.find((r) => r.id === a.region_id)?.name ?? ''
@@ -765,7 +1014,9 @@ export function AdminGeoCatalogPanel() {
                     })}
                 </ul>
               )}
-            </section>
+                </GeoSubsection>
+              </div>
+            </div>
           </>
         )}
       </CardContent>
@@ -797,39 +1048,41 @@ function CountryLine({
   }, [row.id, row.name, row.iso_code])
 
   return (
-    <li className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
-      <span className="font-medium text-foreground flex-1 min-w-[120px]">
-        {row.name}
-      </span>
-      <code className="text-xs text-muted-foreground">{row.iso_code}</code>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">Activo</span>
-        <Switch
-          checked={row.is_active}
-          disabled={disabled}
-          onCheckedChange={(v) => onUpdate({ isActive: v })}
-        />
+    <li className="flex flex-col gap-2 border-b border-border/40 px-3 py-2.5 text-sm last:border-0 hover:bg-muted/25 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
+      <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="font-medium text-foreground">{row.name}</span>
+        <code className="text-xs text-muted-foreground">{row.iso_code}</code>
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8"
-        disabled={disabled}
-        onClick={() => setEditOpen(true)}
-      >
-        <Pencil className="h-4 w-4" />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 text-destructive"
-        disabled={disabled}
-        onClick={onDelete}
-      >
-        <Trash2 className="h-4 w-4" />
-      </Button>
+      <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Activo</span>
+          <Switch
+            checked={row.is_active}
+            disabled={disabled}
+            onCheckedChange={(v) => onUpdate({ isActive: v })}
+          />
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          disabled={disabled}
+          onClick={() => setEditOpen(true)}
+        >
+          <Pencil className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-destructive"
+          disabled={disabled}
+          onClick={onDelete}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -899,40 +1152,46 @@ function RegionLine({
   }, [row.id, row.name, row.code])
 
   return (
-    <li className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
-      <span className="text-muted-foreground text-xs w-16">{countryIso}</span>
-      <span className="font-medium text-foreground flex-1 min-w-[140px]">
-        {row.name}
-      </span>
-      <code className="text-xs">{row.code}</code>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">Activo</span>
-        <Switch
-          checked={row.is_active}
-          disabled={disabled}
-          onCheckedChange={(v) => onUpdate({ isActive: v })}
-        />
+    <li className="flex flex-col gap-2 border-b border-border/40 px-3 py-2.5 text-sm last:border-0 hover:bg-muted/25 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="w-9 shrink-0 font-mono text-[11px] uppercase text-muted-foreground">
+          {countryIso}
+        </span>
+        <span className="min-w-0 flex-1 font-medium text-foreground">{row.name}</span>
+        <code className="rounded bg-muted/50 px-1.5 py-0.5 text-[11px] font-medium">
+          {row.code}
+        </code>
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8"
-        disabled={disabled}
-        onClick={() => setEditOpen(true)}
-      >
-        <Pencil className="h-4 w-4" />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 text-destructive"
-        disabled={disabled}
-        onClick={onDelete}
-      >
-        <Trash2 className="h-4 w-4" />
-      </Button>
+      <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Activo</span>
+          <Switch
+            checked={row.is_active}
+            disabled={disabled}
+            onCheckedChange={(v) => onUpdate({ isActive: v })}
+          />
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          disabled={disabled}
+          onClick={() => setEditOpen(true)}
+        >
+          <Pencil className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-destructive"
+          disabled={disabled}
+          onClick={onDelete}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -978,6 +1237,7 @@ function RegionLine({
 function CityLine({
   row,
   regionHint,
+  showRegionColumn = true,
   disabled,
   bulkSelected,
   onBulkCheckedChange,
@@ -986,6 +1246,7 @@ function CityLine({
 }: {
   row: GeoCityRow
   regionHint: string
+  showRegionColumn?: boolean
   disabled: boolean
   bulkSelected: boolean
   onBulkCheckedChange: (checked: boolean) => void
@@ -1005,7 +1266,12 @@ function CityLine({
   }, [row.id, row.name, row.slug])
 
   return (
-    <li className="flex flex-wrap items-center gap-2 px-2 py-2 text-sm sm:gap-3 sm:px-3">
+    <li
+      className={cn(
+        'flex flex-col gap-2 px-2 py-2.5 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-2 sm:px-3',
+        !row.is_active && 'bg-amber-500/[0.04]'
+      )}
+    >
       <div
         className="flex shrink-0 items-center pt-0.5"
         onClick={(e) => e.stopPropagation()}
@@ -1021,44 +1287,48 @@ function CityLine({
           }}
         />
       </div>
-      <span
-        className="max-w-[min(200px,40vw)] truncate text-xs text-muted-foreground"
-        title={regionHint}
-      >
-        {regionHint}
-      </span>
-      <span className="min-w-0 flex-1 font-medium text-foreground sm:min-w-[100px]">
-        {row.name}
-      </span>
-      <code className="text-xs text-muted-foreground">{row.slug}</code>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">Activo</span>
-        <Switch
-          checked={row.is_active}
+      {showRegionColumn ? (
+        <span
+          className="max-w-full truncate text-[11px] text-muted-foreground sm:max-w-[min(200px,28vw)]"
+          title={regionHint}
+        >
+          {regionHint}
+        </span>
+      ) : null}
+      <span className="min-w-0 flex-1 font-medium text-foreground">{row.name}</span>
+      <code className="max-w-[140px] truncate text-[11px] text-muted-foreground sm:max-w-none">
+        {row.slug}
+      </code>
+      <div className="ml-auto flex flex-wrap items-center gap-2 sm:ml-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Activo</span>
+          <Switch
+            checked={row.is_active}
+            disabled={disabled}
+            onCheckedChange={(v) => onUpdate({ isActive: v })}
+          />
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
           disabled={disabled}
-          onCheckedChange={(v) => onUpdate({ isActive: v })}
-        />
+          onClick={() => setEditOpen(true)}
+        >
+          <Pencil className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-destructive"
+          disabled={disabled}
+          onClick={onDelete}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8"
-        disabled={disabled}
-        onClick={() => setEditOpen(true)}
-      >
-        <Pencil className="h-4 w-4" />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 text-destructive"
-        disabled={disabled}
-        onClick={onDelete}
-      >
-        <Trash2 className="h-4 w-4" />
-      </Button>
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -1074,10 +1344,21 @@ function CityLine({
               />
             </div>
             <div className="space-y-1">
-              <Label>Slug</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label>Slug</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-muted-foreground"
+                  onClick={() => setSlug(slugifyGeoPreview(name))}
+                >
+                  Generar desde nombre
+                </Button>
+              </div>
               <Input
                 value={slug}
-                className="bg-secondary"
+                className="bg-secondary font-mono text-sm"
                 onChange={(e) => setSlug(e.target.value)}
               />
             </div>

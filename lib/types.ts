@@ -128,6 +128,8 @@ export interface SportsVenue {
   phone: string
   cityId: string
   city: string
+  /** No listado en exploración si true (dueño sigue viendo su panel). */
+  isPaused: boolean
   slotDurationMinutes: number
   createdAt: Date
 }

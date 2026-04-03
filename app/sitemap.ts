@@ -50,7 +50,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })
     const [teamsRes, venuesRes] = await Promise.all([
       sb.from('teams').select('id').limit(8000),
-      sb.from('sports_venues').select('id').limit(8000),
+      sb.from('sports_venues').select('id').eq('is_paused', false).limit(8000),
     ])
     if (teamsRes.data?.length) {
       for (const t of teamsRes.data) {
@@ -76,7 +76,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     const sb = createClient(url, anonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
-    const { data } = await sb.from('sports_venues').select('id').limit(8000)
+    const { data } = await sb.from('sports_venues').select('id').eq('is_paused', false).limit(8000)
     if (data?.length) {
       for (const v of data) {
         venueEntries.push({

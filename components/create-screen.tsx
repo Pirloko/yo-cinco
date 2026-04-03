@@ -974,7 +974,6 @@ export function CreateScreen() {
                     ...(city !== undefined ? { location: city } : {}),
                   }))
                 }}
-                showBookCheckbox={false}
               />
 
               {/* Date and Time */}
@@ -1430,12 +1429,9 @@ export function CreateScreen() {
                     ...(city !== undefined ? { location: city } : {}),
                   }))
                 }}
-                showBookCheckbox
-                bookCourtSlot={bookCourtSlot}
-                onBookCourtSlotChange={setBookCourtSlot}
               />
               {linkedVenueId && bookCourtSlot && venuePricingHintText ? (
-                <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100/95">
+                <div className="rounded-lg border border-emerald-700/25 bg-emerald-500/[0.12] px-3 py-2.5 text-xs leading-relaxed text-emerald-950 dark:border-emerald-400/35 dark:bg-emerald-500/15 dark:text-emerald-50">
                   {venuePricingHintText}
                 </div>
               ) : null}
@@ -1608,10 +1604,9 @@ export function CreateScreen() {
                     ...(city !== undefined ? { location: city } : {}),
                   }))
                 }}
-                showBookCheckbox={false}
               />
               {linkedVenueId && venuePricingHintText ? (
-                <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100/95">
+                <div className="rounded-lg border border-emerald-700/25 bg-emerald-500/[0.12] px-3 py-2.5 text-xs leading-relaxed text-emerald-950 dark:border-emerald-400/35 dark:bg-emerald-500/15 dark:text-emerald-50">
                   {venuePricingHintText}
                 </div>
               ) : null}
@@ -1739,9 +1734,6 @@ function CanchaLugarSelect({
   linkedVenueId,
   venue,
   onVenueChange,
-  showBookCheckbox,
-  bookCourtSlot,
-  onBookCourtSlotChange,
 }: {
   label: ReactNode
   sportsVenues: SportsVenue[]
@@ -1752,10 +1744,6 @@ function CanchaLugarSelect({
     venue: string
     city?: string
   }) => void
-  /** Mostrar checkbox de reserva automática (solo revuelta / buscar jugadores). */
-  showBookCheckbox?: boolean
-  bookCourtSlot?: boolean
-  onBookCourtSlotChange?: (v: boolean) => void
 }) {
   const selectValue = canchaSelectValue(linkedVenueId, venue, sportsVenues)
 
@@ -1794,17 +1782,6 @@ function CanchaLugarSelect({
           </SelectContent>
         </Select>
       )}
-      {showBookCheckbox && linkedVenueId ? (
-        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
-          <input
-            type="checkbox"
-            className="rounded border-border"
-            checked={bookCourtSlot === true}
-            onChange={(e) => onBookCourtSlotChange?.(e.target.checked)}
-          />
-          Reservar cancha automática al publicar (asigna una cancha libre)
-        </label>
-      ) : null}
     </div>
   )
 }
