@@ -23,6 +23,21 @@ export function isCompleteWhatsappSuffix(suffixDigits: string): boolean {
  * Pasa valor guardado en `profiles.whatsapp_phone` a los 8 dígitos para el input.
  * Soporta +569..., 569..., 9XXXXXXXX y 8 dígitos sueltos.
  */
+/**
+ * Teléfono de centro / contacto en Chile: vacío, o `+569` + 8 dígitos.
+ * Acepta pegados `+569…`, `569…`, `9xxxxxxxx`, etc.
+ */
+export function parseVenuePhoneChile(
+  raw: string | undefined | null
+): { valid: true; value: string } | { valid: false } {
+  const t = (raw ?? '').trim().replace(/\s/g, '')
+  if (!t) return { valid: true, value: '' }
+  if (isValidFullPlayerWhatsapp(t)) return { valid: true, value: t }
+  const built = buildFullPlayerWhatsapp(extractWhatsappSuffix8(t))
+  if (isValidFullPlayerWhatsapp(built)) return { valid: true, value: built }
+  return { valid: false }
+}
+
 export function extractWhatsappSuffix8(stored: string | undefined | null): string {
   const raw = (stored ?? '').trim().replace(/\s/g, '')
   if (!raw) return ''

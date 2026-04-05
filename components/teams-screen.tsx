@@ -884,10 +884,12 @@ export function TeamsScreen() {
           )}
         </div>
 
-        {/* All Teams */}
+        {/* Otros equipos descubribles (no los tuyos) */}
         <div>
           <h2 className="text-lg font-semibold text-foreground mb-3">
-            Equipos en {currentUser?.city || 'tu ciudad'}
+            {currentUser?.regionId
+              ? 'Equipos en tu región'
+              : `Equipos en ${currentUser?.city || 'tu ciudad'}`}
           </h2>
           <div className="space-y-3">
             {allTeams

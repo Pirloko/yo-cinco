@@ -164,7 +164,8 @@ export function mapMatchOpportunityFromDb(
     ends_at: string
     price_per_hour: number | null
     currency: string | null
-  } | null
+  } | null,
+  venueContactPhone?: string | null
 ): MatchOpportunity {
   const c = creator ?? {
     id: row.creator_id,
@@ -212,6 +213,7 @@ export function mapMatchOpportunityFromDb(
       ? new Date(row.match_stats_applied_at)
       : undefined,
     sportsVenueId: row.sports_venue_id ?? undefined,
+    venueContactPhone: venueContactPhone?.trim() || undefined,
     venueReservationId: row.venue_reservation_id ?? undefined,
     venueReservationPricing:
       venueReservation === undefined

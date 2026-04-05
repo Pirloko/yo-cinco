@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchDefaultCityId } from '@/lib/supabase/geo-queries'
 import { requireAdmin } from '@/lib/supabase/require-admin'
+import { parseVenuePhoneChile } from '@/lib/player-whatsapp'
 
 export async function POST(req: Request) {
   try {
@@ -34,6 +35,23 @@ export async function POST(req: Request) {
     if (password.length < 6) {
       return NextResponse.json(
         { error: 'La clave debe tener al menos 6 caracteres.' },
+        { status: 400 }
+      )
+    }
+
+    const phoneParsed = parseVenuePhoneChile(body.phone)
+    if (!phoneParsed.valid) {
+      return NextResponse.json(
+        {
+          error:
+            'Teléfono inválido. Usa móvil chileno: +569 y 8 dígitos (ej. +56912345678).',
+        },
+        { status: 400 }
+      )
+    }
+    if (!phoneParsed.value) {
+      return NextResponse.json(
+        { error: 'El teléfono del centro es obligatorio.' },
         { status: 400 }
       )
     }
@@ -79,7 +97,7 @@ export async function POST(req: Request) {
       owner_id: userId,
       name: venueName,
       address: body.address?.trim() || '',
-      phone: body.phone?.trim() || '',
+      phone: phoneParsed.value,
       city: body.city?.trim() || 'Rancagua',
       city_id: resolvedCityId,
       maps_url: body.mapsUrl?.trim() || null,

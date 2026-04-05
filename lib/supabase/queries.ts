@@ -139,6 +139,24 @@ export async function fetchMatchOpportunities(
     }
   }
 
+  const sportsVenueIds = [
+    ...new Set(
+      rows
+        .map((r) => r.sports_venue_id)
+        .filter((id): id is string => Boolean(id))
+    ),
+  ]
+  const venuePhoneById = new Map<string, string>()
+  if (sportsVenueIds.length > 0) {
+    const { data: venueRows } = await supabase
+      .from('sports_venues')
+      .select('id, phone')
+      .in('id', sportsVenueIds)
+    for (const v of venueRows ?? []) {
+      venuePhoneById.set(v.id as string, (v.phone as string) ?? '')
+    }
+  }
+
   return rows.map((row) => {
     const joined = joinedByOpportunity.get(row.id)
     const withSafeJoined: MatchOpportunityRow =
@@ -146,10 +164,14 @@ export async function fetchMatchOpportunities(
     const resId = row.venue_reservation_id
     const vr =
       resId != null ? reservationById.get(resId) ?? null : undefined
+    const vPhone = row.sports_venue_id
+      ? venuePhoneById.get(row.sports_venue_id) ?? null
+      : null
     return mapMatchOpportunityFromDb(
       withSafeJoined,
       byId.get(row.creator_id) ?? null,
-      vr === undefined ? undefined : vr
+      vr === undefined ? undefined : vr,
+      vPhone
     )
   })
 }

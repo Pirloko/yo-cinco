@@ -26,8 +26,8 @@ export function MatchCourtPricingBlock({
 
   if (variant === 'compact') {
     return (
-      <div className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-100/95">
-        <Banknote className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
+      <div className="flex items-start gap-2 rounded-lg border border-amber-900/15 bg-amber-400/20 px-2.5 py-2 text-xs font-medium text-amber-950 dark:border-amber-400/30 dark:bg-amber-950/50 dark:text-amber-50">
+        <Banknote className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" />
         <span>
           Total cancha {formatClp(total)} · Tu parte ~{formatClp(share)}
         </span>
@@ -52,7 +52,7 @@ export function MatchCourtPricingBlock({
         </div>
       </div>
       {notice ? (
-        <p className="text-xs text-amber-100/90 leading-snug border-t border-amber-500/20 pt-2">
+        <p className="text-xs leading-snug text-amber-950/95 border-t border-amber-900/15 pt-2 dark:border-amber-400/25 dark:text-amber-100/95">
           {notice}
         </p>
       ) : null}
@@ -68,7 +68,7 @@ export function JoinPayOrganizerNotice({
   const msg = payOrganizerFullNotice(opportunity)
   if (!msg) return null
   return (
-    <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-50/95 leading-snug">
+    <div className="rounded-lg border border-amber-900/15 bg-amber-400/20 px-3 py-2.5 text-sm font-medium leading-snug text-amber-950 dark:border-amber-400/30 dark:bg-amber-950/50 dark:text-amber-50">
       {msg}
     </div>
   )

@@ -66,7 +66,6 @@ export function MatchDetailsScreen() {
     teams,
     requestJoinPrivateRevuelta,
     respondToRevueltaExternalRequest,
-    profilesRealtimeGeneration,
     avatarDisplayUrl,
   } = useApp()
 
@@ -115,22 +114,27 @@ export function MatchDetailsScreen() {
     null
   )
 
-  const loadParticipants = useCallback(async () => {
-    if (!selectedMatchOpportunityId || !currentUser || !isSupabaseConfigured()) {
-      setParticipants([])
-      return
-    }
-    setLoadingParticipants(true)
-    try {
-      const rows = await fetchParticipantsForOpportunity(
-        createClient(),
-        selectedMatchOpportunityId
-      )
-      setParticipants(rows)
-    } finally {
-      setLoadingParticipants(false)
-    }
-  }, [selectedMatchOpportunityId, currentUser, profilesRealtimeGeneration])
+  const loadParticipants = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const silent = opts?.silent ?? false
+      if (!selectedMatchOpportunityId || !currentUser?.id || !isSupabaseConfigured()) {
+        setParticipants([])
+        if (!silent) setLoadingParticipants(false)
+        return
+      }
+      if (!silent) setLoadingParticipants(true)
+      try {
+        const rows = await fetchParticipantsForOpportunity(
+          createClient(),
+          selectedMatchOpportunityId
+        )
+        setParticipants(rows)
+      } finally {
+        if (!silent) setLoadingParticipants(false)
+      }
+    },
+    [selectedMatchOpportunityId, currentUser?.id]
+  )
 
   const loadRatingsOverview = useCallback(async () => {
     if (!selectedMatchOpportunityId || !isSupabaseConfigured()) {
@@ -148,7 +152,7 @@ export function MatchDetailsScreen() {
   }, [selectedMatchOpportunityId])
 
   const loadMyRating = useCallback(async () => {
-    if (!selectedMatchOpportunityId || !currentUser || !isSupabaseConfigured()) {
+    if (!selectedMatchOpportunityId || !currentUser?.id || !isSupabaseConfigured()) {
       setMyRating(null)
       return
     }
@@ -163,13 +167,41 @@ export function MatchDetailsScreen() {
     } finally {
       setLoadingRating(false)
     }
-  }, [selectedMatchOpportunityId, currentUser])
+  }, [selectedMatchOpportunityId, currentUser?.id])
 
   useEffect(() => {
     void loadParticipants()
     void loadMyRating()
     void loadRatingsOverview()
   }, [loadParticipants, loadMyRating, loadRatingsOverview])
+
+  /** Tiempo real: cambios en participantes sin depender de `profiles` (evita bucle con heartbeat / last_seen). */
+  useEffect(() => {
+    if (!selectedMatchOpportunityId || !currentUser?.id || !isSupabaseConfigured()) {
+      return
+    }
+    const supabase = createClient()
+    const oppId = selectedMatchOpportunityId
+    const channel = supabase
+      .channel(`match-detail-participants:${oppId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'match_opportunity_participants',
+          filter: `opportunity_id=eq.${oppId}`,
+        },
+        () => {
+          void loadParticipants({ silent: true })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [selectedMatchOpportunityId, currentUser?.id, loadParticipants])
 
   useEffect(() => {
     if (!opportunity || !isSupabaseConfigured()) {
@@ -278,11 +310,12 @@ export function MatchDetailsScreen() {
   }
 
   const loadExtJoinData = useCallback(async () => {
-    if (!selectedMatchOpportunityId || !currentUser || !isSupabaseConfigured()) {
+    if (!selectedMatchOpportunityId || !currentUser?.id || !isSupabaseConfigured()) {
       setExtJoinRequests([])
       setMyExtPendingId(null)
       return
     }
+    const uid = currentUser.id
     const opp = matchOpportunities.find((m) => m.id === selectedMatchOpportunityId)
     if (!opp || opp.type !== 'open' || !opp.privateRevueltaTeamId) {
       setExtJoinRequests([])
@@ -291,8 +324,8 @@ export function MatchDetailsScreen() {
     }
     const supabase = createClient()
     const team = teams.find((t) => t.id === opp.privateRevueltaTeamId)
-    const organizer = opp.creatorId === currentUser.id
-    const member = userIsConfirmedMemberOfTeam(team, currentUser.id)
+    const organizer = opp.creatorId === uid
+    const member = userIsConfirmedMemberOfTeam(team, uid)
     setLoadingExtRequests(true)
     try {
       if (organizer) {
@@ -308,7 +341,7 @@ export function MatchDetailsScreen() {
         const mine = await fetchMyPendingRevueltaExternalRequest(
           supabase,
           selectedMatchOpportunityId,
-          currentUser.id
+          uid
         )
         setMyExtPendingId(mine?.id ?? null)
       } else {
@@ -317,7 +350,7 @@ export function MatchDetailsScreen() {
     } finally {
       setLoadingExtRequests(false)
     }
-  }, [selectedMatchOpportunityId, currentUser, matchOpportunities, teams])
+  }, [selectedMatchOpportunityId, currentUser?.id, matchOpportunities, teams])
 
   const handleRespondExtRequest = useCallback(
     async (requestId: string, accept: boolean) => {
@@ -325,7 +358,7 @@ export function MatchDetailsScreen() {
       try {
         const res = await respondToRevueltaExternalRequest(requestId, accept)
         if (res.ok) {
-          await loadParticipants()
+          await loadParticipants({ silent: true })
           await loadExtJoinData()
         }
       } finally {
@@ -642,8 +675,8 @@ export function MatchDetailsScreen() {
                   Invitar jugadores
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Cualquier participante puede compartir el enlace (WhatsApp, etc.).
-                  Los cupos se ven en la página pública.
+                  Cualquier participante puede invitar con el botón (compartir en apps o
+                  copiar enlace). Los cupos se ven en la página pública.
                 </p>
                 <RevueltaInviteActions opportunity={opportunity} />
               </div>

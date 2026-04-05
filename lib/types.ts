@@ -174,6 +174,26 @@ export interface VenueReservationRow {
   notes?: string | null
 }
 
+/** Fragmento de reseña visible en la ficha pública del centro. */
+export type PublicVenueReviewSnippet = {
+  id: string
+  courtQuality: number
+  managementRating: number
+  facilitiesRating: number
+  comment: string | null
+  reviewerNameSnapshot: string
+  createdAt: Date
+}
+
+/** Promedios de opiniones (vista agregada en BD). */
+export type PublicVenueReviewStats = {
+  reviewCount: number
+  avgCourtQuality: number
+  avgManagement: number
+  avgFacilities: number
+  avgOverall: number
+}
+
 export interface TeamMember {
   id: string
   name: string
@@ -271,6 +291,8 @@ export interface MatchOpportunity {
   venue: string
   /** Centro deportivo vinculado (opcional). */
   sportsVenueId?: string
+  /** Teléfono de contacto del centro (`sports_venues.phone`), si existe. */
+  venueContactPhone?: string
   venueReservationId?: string
   dateTime: Date
   level: Level

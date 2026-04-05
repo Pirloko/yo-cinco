@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 
+import { parseVenuePhoneChile } from '@/lib/player-whatsapp'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/supabase/require-admin'
 
@@ -39,7 +40,17 @@ export async function PATCH(req: Request, ctx: RouteCtx) {
       patch.address = String(body.address).trim()
     }
     if (body.phone !== undefined) {
-      patch.phone = String(body.phone).trim()
+      const parsed = parseVenuePhoneChile(body.phone)
+      if (!parsed.valid) {
+        return NextResponse.json(
+          {
+            error:
+              'Teléfono inválido. Usa móvil chileno: +569 y 8 dígitos, o déjalo vacío.',
+          },
+          { status: 400 }
+        )
+      }
+      patch.phone = parsed.value
     }
     if (body.mapsUrl !== undefined) {
       const u = body.mapsUrl === null ? '' : String(body.mapsUrl).trim()

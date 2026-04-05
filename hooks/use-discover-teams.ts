@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '@/lib/app-context'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 import { fetchTeamMatchCounts } from '@/lib/supabase/team-stats-queries'
+import { teamIsInPlayerGeo } from '@/lib/team-geo-filter'
 import type { Team } from '@/lib/types'
 
 type Options = {
@@ -34,13 +35,16 @@ export function useDiscoverTeams({
       if (t.gender !== currentUser.gender) return false
       if (userTeamIds.has(t.id)) return false
       if (t.members.some((m) => m.id === currentUser.id)) return false
+      if (
+        !teamIsInPlayerGeo(t, {
+          regionId: currentUser.regionId,
+          cityId: currentUser.cityId,
+        })
+      ) {
+        return false
+      }
       return true
     })
-    if (currentUser.regionId) {
-      list = list.filter(
-        (t) => !t.cityRegionId || t.cityRegionId === currentUser.regionId
-      )
-    }
     if (cityFilter) {
       list = list.filter((t) => t.cityId === cityFilter)
     }

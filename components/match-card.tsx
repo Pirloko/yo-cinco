@@ -168,12 +168,14 @@ export function MatchCard({
         <div className="px-4 py-2.5 border-b border-amber-500/30 bg-amber-500/10 flex gap-2 items-start">
           <Flame className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" aria-hidden />
           <div className="min-w-0 flex-1 space-y-1">
-            <p className="text-sm font-medium text-amber-100">{urgencyMsg}</p>
+            <p className="text-sm font-medium text-amber-950 dark:text-amber-100">
+              {urgencyMsg}
+            </p>
             <button
               type="button"
               onClick={handleAction}
               disabled={actionDisabled}
-              className="text-xs font-semibold text-amber-300 underline underline-offset-2 hover:text-amber-200 disabled:opacity-50"
+              className="text-xs font-semibold text-amber-800 underline underline-offset-2 hover:text-amber-950 dark:text-amber-300 dark:hover:text-amber-200 disabled:opacity-50"
             >
               Unirte ahora
             </button>
@@ -226,7 +228,7 @@ export function MatchCard({
         </div>
 
         {priceLine ? (
-          <p className="text-xs text-amber-100/90 bg-amber-500/10 border border-amber-500/25 rounded-lg px-2.5 py-1.5">
+          <p className="text-xs font-medium leading-snug text-amber-950 bg-amber-400/20 border border-amber-900/15 rounded-lg px-2.5 py-1.5 dark:border-amber-400/30 dark:bg-amber-950/50 dark:text-amber-50">
             {priceLine}
           </p>
         ) : null}

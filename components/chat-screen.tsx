@@ -45,7 +45,6 @@ export function ChatScreen() {
     submitRivalCaptainVote,
     finalizeRivalOrganizerOverride,
     openPublicProfile,
-    profilesRealtimeGeneration,
     avatarDisplayUrl,
   } = useApp()
 
@@ -86,7 +85,7 @@ export function ChatScreen() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const loadMyRating = useCallback(async () => {
-    if (!selectedChatOpportunityId || !currentUser || !isSupabaseConfigured()) {
+    if (!selectedChatOpportunityId || !currentUser?.id || !isSupabaseConfigured()) {
       setMyRating(null)
       return
     }
@@ -102,12 +101,12 @@ export function ChatScreen() {
     } finally {
       setLoadingRating(false)
     }
-  }, [selectedChatOpportunityId, currentUser])
+  }, [selectedChatOpportunityId, currentUser?.id])
 
   const loadParticipants = useCallback(async () => {
     if (
       !selectedChatOpportunityId ||
-      !currentUser ||
+      !currentUser?.id ||
       !isSupabaseConfigured() ||
       !canAccessThread
     ) {
@@ -125,10 +124,10 @@ export function ChatScreen() {
     } finally {
       setLoadingParticipants(false)
     }
-  }, [selectedChatOpportunityId, currentUser, canAccessThread, profilesRealtimeGeneration])
+  }, [selectedChatOpportunityId, currentUser?.id, canAccessThread])
 
   const loadMessages = useCallback(async () => {
-    if (!selectedChatOpportunityId || !currentUser || !isSupabaseConfigured()) {
+    if (!selectedChatOpportunityId || !currentUser?.id || !isSupabaseConfigured()) {
       setMessages([])
       setLoading(false)
       return
@@ -138,6 +137,7 @@ export function ChatScreen() {
       setLoading(false)
       return
     }
+    const uid = currentUser.id
     setLoading(true)
     try {
       const supabase = createClient()
@@ -148,7 +148,7 @@ export function ChatScreen() {
       setMessages(
         rows.map((m) => ({
           ...m,
-          isMe: m.senderId === currentUser.id,
+          isMe: m.senderId === uid,
         }))
       )
     } catch {
@@ -156,7 +156,7 @@ export function ChatScreen() {
     } finally {
       setLoading(false)
     }
-  }, [selectedChatOpportunityId, currentUser, canAccessThread, profilesRealtimeGeneration])
+  }, [selectedChatOpportunityId, currentUser?.id, canAccessThread])
 
   useEffect(() => {
     loadMessages()

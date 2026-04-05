@@ -31,7 +31,8 @@ import { venueCourtPricingHint } from '@/lib/court-pricing'
 import { TIME_SLOT_OPTIONS } from '@/lib/time-slot-options'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 import {
-  fetchSportsVenuesList,
+  fetchSportsVenuesForPlayerGeo,
+  fetchVenueById,
   fetchVenueCourts,
   fetchVenueReservationsRange,
   fetchVenueWeeklyHours,
@@ -168,6 +169,7 @@ export function CreateScreen() {
   }, [linkedVenueId, venueCourtsHint, sportsVenuesFromDb])
 
   useEffect(() => {
+    let prefillVenueId: string | null = null
     const pre = readCreatePrefill()
     if (pre) {
       setLinkedVenueId(pre.sportsVenueId)
@@ -179,12 +181,26 @@ export function CreateScreen() {
         date: pre.date,
         time: pre.time,
       }))
+      prefillVenueId = pre.sportsVenueId ?? null
       clearCreatePrefill()
     }
     if (!isSupabaseConfigured()) return
     const supabase = createClient()
-    void fetchSportsVenuesList(supabase).then(setSportsVenuesFromDb)
-  }, [])
+    void (async () => {
+      let list = await fetchSportsVenuesForPlayerGeo(
+        supabase,
+        currentUser?.regionId,
+        currentUser?.cityId
+      )
+      if (prefillVenueId && !list.some((v) => v.id === prefillVenueId)) {
+        const extra = await fetchVenueById(supabase, prefillVenueId)
+        if (extra) {
+          list = [...list, extra].sort((a, b) => a.name.localeCompare(b.name))
+        }
+      }
+      setSportsVenuesFromDb(list)
+    })()
+  }, [currentUser?.regionId, currentUser?.cityId])
 
   useEffect(() => {
     if (!currentUser) return

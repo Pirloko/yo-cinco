@@ -35,6 +35,7 @@ import {
 } from '@/lib/supabase/mappers'
 import { formatAuthError } from '@/lib/supabase/auth-errors'
 import { payOrganizerToastMessage } from '@/lib/court-pricing'
+import { teamIsInPlayerGeo } from '@/lib/team-geo-filter'
 import {
   fetchMatchOpportunities,
   fetchOtherProfiles,
@@ -2344,7 +2345,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   const getFilteredTeams = (gender: Gender) => {
-    return teams.filter((t) => t.gender === gender)
+    if (!currentUser) return []
+    return teams.filter((t) => {
+      if (t.gender !== gender) return false
+      return teamIsInPlayerGeo(t, {
+        regionId: currentUser.regionId,
+        cityId: currentUser.cityId,
+      })
+    })
   }
 
   const refreshAppData = useCallback(async () => {

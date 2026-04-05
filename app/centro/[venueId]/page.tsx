@@ -35,7 +35,7 @@ export default async function CentroPublicPage({
   const data = await fetchPublicVenuePageData(venueId)
   if (!data) notFound()
 
-  const { venue, courts, weeklyHours } = data
+  const { venue, courts, weeklyHours, reviewStats, recentReviews } = data
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -59,7 +59,13 @@ export default async function CentroPublicPage({
           </div>
         </div>
 
-        <VenueCentroClient venue={venue} courts={courts} weeklyHours={weeklyHours} />
+        <VenueCentroClient
+          venue={venue}
+          courts={courts}
+          weeklyHours={weeklyHours}
+          reviewStats={reviewStats}
+          recentReviews={recentReviews}
+        />
       </main>
     </div>
   )

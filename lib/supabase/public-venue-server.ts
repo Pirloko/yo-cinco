@@ -2,12 +2,24 @@ import { createClient } from '@supabase/supabase-js'
 import { isValidTeamInviteId } from '@/lib/team-invite-url'
 import { SPORTS_VENUE_SELECT_WITH_GEO } from '@/lib/supabase/geo-queries'
 import { mapVenueRow } from '@/lib/supabase/venue-queries'
-import type { SportsVenue, VenueCourt, VenueWeeklyHour } from '@/lib/types'
+import {
+  fetchPublicVenueReviewStats,
+  fetchPublicVenueReviewsForPage,
+} from '@/lib/supabase/venue-review-queries'
+import type {
+  PublicVenueReviewSnippet,
+  PublicVenueReviewStats,
+  SportsVenue,
+  VenueCourt,
+  VenueWeeklyHour,
+} from '@/lib/types'
 
 export type PublicVenuePageData = {
   venue: SportsVenue
   courts: VenueCourt[]
   weeklyHours: VenueWeeklyHour[]
+  reviewStats: PublicVenueReviewStats | null
+  recentReviews: PublicVenueReviewSnippet[]
 }
 
 /** SSR: metadata y datos públicos del centro (políticas SELECT anon). */
@@ -35,19 +47,22 @@ export async function fetchPublicVenuePageData(
 
   const venue = mapVenueRow(row as Record<string, unknown>)
 
-  const [{ data: courtsRaw }, { data: hoursRaw }] = await Promise.all([
-    supabase
-      .from('venue_courts')
-      .select('*')
-      .eq('venue_id', venueId)
-      .order('sort_order', { ascending: true })
-      .order('name', { ascending: true }),
-    supabase
-      .from('venue_weekly_hours')
-      .select('*')
-      .eq('venue_id', venueId)
-      .order('day_of_week', { ascending: true }),
-  ])
+  const [{ data: courtsRaw }, { data: hoursRaw }, reviewStats, recentReviews] =
+    await Promise.all([
+      supabase
+        .from('venue_courts')
+        .select('*')
+        .eq('venue_id', venueId)
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true }),
+      supabase
+        .from('venue_weekly_hours')
+        .select('*')
+        .eq('venue_id', venueId)
+        .order('day_of_week', { ascending: true }),
+      fetchPublicVenueReviewStats(supabase, venueId),
+      fetchPublicVenueReviewsForPage(supabase, venueId, 12),
+    ])
 
   const courts: VenueCourt[] = (courtsRaw ?? []).map((r) => ({
     id: r.id as string,
@@ -66,5 +81,5 @@ export async function fetchPublicVenuePageData(
     closeTime: (r.close_time as string).slice(0, 5),
   }))
 
-  return { venue, courts, weeklyHours }
+  return { venue, courts, weeklyHours, reviewStats, recentReviews }
 }

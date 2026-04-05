@@ -87,6 +87,36 @@ export async function fetchSportsVenuesInRegion(
   return data.map((r) => mapVenueRow(r as Record<string, unknown>))
 }
 
+/** Centros en una ciudad concreta (`profiles.city_id`). */
+export async function fetchSportsVenuesInCity(
+  supabase: SupabaseClient,
+  cityId: string
+): Promise<SportsVenue[]> {
+  if (!cityId) return []
+  const { data, error } = await supabase
+    .from('sports_venues')
+    .select(SPORTS_VENUE_SELECT_WITH_GEO)
+    .eq('is_paused', false)
+    .eq('city_id', cityId)
+    .order('name', { ascending: true })
+  if (error || !data?.length) return []
+  return data.map((r) => mapVenueRow(r as Record<string, unknown>))
+}
+
+/**
+ * Lista de centros para crear partido / reservar: misma región o ciudad del jugador.
+ * Prioriza región (más opciones en la zona); si no hay región, filtra por ciudad.
+ */
+export async function fetchSportsVenuesForPlayerGeo(
+  supabase: SupabaseClient,
+  regionId: string | undefined,
+  cityId: string | undefined
+): Promise<SportsVenue[]> {
+  if (regionId) return fetchSportsVenuesInRegion(supabase, regionId)
+  if (cityId) return fetchSportsVenuesInCity(supabase, cityId)
+  return fetchSportsVenuesList(supabase)
+}
+
 export async function fetchVenueById(
   supabase: SupabaseClient,
   venueId: string
@@ -154,7 +184,7 @@ export async function fetchVenueWeeklyHours(
   }))
 }
 
-/** Reservas “solo cancha” del jugador (sin partido vinculado), aún vigentes desde `fromEndsAtIso`. */
+/** Reservas “solo cancha” del jugador (sin partido vinculado). */
 export type PlayerVenueReservationListItem = {
   id: string
   courtId: string
@@ -166,21 +196,30 @@ export type PlayerVenueReservationListItem = {
   courtName: string
   venueName: string
   venueCity: string
+  /** Teléfono del centro para WhatsApp (`sports_venues.phone`). */
+  venuePhone: string
+  pricePerHour: number | null
+  currency: string
 }
 
-export async function fetchPlayerUpcomingVenueReservationsOnly(
+/**
+ * Reservas solo cancha del jugador (sin partido). Incluye canceladas;
+ * la UI separa Próximos / Finalizados según si la franja ya terminó (`ends_at`).
+ */
+export async function fetchPlayerVenueReservationsSoloForHub(
   supabase: SupabaseClient,
-  bookerUserId: string,
-  fromEndsAtIso: string
+  bookerUserId: string
 ): Promise<PlayerVenueReservationListItem[]> {
   const { data: rows, error } = await supabase
     .from('venue_reservations')
-    .select('id, court_id, starts_at, ends_at, status, payment_status')
+    .select(
+      'id, court_id, starts_at, ends_at, status, payment_status, price_per_hour, currency'
+    )
     .eq('booker_user_id', bookerUserId)
     .is('match_opportunity_id', null)
-    .in('status', ['pending', 'confirmed'])
-    .gte('ends_at', fromEndsAtIso)
-    .order('starts_at', { ascending: true })
+    .in('status', ['pending', 'confirmed', 'cancelled'])
+    .order('starts_at', { ascending: false })
+    .limit(150)
 
   if (error || !rows?.length) return []
 
@@ -203,8 +242,8 @@ export async function fetchPlayerUpcomingVenueReservationsOnly(
     const c = courtMap.get(r.court_id as string)
     const v = c ? venueMap.get(c.venue_id as string) : undefined
     const vRow = v as Record<string, unknown> | undefined
-    const venueCity =
-      vRow != null ? mapVenueRow(vRow).city : ''
+    const mappedVenue = vRow != null ? mapVenueRow(vRow) : null
+    const venueCity = mappedVenue?.city ?? ''
     return {
       id: r.id as string,
       courtId: r.court_id as string,
@@ -217,6 +256,9 @@ export async function fetchPlayerUpcomingVenueReservationsOnly(
       courtName: (c?.name as string) ?? 'Cancha',
       venueName: (v?.name as string) ?? 'Centro',
       venueCity,
+      venuePhone: mappedVenue?.phone ?? '',
+      pricePerHour: (r.price_per_hour as number | null) ?? null,
+      currency: ((r.currency as string) ?? 'CLP').trim() || 'CLP',
     }
   })
 }

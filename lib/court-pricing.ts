@@ -8,6 +8,18 @@ export function formatClp(amount: number): string {
   }).format(amount)
 }
 
+/** Total CLP de una reserva por tramo (precio/hora × duración). */
+export function reservationTotalFromHourly(
+  startsAt: Date,
+  endsAt: Date,
+  pricePerHour: number | null | undefined
+): number | null {
+  if (pricePerHour == null || pricePerHour <= 0) return null
+  const hours = (endsAt.getTime() - startsAt.getTime()) / 3_600_000
+  if (hours <= 0) return null
+  return Math.round(hours * pricePerHour)
+}
+
 export function courtTotalFromPricing(
   pricing: NonNullable<MatchOpportunity['venueReservationPricing']>
 ): number | null {

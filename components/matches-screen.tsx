@@ -1,16 +1,21 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import { useApp } from '@/lib/app-context'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { BottomNav } from '@/components/bottom-nav'
 import { Badge } from '@/components/ui/badge'
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 import {
-  fetchPlayerUpcomingVenueReservationsOnly,
+  fetchPlayerVenueReservationsSoloForHub,
   type PlayerVenueReservationListItem,
 } from '@/lib/supabase/venue-queries'
-import Link from 'next/link'
+import {
+  fetchVenueReviewsByReservationIds,
+  type SoloVenueReviewSummary,
+} from '@/lib/supabase/venue-review-queries'
+import { SoloReserveVenueRatingBlock } from '@/components/solo-reserve-venue-rating'
 import { fetchLastMessagesForOpportunities } from '@/lib/supabase/message-queries'
 import {
   fetchRatingSummariesForOpportunities,
@@ -18,7 +23,15 @@ import {
   type RatingSummary,
 } from '@/lib/supabase/rating-queries'
 import type { MatchOpportunity, MatchesHubTab, RivalResult } from '@/lib/types'
-import { shortCourtPricingLine } from '@/lib/court-pricing'
+import {
+  formatClp,
+  reservationTotalFromHourly,
+  shortCourtPricingLine,
+} from '@/lib/court-pricing'
+import {
+  buildVenueCourtConfirmationMessage,
+  whatsappUrlForVenueContact,
+} from '@/lib/venue-whatsapp-contact'
 import {
   Calendar,
   MapPin,
@@ -31,6 +44,7 @@ import {
   Trophy,
   History,
   Building2,
+  Loader2,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
@@ -51,6 +65,221 @@ function canUserAccessChat(
   participatingIds: string[]
 ) {
   return m.creatorId === userId || participatingIds.includes(m.id)
+}
+
+/**
+ * Próximos: no cancelada y la franja aún no terminó. Finalizados: cancelada o ya pasó endsAt.
+ */
+function splitSoloReservesForHub(all: PlayerVenueReservationListItem[]) {
+  const now = Date.now()
+  const upcoming: PlayerVenueReservationListItem[] = []
+  const past: PlayerVenueReservationListItem[] = []
+  for (const r of all) {
+    if (r.status === 'cancelled' || r.endsAt.getTime() < now) {
+      past.push(r)
+      continue
+    }
+    upcoming.push(r)
+  }
+  upcoming.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
+  past.sort((a, b) => b.endsAt.getTime() - a.endsAt.getTime())
+  return { venueReserveUpcoming: upcoming, venueReservePast: past }
+}
+
+function soloReserveStatusBadge(r: PlayerVenueReservationListItem): string {
+  if (r.status === 'cancelled') return 'Cancelada'
+  if (r.status === 'confirmed') return 'Cancha confirmada'
+  if (r.paymentStatus === 'unpaid' || !r.paymentStatus) return 'Pendiente de pago'
+  return 'Pendiente'
+}
+
+function SoloReserveHubCard({
+  r,
+  variant,
+  playerFirstName,
+  playerDisplayName,
+  currentUserId,
+  confirmingId,
+  onConfirm,
+  venueReview,
+  onVenueReviewSaved,
+}: {
+  r: PlayerVenueReservationListItem
+  variant: 'upcoming' | 'finished'
+  playerFirstName: string
+  playerDisplayName: string
+  currentUserId: string
+  confirmingId: string | null
+  onConfirm: (id: string) => void
+  venueReview: SoloVenueReviewSummary | undefined
+  onVenueReviewSaved: () => void
+}) {
+  const total = reservationTotalFromHourly(
+    r.startsAt,
+    r.endsAt,
+    r.pricePerHour
+  )
+  const statusLabel = soloReserveStatusBadge(r)
+  const confirming = confirmingId === r.id
+
+  return (
+    <div className={MATCH_CARD_SHELL}>
+      <div className="border-b border-accent/25 bg-accent/10 px-4 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="rounded-lg bg-accent/20 p-1.5 text-accent">
+              <Building2 className="h-4 w-4" />
+            </div>
+            <span className="truncate text-sm font-medium text-foreground">
+              Solo reserva cancha
+            </span>
+          </div>
+          <Badge variant="outline" className="text-xs">
+            {statusLabel}
+          </Badge>
+        </div>
+      </div>
+      <div className="space-y-3 p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="truncate font-semibold text-foreground">
+              {r.venueName}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {r.courtName}
+              {r.venueCity ? ` · ${r.venueCity}` : ''}
+            </p>
+          </div>
+          <Badge
+            variant="outline"
+            className="shrink-0 border-primary/50 text-primary"
+          >
+            Reservas
+          </Badge>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <Calendar className="h-4 w-4 text-primary" />
+            {formatMatchInTimezone(r.startsAt, 'EEEE d MMM')}
+          </span>
+          <span className="flex items-center gap-1">
+            <Clock className="h-4 w-4 text-primary" />
+            {formatMatchInTimezone(r.startsAt, 'HH:mm')} –{' '}
+            {formatMatchInTimezone(r.endsAt, 'HH:mm')}
+          </span>
+        </div>
+
+        {total != null ? (
+          <div
+            className="rounded-lg border border-amber-900/15 bg-amber-400/20 px-3 py-2.5 text-sm font-semibold text-amber-950 dark:border-amber-400/30 dark:bg-amber-950/50 dark:text-amber-50"
+            role="status"
+          >
+            <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wide text-amber-900/70 dark:text-amber-200/95">
+              Total estimado cancha
+            </span>
+            {formatClp(total)}
+            {r.currency && r.currency.toUpperCase() !== 'CLP'
+              ? ` (${r.currency})`
+              : null}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Precio por hora no indicado para esta cancha; consulta al centro.
+          </p>
+        )}
+
+        {variant === 'upcoming' ? (
+          <div className="pt-1">
+            <UpcomingVenueWhatsappCta
+              phone={r.venuePhone}
+              venueName={r.venueName}
+              dateLine={formatMatchInTimezone(r.startsAt, 'EEEE d MMM')}
+              timeLine={`${formatMatchInTimezone(r.startsAt, 'HH:mm')} – ${formatMatchInTimezone(r.endsAt, 'HH:mm')}`}
+              detailLine={`Cancha: ${r.courtName}`}
+              playerFirstName={playerFirstName}
+            />
+          </div>
+        ) : null}
+
+        {r.status === 'pending' ? (
+          <div className={variant === 'upcoming' ? 'space-y-2' : 'pt-1'}>
+            <button
+              type="button"
+              disabled={confirming}
+              onClick={() => onConfirm(r.id)}
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/15 disabled:opacity-60"
+            >
+              {confirming ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : null}
+              Marcar cancha confirmada
+            </button>
+          </div>
+        ) : null}
+
+        {variant === 'finished' && currentUserId ? (
+          <div className="pt-1 border-t border-border/60 mt-1">
+            <SoloReserveVenueRatingBlock
+              reservation={r}
+              existing={venueReview}
+              reviewerDisplayName={playerDisplayName}
+              currentUserId={currentUserId}
+              onSaved={onVenueReviewSaved}
+            />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+/** CTA uniforme: confirmar cancha con el centro por WhatsApp (pestaña Próximos). */
+function UpcomingVenueWhatsappCta({
+  phone,
+  venueName,
+  dateLine,
+  timeLine,
+  detailLine,
+  playerFirstName,
+}: {
+  phone: string | null | undefined
+  venueName: string
+  dateLine: string
+  timeLine: string
+  detailLine?: string
+  playerFirstName: string
+}) {
+  const message = buildVenueCourtConfirmationMessage({
+    playerFirstName,
+    venueName,
+    dateLine,
+    timeLine,
+    detailLine,
+  })
+  const url = whatsappUrlForVenueContact(phone, message)
+  if (!url) {
+    return (
+      <p className="rounded-lg border border-dashed border-border bg-muted/50 px-3 py-2.5 text-center text-xs leading-snug text-muted-foreground">
+        Este centro no tiene WhatsApp cargado en la app. Usa «Ver ficha del
+        centro» o el teléfono que publique el club.
+      </p>
+    )
+  }
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex w-full min-h-11 items-center justify-center gap-2 rounded-lg border border-emerald-600/45 bg-emerald-600/[0.07] px-3 py-2.5 text-sm font-semibold text-emerald-950 shadow-sm transition-colors hover:bg-emerald-600/[0.12] active:scale-[0.99] dark:border-emerald-400/35 dark:bg-emerald-500/12 dark:text-emerald-50 dark:hover:bg-emerald-500/22"
+    >
+      <MessageCircle
+        className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-200"
+        aria-hidden
+      />
+      Contactar centro por WhatsApp
+    </a>
+  )
 }
 
 function formatCompletedOutcome(m: MatchOpportunity): string {
@@ -88,9 +317,30 @@ export function MatchesScreen() {
   const [ratingByOpp, setRatingByOpp] = useState<Map<string, RatingSummary>>(
     new Map()
   )
-  const [venueReserveUpcoming, setVenueReserveUpcoming] = useState<
+  const [venueReserveAll, setVenueReserveAll] = useState<
     PlayerVenueReservationListItem[]
   >([])
+  const [soloConfirmingId, setSoloConfirmingId] = useState<string | null>(null)
+  const [venueReviewByReservationId, setVenueReviewByReservationId] = useState<
+    Map<string, SoloVenueReviewSummary>
+  >(() => new Map())
+
+  const reloadSoloReserves = useCallback(async () => {
+    if (
+      !currentUser?.id ||
+      (currentUser.accountType !== 'player' &&
+        currentUser.accountType !== 'admin')
+    ) {
+      return
+    }
+    if (!isSupabaseConfigured()) return
+    const supabase = createClient()
+    const rows = await fetchPlayerVenueReservationsSoloForHub(
+      supabase,
+      currentUser.id
+    )
+    setVenueReserveAll(rows)
+  }, [currentUser?.id, currentUser?.accountType])
 
   useEffect(() => {
     if (currentScreen !== 'matches' || !initialMatchesTab) return
@@ -104,6 +354,11 @@ export function MatchesScreen() {
       isUserInvolved(m, currentUser.id, participatingOpportunityIds)
     )
   }, [matchOpportunities, currentUser, participatingOpportunityIds])
+
+  const playerFirstName = useMemo(
+    () => currentUser?.name?.trim().split(/\s+/)[0] ?? '',
+    [currentUser?.name]
+  )
 
   const midnight = useMemo(() => {
     const d = new Date()
@@ -132,6 +387,46 @@ export function MatchesScreen() {
     [myInvolved, midnight]
   )
 
+  const { venueReserveUpcoming, venueReservePast } = useMemo(
+    () => splitSoloReservesForHub(venueReserveAll),
+    [venueReserveAll]
+  )
+
+  const venuePastReservationIdsKey = useMemo(
+    () =>
+      venueReservePast
+        .map((r) => r.id)
+        .sort()
+        .join(','),
+    [venueReservePast]
+  )
+
+  const reloadVenueReviewsForPast = useCallback(async () => {
+    if (!isSupabaseConfigured() || !currentUser?.id) {
+      setVenueReviewByReservationId(new Map())
+      return
+    }
+    if (
+      currentUser.accountType !== 'player' &&
+      currentUser.accountType !== 'admin'
+    ) {
+      setVenueReviewByReservationId(new Map())
+      return
+    }
+    const ids = venueReservePast.map((r) => r.id)
+    if (ids.length === 0) {
+      setVenueReviewByReservationId(new Map())
+      return
+    }
+    const supabase = createClient()
+    const m = await fetchVenueReviewsByReservationIds(supabase, ids)
+    setVenueReviewByReservationId(m)
+  }, [currentUser?.id, currentUser?.accountType, venueReservePast])
+
+  useEffect(() => {
+    void reloadVenueReviewsForPast()
+  }, [venuePastReservationIdsKey, reloadVenueReviewsForPast])
+
   const upcomingMerged = useMemo(() => {
     const items: Array<
       | { kind: 'match'; match: MatchOpportunity }
@@ -156,18 +451,54 @@ export function MatchesScreen() {
 
   useEffect(() => {
     if (currentScreen !== 'matches') return
-    if (!currentUser || currentUser.accountType !== 'player') {
-      setVenueReserveUpcoming([])
+    if (
+      !currentUser ||
+      (currentUser.accountType !== 'player' &&
+        currentUser.accountType !== 'admin')
+    ) {
+      setVenueReserveAll([])
       return
     }
-    if (!isSupabaseConfigured()) return
-    const supabase = createClient()
-    void fetchPlayerUpcomingVenueReservationsOnly(
-      supabase,
-      currentUser.id,
-      midnight.toISOString()
-    ).then(setVenueReserveUpcoming)
-  }, [currentScreen, currentUser, midnight])
+    void reloadSoloReserves()
+  }, [currentScreen, currentUser, reloadSoloReserves])
+
+  const confirmSoloVenueReservation = useCallback(
+    async (id: string) => {
+      if (!currentUser) return
+      if (
+        !window.confirm(
+          '¿Confirmas que la cancha quedó reservada o pagada según acordaste con el centro?'
+        )
+      ) {
+        return
+      }
+      setSoloConfirmingId(id)
+      try {
+        const supabase = createClient()
+        const { error } = await supabase
+          .from('venue_reservations')
+          .update({
+            status: 'confirmed',
+            payment_status: 'paid',
+            confirmation_source: 'booker_self',
+            confirmed_by_user_id: currentUser.id,
+            confirmation_note: 'Confirmado por el jugador (Partidos)',
+            confirmed_at: new Date().toISOString(),
+          })
+          .eq('id', id)
+          .eq('booker_user_id', currentUser.id)
+        if (error) {
+          toast.error(error.message)
+          return
+        }
+        toast.success('Reserva marcada como confirmada.')
+        await reloadSoloReserves()
+      } finally {
+        setSoloConfirmingId(null)
+      }
+    },
+    [currentUser, reloadSoloReserves]
+  )
 
   const finishedList = useMemo(
     () =>
@@ -180,6 +511,30 @@ export function MatchesScreen() {
         }),
     [myInvolved]
   )
+
+  const finishedMerged = useMemo(() => {
+    const items: Array<
+      | { kind: 'match'; match: MatchOpportunity }
+      | { kind: 'reserve'; reserve: PlayerVenueReservationListItem }
+    > = []
+    for (const m of finishedList) items.push({ kind: 'match', match: m })
+    for (const r of venueReservePast)
+      items.push({ kind: 'reserve', reserve: r })
+    items.sort((a, b) => {
+      const ta =
+        a.kind === 'match'
+          ? a.match.finalizedAt?.getTime() ??
+            new Date(a.match.dateTime).getTime()
+          : a.reserve.endsAt.getTime()
+      const tb =
+        b.kind === 'match'
+          ? b.match.finalizedAt?.getTime() ??
+            new Date(b.match.dateTime).getTime()
+          : b.reserve.endsAt.getTime()
+      return tb - ta
+    })
+    return items
+  }, [finishedList, venueReservePast])
 
   const chatOpportunities = useMemo(() => {
     if (!currentUser) return []
@@ -307,7 +662,7 @@ export function MatchesScreen() {
             onClick={() => setActiveTab('finished')}
             icon={<History className="w-4 h-4" />}
             label="Finalizados"
-            count={finishedList.length}
+            count={finishedMerged.length}
           />
         </div>
       </header>
@@ -361,71 +716,19 @@ export function MatchesScreen() {
               upcomingMerged.map((item) => {
                 if (item.kind === 'reserve') {
                   const r = item.reserve
-                  const statusLabel =
-                    r.status === 'pending'
-                      ? r.paymentStatus === 'unpaid' || !r.paymentStatus
-                        ? 'Pendiente de pago'
-                        : 'Pendiente'
-                      : 'Confirmada'
                   return (
-                    <div
+                    <SoloReserveHubCard
                       key={`reserve-${r.id}`}
-                      className={MATCH_CARD_SHELL}
-                    >
-                      <div className="px-4 py-3 border-b border-border bg-accent/10 border-accent/30">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="p-1.5 rounded-lg bg-accent/20 text-accent">
-                              <Building2 className="w-4 h-4" />
-                            </div>
-                            <span className="text-sm font-medium text-foreground truncate">
-                              Solo reserva cancha
-                            </span>
-                          </div>
-                          <Badge variant="outline" className="text-xs">
-                            {statusLabel}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="p-4 space-y-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <h3 className="font-semibold text-foreground truncate">
-                              {r.venueName}
-                            </h3>
-                            <p className="text-sm text-muted-foreground">
-                              {r.courtName}
-                              {r.venueCity ? ` · ${r.venueCity}` : ''}
-                            </p>
-                          </div>
-                          <Badge
-                            variant="outline"
-                            className="border-primary/50 text-primary shrink-0"
-                          >
-                            Reservas
-                          </Badge>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-4 h-4 text-primary" />
-                            {formatMatchInTimezone(r.startsAt, 'EEEE d MMM')}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-4 h-4 text-primary" />
-                            {formatMatchInTimezone(r.startsAt, 'HH:mm')} –{' '}
-                            {formatMatchInTimezone(r.endsAt, 'HH:mm')}
-                          </span>
-                        </div>
-                        <div className="flex gap-2 pt-1">
-                          <Link
-                            href={`/centro/${r.venueId}`}
-                            className="flex-1 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 text-center text-sm"
-                          >
-                            Ver centro
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
+                      r={r}
+                      variant="upcoming"
+                      playerFirstName={playerFirstName}
+                      playerDisplayName={currentUser?.name?.trim() ?? ''}
+                      currentUserId={currentUser?.id ?? ''}
+                      confirmingId={soloConfirmingId}
+                      onConfirm={confirmSoloVenueReservation}
+                      venueReview={venueReviewByReservationId.get(r.id)}
+                      onVenueReviewSaved={() => void reloadVenueReviewsForPast()}
+                    />
                   )
                 }
 
@@ -511,36 +814,59 @@ export function MatchesScreen() {
                           <MapPin className="w-4 h-4 text-primary shrink-0" />
                           <span className="truncate">{match.venue}</span>
                         </span>
-                        {courtPriceLine ? (
-                          <span className="w-full text-xs text-amber-100/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1.5">
-                            {courtPriceLine}
-                          </span>
-                        ) : null}
                       </div>
 
-                      <div className="flex gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => openDetails(match.id)}
-                          className="px-3 py-2.5 rounded-lg border border-border text-foreground hover:bg-secondary transition-colors"
+                      {courtPriceLine ? (
+                        <div
+                          className="rounded-lg border border-amber-900/15 bg-amber-400/20 px-3 py-2.5 text-sm font-semibold leading-snug text-amber-950 dark:border-amber-400/30 dark:bg-amber-950/50 dark:text-amber-50"
+                          role="status"
                         >
-                          Ver detalle
-                        </button>
-                        {canChat ? (
+                          <span className="mb-0.5 block text-[10px] font-bold uppercase tracking-wide text-amber-900/70 dark:text-amber-200/95">
+                            Estimación cancha
+                          </span>
+                          {courtPriceLine}
+                        </div>
+                      ) : null}
+
+                      <div className="space-y-2 pt-1">
+                        <UpcomingVenueWhatsappCta
+                          phone={match.venueContactPhone}
+                          venueName={match.venue}
+                          dateLine={formatMatchInTimezone(
+                            match.dateTime,
+                            'EEEE d MMM'
+                          )}
+                          timeLine={formatMatchInTimezone(
+                            match.dateTime,
+                            'HH:mm'
+                          )}
+                          detailLine={match.title}
+                          playerFirstName={playerFirstName}
+                        />
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
                           <button
                             type="button"
-                            onClick={() => openChat(match.id)}
-                            className="flex-1 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                            onClick={() => openDetails(match.id)}
+                            className="min-h-11 shrink-0 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary sm:px-3"
                           >
-                            <MessageCircle className="w-4 h-4" />
-                            Abrir chat del grupo
+                            Ver detalle
                           </button>
-                        ) : (
-                          <p className="text-xs text-muted-foreground w-full text-center py-2">
-                            Únete al partido desde Inicio o Explorar para usar el
-                            chat
-                          </p>
-                        )}
+                          {canChat ? (
+                            <button
+                              type="button"
+                              onClick={() => openChat(match.id)}
+                              className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                            >
+                              <MessageCircle className="h-4 w-4 shrink-0" />
+                              Abrir chat del grupo
+                            </button>
+                          ) : (
+                            <p className="flex min-h-11 flex-1 items-center justify-center px-1 text-center text-xs text-muted-foreground">
+                              Únete al partido desde Inicio o Explorar para usar
+                              el chat
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -661,8 +987,26 @@ export function MatchesScreen() {
 
         {activeTab === 'finished' && (
           <div className="space-y-4">
-            {finishedList.length > 0 ? (
-              finishedList.map((match) => {
+            {finishedMerged.length > 0 ? (
+              finishedMerged.map((item) => {
+                if (item.kind === 'reserve') {
+                  const r = item.reserve
+                  return (
+                    <SoloReserveHubCard
+                      key={`reserve-past-${r.id}`}
+                      r={r}
+                      variant="finished"
+                      playerFirstName={playerFirstName}
+                      playerDisplayName={currentUser?.name?.trim() ?? ''}
+                      currentUserId={currentUser?.id ?? ''}
+                      confirmingId={soloConfirmingId}
+                      onConfirm={confirmSoloVenueReservation}
+                      venueReview={venueReviewByReservationId.get(r.id)}
+                      onVenueReviewSaved={() => void reloadVenueReviewsForPast()}
+                    />
+                  )
+                }
+                const match = item.match
                 const ratings = ratingByOpp.get(match.id)
                 return (
                   <div key={match.id} className={MATCH_CARD_SHELL}>
@@ -785,8 +1129,8 @@ export function MatchesScreen() {
             ) : (
               <EmptyState
                 icon={<CheckCircle className="w-8 h-8" />}
-                title="Sin partidos finalizados"
-                description="Cuando el organizador cierre un partido, aparecerá aquí con el resultado."
+                title="Sin historial reciente"
+                description="Partidos cerrados o cancelados y reservas solo cancha de días anteriores aparecerán aquí."
               />
             )}
           </div>

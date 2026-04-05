@@ -16,6 +16,7 @@ import {
   Gavel,
   KeyRound,
   LogOut,
+  Mail,
   MapPinned,
   Pause,
   Pencil,
@@ -73,6 +74,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import {
+  buildFullPlayerWhatsapp,
+  extractWhatsappSuffix8,
+  isCompleteWhatsappSuffix,
+  PLAYER_WHATSAPP_PREFIX,
+  sanitizeWhatsappSuffixInput,
+} from '@/lib/player-whatsapp'
+import {
+  isValidEmailFormat,
+  normalizeAdminEmail,
+} from '@/lib/supabase/admin-venue-owner'
 
 type AdminMetrics = {
   range: RangeKey
@@ -239,6 +251,13 @@ export function AdminDashboardScreen() {
     mapsUrl: '',
   })
   const [venueSaving, setVenueSaving] = useState(false)
+  const [venueOwnerNewPassword, setVenueOwnerNewPassword] = useState('')
+  const [venueOwnerConfirmPassword, setVenueOwnerConfirmPassword] = useState('')
+  const [venueOwnerPwSaving, setVenueOwnerPwSaving] = useState(false)
+  const [venueOwnerEmail, setVenueOwnerEmail] = useState('')
+  const [venueOwnerEmailLoading, setVenueOwnerEmailLoading] = useState(false)
+  const [venueOwnerNewEmail, setVenueOwnerNewEmail] = useState('')
+  const [venueOwnerEmailSaving, setVenueOwnerEmailSaving] = useState(false)
   const [venueBusyId, setVenueBusyId] = useState<string | null>(null)
   const [deleteVenueId, setDeleteVenueId] = useState<string | null>(null)
   const [resFilterRegion, setResFilterRegion] = useState('all')
@@ -652,6 +671,12 @@ export function AdminDashboardScreen() {
       toast.error('Completa email, clave y nombre del centro.')
       return
     }
+    if (!isCompleteWhatsappSuffix(form.phone)) {
+      toast.error(
+        `El teléfono debe ser móvil chileno: ${PLAYER_WHATSAPP_PREFIX} y 8 dígitos (completa los números).`
+      )
+      return
+    }
     setCreating(true)
     try {
       const authHeaders: Record<string, string> = {
@@ -669,7 +694,10 @@ export function AdminDashboardScreen() {
       const r = await fetch('/api/admin/create-venue-user', {
         method: 'POST',
         headers: authHeaders,
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          phone: buildFullPlayerWhatsapp(form.phone),
+        }),
       })
       const json = (await r.json()) as { ok?: boolean; error?: string }
       if (!r.ok || !json.ok) {
@@ -707,6 +735,13 @@ export function AdminDashboardScreen() {
       toast.error('Elige una ciudad en el catálogo.')
       return
     }
+    const phoneSuffix = sanitizeWhatsappSuffixInput(editVenueForm.phone)
+    if (phoneSuffix.length > 0 && !isCompleteWhatsappSuffix(phoneSuffix)) {
+      toast.error(
+        `Teléfono incompleto: ingresa 8 dígitos después de ${PLAYER_WHATSAPP_PREFIX}, o borra el campo.`
+      )
+      return
+    }
     setVenueSaving(true)
     try {
       const headers = await buildAdminAuthHeaders()
@@ -716,7 +751,8 @@ export function AdminDashboardScreen() {
         body: JSON.stringify({
           name: editVenueForm.name.trim(),
           address: editVenueForm.address.trim(),
-          phone: editVenueForm.phone.trim(),
+          phone:
+            phoneSuffix.length === 0 ? '' : buildFullPlayerWhatsapp(phoneSuffix),
           cityId: editVenueForm.cityId.trim(),
           mapsUrl: editVenueForm.mapsUrl.trim() || null,
         }),
@@ -734,6 +770,107 @@ export function AdminDashboardScreen() {
       setVenueSaving(false)
     }
   }
+
+  const changeVenueOwnerPassword = async () => {
+    if (!editVenue) return
+    if (venueOwnerNewPassword.length < 6) {
+      toast.error('La nueva contraseña debe tener al menos 6 caracteres.')
+      return
+    }
+    if (venueOwnerNewPassword !== venueOwnerConfirmPassword) {
+      toast.error('Las contraseñas no coinciden.')
+      return
+    }
+    setVenueOwnerPwSaving(true)
+    try {
+      const headers = await buildAdminAuthHeaders()
+      const r = await fetch(`/api/admin/venues/${editVenue.id}/owner-password`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ newPassword: venueOwnerNewPassword }),
+      })
+      const json = (await r.json()) as { ok?: boolean; error?: string }
+      if (!r.ok || !json.ok) {
+        throw new Error(json.error ?? 'No se pudo actualizar la contraseña')
+      }
+      toast.success('Contraseña del dueño actualizada. Podrá iniciar sesión con la nueva clave.')
+      setVenueOwnerNewPassword('')
+      setVenueOwnerConfirmPassword('')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al cambiar la contraseña')
+    } finally {
+      setVenueOwnerPwSaving(false)
+    }
+  }
+
+  const changeVenueOwnerEmail = async () => {
+    if (!editVenue) return
+    const next = normalizeAdminEmail(venueOwnerNewEmail)
+    if (!next || !isValidEmailFormat(next)) {
+      toast.error('Ingresa un correo electrónico válido.')
+      return
+    }
+    if (next === normalizeAdminEmail(venueOwnerEmail)) {
+      toast.error('El correo es el mismo que el actual.')
+      return
+    }
+    setVenueOwnerEmailSaving(true)
+    try {
+      const headers = await buildAdminAuthHeaders()
+      const r = await fetch(`/api/admin/venues/${editVenue.id}/owner-email`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ newEmail: next }),
+      })
+      const json = (await r.json()) as { ok?: boolean; email?: string; error?: string }
+      if (!r.ok || !json.ok) {
+        throw new Error(json.error ?? 'No se pudo actualizar el correo')
+      }
+      toast.success(
+        'Correo del dueño actualizado. Debe iniciar sesión con el nuevo email y su contraseña.'
+      )
+      setVenueOwnerEmail(json.email ?? next)
+      setVenueOwnerNewEmail('')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al cambiar el correo')
+    } finally {
+      setVenueOwnerEmailSaving(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!editVenue?.id) {
+      setVenueOwnerEmail('')
+      setVenueOwnerEmailLoading(false)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      setVenueOwnerEmailLoading(true)
+      try {
+        const headers = await buildAdminAuthHeaders()
+        const r = await fetch(`/api/admin/venues/${editVenue.id}/owner`, { headers })
+        const j = (await r.json()) as { email?: string; error?: string }
+        if (cancelled) return
+        if (!r.ok) {
+          setVenueOwnerEmail('')
+          toast.error(j.error ?? 'No se pudo cargar el email del dueño.')
+          return
+        }
+        setVenueOwnerEmail(j.email ?? '')
+      } catch {
+        if (!cancelled) {
+          setVenueOwnerEmail('')
+          toast.error('No se pudo cargar el email del dueño.')
+        }
+      } finally {
+        if (!cancelled) setVenueOwnerEmailLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [editVenue?.id, buildAdminAuthHeaders])
 
   const togglePauseVenue = async (row: AdminVenueListItem) => {
     const next = !row.isPaused
@@ -1327,10 +1464,9 @@ export function AdminDashboardScreen() {
                     value={form.address}
                     onChange={(v) => setForm((f) => ({ ...f, address: v }))}
                   />
-                  <Field
-                    label="Teléfono"
-                    value={form.phone}
-                    onChange={(v) => setForm((f) => ({ ...f, phone: v }))}
+                  <VenueChilePhoneField
+                    suffixDigits={form.phone}
+                    onSuffixChange={(v) => setForm((f) => ({ ...f, phone: v }))}
                   />
                   <div className="md:col-span-2">
                     <Field
@@ -1519,13 +1655,16 @@ export function AdminDashboardScreen() {
                                   title="Editar"
                                   disabled={venueBusyId === row.id}
                                   onClick={() => {
+                                    setVenueOwnerNewPassword('')
+                                    setVenueOwnerConfirmPassword('')
+                                    setVenueOwnerNewEmail('')
                                     setEditVenue(row)
                                     setEditVenueForm({
                                       name: row.name,
                                       cityId: row.cityId,
                                       city: row.cityName || row.city,
                                       address: row.address,
-                                      phone: row.phone,
+                                      phone: extractWhatsappSuffix8(row.phone),
                                       mapsUrl: row.mapsUrl ?? '',
                                     })
                                   }}
@@ -1572,14 +1711,22 @@ export function AdminDashboardScreen() {
             <Dialog
               open={editVenue != null}
               onOpenChange={(open) => {
-                if (!open) setEditVenue(null)
+                if (!open) {
+                  setEditVenue(null)
+                  setVenueOwnerNewPassword('')
+                  setVenueOwnerConfirmPassword('')
+                  setVenueOwnerEmail('')
+                  setVenueOwnerNewEmail('')
+                  setVenueOwnerEmailLoading(false)
+                }
               }}
             >
               <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg" showCloseButton>
                 <DialogHeader>
                   <DialogTitle>Editar centro deportivo</DialogTitle>
                   <DialogDescription>
-                    Datos del centro y ubicación. La pausa se gestiona desde la tabla.
+                    Datos del centro, ubicación, correo y contraseña de la cuenta del dueño. La
+                    pausa se gestiona desde la tabla.
                   </DialogDescription>
                 </DialogHeader>
                 {editVenue ? (
@@ -1605,16 +1752,97 @@ export function AdminDashboardScreen() {
                       value={editVenueForm.address}
                       onChange={(v) => setEditVenueForm((f) => ({ ...f, address: v }))}
                     />
-                    <Field
-                      label="Teléfono"
-                      value={editVenueForm.phone}
-                      onChange={(v) => setEditVenueForm((f) => ({ ...f, phone: v }))}
+                    <VenueChilePhoneField
+                      suffixDigits={editVenueForm.phone}
+                      onSuffixChange={(v) =>
+                        setEditVenueForm((f) => ({ ...f, phone: v }))
+                      }
+                      helperOptional
                     />
                     <Field
                       label="URL de Google Maps (opcional)"
                       value={editVenueForm.mapsUrl}
                       onChange={(v) => setEditVenueForm((f) => ({ ...f, mapsUrl: v }))}
                     />
+
+                    <Separator className="my-1" />
+
+                    <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                        <Mail className="h-4 w-4 text-primary" aria-hidden />
+                        Correo del dueño (inicio de sesión)
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Email actual en Supabase Auth:{' '}
+                        {venueOwnerEmailLoading ? (
+                          <span className="text-foreground">cargando…</span>
+                        ) : (
+                          <span className="break-all font-mono text-foreground">
+                            {venueOwnerEmail || '—'}
+                          </span>
+                        )}
+                      </p>
+                      <Field
+                        label="Nuevo correo"
+                        type="email"
+                        value={venueOwnerNewEmail}
+                        onChange={setVenueOwnerNewEmail}
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="w-full sm:w-auto"
+                        disabled={
+                          venueOwnerEmailSaving ||
+                          !normalizeAdminEmail(venueOwnerNewEmail) ||
+                          normalizeAdminEmail(venueOwnerNewEmail) ===
+                            normalizeAdminEmail(venueOwnerEmail)
+                        }
+                        onClick={() => void changeVenueOwnerEmail()}
+                      >
+                        <Mail className="mr-2 h-4 w-4" />
+                        {venueOwnerEmailSaving ? 'Guardando…' : 'Guardar nuevo correo'}
+                      </Button>
+                    </div>
+
+                    <Separator className="my-1" />
+
+                    <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                        <KeyRound className="h-4 w-4 text-primary" aria-hidden />
+                        Contraseña del dueño (inicio de sesión)
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Solo afecta la cuenta del propietario de este centro. Déjalo en blanco si no
+                        quieres cambiarla ahora.
+                      </p>
+                      <Field
+                        label="Nueva contraseña"
+                        type="password"
+                        value={venueOwnerNewPassword}
+                        onChange={setVenueOwnerNewPassword}
+                      />
+                      <Field
+                        label="Repetir contraseña"
+                        type="password"
+                        value={venueOwnerConfirmPassword}
+                        onChange={setVenueOwnerConfirmPassword}
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="w-full sm:w-auto"
+                        disabled={
+                          venueOwnerPwSaving ||
+                          !venueOwnerNewPassword ||
+                          !venueOwnerConfirmPassword
+                        }
+                        onClick={() => void changeVenueOwnerPassword()}
+                      >
+                        <KeyRound className="mr-2 h-4 w-4" />
+                        {venueOwnerPwSaving ? 'Actualizando…' : 'Guardar nueva contraseña'}
+                      </Button>
+                    </div>
                   </div>
                 ) : null}
                 <DialogFooter className="gap-2 sm:gap-0">
@@ -2130,6 +2358,58 @@ function confirmationLabel(source: 'venue_owner' | 'booker_self' | 'admin' | nul
   if (source === 'venue_owner') return 'Centro'
   if (source === 'admin') return 'Admin'
   return 'Sin definir'
+}
+
+function VenueChilePhoneField({
+  label = 'Teléfono del centro',
+  suffixDigits,
+  onSuffixChange,
+  helperOptional,
+}: {
+  label?: string
+  suffixDigits: string
+  onSuffixChange: (v: string) => void
+  /** Si true, se indica que al editar se puede dejar vacío. */
+  helperOptional?: boolean
+}) {
+  const clean = sanitizeWhatsappSuffixInput(suffixDigits)
+  const complete = isCompleteWhatsappSuffix(suffixDigits)
+  const showWarn = clean.length > 0 && !complete
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-foreground">{label}</Label>
+      <p className="text-xs text-muted-foreground">
+        Formato fijo <span className="font-mono text-foreground">{PLAYER_WHATSAPP_PREFIX}</span> más
+        8 dígitos del celular.
+        {helperOptional ? ' Opcional: puedes vaciar el campo si no aplica.' : null}
+      </p>
+      <div
+        className={cn(
+          'flex h-11 max-w-md items-stretch overflow-hidden rounded-md border border-border bg-secondary',
+          showWarn && 'border-amber-500/55'
+        )}
+      >
+        <span className="flex shrink-0 items-center border-r border-border/80 bg-muted/40 px-3 font-mono text-sm text-muted-foreground">
+          {PLAYER_WHATSAPP_PREFIX}
+        </span>
+        <Input
+          type="text"
+          inputMode="numeric"
+          autoComplete="tel-national"
+          placeholder="12345678"
+          value={suffixDigits}
+          onChange={(e) => onSuffixChange(sanitizeWhatsappSuffixInput(e.target.value))}
+          className="h-full min-w-0 flex-1 border-0 bg-transparent text-foreground shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+          aria-invalid={showWarn}
+        />
+      </div>
+      {showWarn ? (
+        <p className="text-xs text-amber-700 dark:text-amber-400">
+          Faltan {8 - clean.length} dígito(s).
+        </p>
+      ) : null}
+    </div>
+  )
 }
 
 function Field({

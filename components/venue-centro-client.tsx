@@ -19,8 +19,15 @@ import {
 } from '@/lib/create-prefill'
 import { JOIN_REGISTER_STORAGE_KEY } from '@/lib/team-invite-url'
 import { computeDaySlots, WEEKDAY_SHORT_ES } from '@/lib/venue-slots'
-import type { SportsVenue, VenueCourt, VenueWeeklyHour } from '@/lib/types'
-import type { VenueReservationRow } from '@/lib/types'
+import type {
+  PublicVenueReviewSnippet,
+  PublicVenueReviewStats,
+  SportsVenue,
+  VenueCourt,
+  VenueReservationRow,
+  VenueWeeklyHour,
+} from '@/lib/types'
+import { VenueCentroReviewsSection } from '@/components/venue-centro-reviews-section'
 import {
   persistPlayerLastNav,
   readPlayerLastNav,
@@ -78,11 +85,19 @@ type Props = {
   venue: SportsVenue
   courts: VenueCourt[]
   weeklyHours: VenueWeeklyHour[]
+  reviewStats: PublicVenueReviewStats | null
+  recentReviews: PublicVenueReviewSnippet[]
 }
 
 type AuthGateReason = 'create' | 'nav'
 
-export function VenueCentroClient({ venue, courts, weeklyHours }: Props) {
+export function VenueCentroClient({
+  venue,
+  courts,
+  weeklyHours,
+  reviewStats,
+  recentReviews,
+}: Props) {
   const [dayStr, setDayStr] = useState(() => toDateInputValue(new Date()))
   const [reservations, setReservations] = useState<VenueReservationRow[]>([])
   const [loading, setLoading] = useState(false)
@@ -259,6 +274,8 @@ export function VenueCentroClient({ venue, courts, weeklyHours }: Props) {
           </p>
         ) : null}
       </div>
+
+      <VenueCentroReviewsSection stats={reviewStats} reviews={recentReviews} />
 
       <div className="rounded-xl border border-border bg-secondary/30 p-4 text-sm text-muted-foreground space-y-2">
         <p className="text-foreground font-medium">
