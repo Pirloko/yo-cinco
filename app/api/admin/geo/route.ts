@@ -2,6 +2,14 @@ import { NextResponse } from 'next/server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/supabase/require-admin'
+import {
+  apiLog,
+  checkRateLimit,
+  createApiContext,
+  errorJson,
+  reportServerError,
+  successJson,
+} from '@/lib/server/api-utils'
 
 function slugify(input: string): string {
   return input
@@ -14,10 +22,26 @@ function slugify(input: string): string {
 }
 
 export async function GET(req: Request) {
+  const ctx = createApiContext(req)
+  const rl = checkRateLimit(req, {
+    bucket: 'api:admin:geo:get',
+    limit: 180,
+    windowMs: 60_000,
+  })
+  if (!rl.ok) {
+    return errorJson(
+      ctx,
+      429,
+      'Demasiadas solicitudes al catálogo geográfico.',
+      'rate_limited',
+      undefined,
+      { 'Retry-After': String(rl.retryAfterSec) }
+    )
+  }
   try {
     const auth = await requireAdmin(req)
     if (!auth.ok) {
-      return NextResponse.json({ error: auth.error }, { status: 403 })
+      return errorJson(ctx, 403, auth.error, 'forbidden')
     }
     const admin = createAdminClient()
     const [{ data: countries, error: e1 }, { data: regions, error: e2 }, { data: cities, error: e3 }] =
@@ -27,19 +51,25 @@ export async function GET(req: Request) {
         admin.from('geo_cities').select('*').order('name'),
       ])
     if (e1 || e2 || e3) {
-      return NextResponse.json(
-        { error: e1?.message ?? e2?.message ?? e3?.message ?? 'Error al leer catálogo' },
-        { status: 500 }
+      const msg = e1?.message ?? e2?.message ?? e3?.message ?? 'Error al leer catálogo'
+      apiLog('error', 'admin_geo_read_failed', ctx, { message: msg })
+      return errorJson(
+        ctx,
+        500,
+        msg,
+        'admin_geo_read_failed'
       )
     }
-    return NextResponse.json({
+    return successJson(ctx, {
       countries: countries ?? [],
       regions: regions ?? [],
       cities: cities ?? [],
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Error inesperado'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    apiLog('error', 'admin_geo_unhandled_error', ctx, { message: msg })
+    void reportServerError(e, ctx, { route: 'admin/geo', method: 'GET' })
+    return errorJson(ctx, 500, msg, 'internal_error')
   }
 }
 
@@ -91,10 +121,26 @@ type Body =
   | { action: 'bulkUpdateCities'; ids: string[]; isActive: boolean }
 
 export async function POST(req: Request) {
+  const ctx = createApiContext(req)
+  const rl = checkRateLimit(req, {
+    bucket: 'api:admin:geo:post',
+    limit: 90,
+    windowMs: 60_000,
+  })
+  if (!rl.ok) {
+    return errorJson(
+      ctx,
+      429,
+      'Demasiadas operaciones administrativas en geo.',
+      'rate_limited',
+      undefined,
+      { 'Retry-After': String(rl.retryAfterSec) }
+    )
+  }
   try {
     const auth = await requireAdmin(req)
     if (!auth.ok) {
-      return NextResponse.json({ error: auth.error }, { status: 403 })
+      return errorJson(ctx, 403, auth.error, 'forbidden')
     }
     const admin = createAdminClient()
     const body = (await req.json()) as Body
@@ -263,6 +309,8 @@ export async function POST(req: Request) {
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Error inesperado'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    apiLog('error', 'admin_geo_write_unhandled_error', ctx, { message: msg })
+    void reportServerError(e, ctx, { route: 'admin/geo', method: 'POST' })
+    return errorJson(ctx, 500, msg, 'internal_error')
   }
 }

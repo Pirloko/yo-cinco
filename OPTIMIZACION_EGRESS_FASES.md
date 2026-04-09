@@ -235,6 +235,44 @@ Separar orquestacion de datos y reglas de carga fuera de `app-context`/realtime 
 - `./node_modules/.bin/tsc --noEmit` OK
 - lints en archivos tocados: OK
 
+## FASE 9 — Completada (produccion real)
+
+### Objetivo
+Agregar hardening productivo en API: logging estructurado, manejo de errores consistente, limitacion de tasa y base para observabilidad externa.
+
+### Cambios implementados
+
+- Nueva utilidad central `lib/server/api-utils.ts`:
+  - `createApiContext(req)` con `requestId`, `method`, `path`, `ip`, `userAgent`.
+  - `apiLog(level, event, ctx, meta)` para logs JSON estructurados.
+  - `successJson(...)` y `errorJson(...)` para respuestas API homogéneas.
+  - `checkRateLimit(...)` con rate limiting en memoria por IP + bucket.
+  - `reportServerError(...)` con integración opcional a Sentry (`SENTRY_DSN`) sin forzar dependencia.
+
+- Endpoints endurecidos:
+  - `app/api/public-player-profile/route.ts`
+  - `app/api/presence/route.ts`
+  - `app/api/admin/geo/route.ts` (GET/POST)
+  - `app/api/admin/metrics/route.ts`
+  - `app/api/admin/venues/route.ts`
+
+- Mejoras aplicadas en esos endpoints:
+  - Respuesta uniforme con `ok`, `error/code`, `requestId`.
+  - Eventos relevantes con logging estructurado (`info/warn/error`).
+  - Rate limiting por ruta sensible con `429` y header `Retry-After`.
+  - Captura opcional de excepciones a Sentry cuando haya `SENTRY_DSN`.
+
+### Impacto consolidado
+
+- Mayor estabilidad operativa y mejor trazabilidad en incidentes.
+- Menor riesgo de abuso/spikes en rutas críticas de API.
+- Contrato de error consistente para frontend y soporte.
+
+### Verificacion
+- `./node_modules/.bin/tsc --noEmit` OK
+- `./node_modules/.bin/next build` OK
+- lints en archivos tocados: OK
+
 ## FASE 8 — Completada (optimizacion de render)
 
 ### Objetivo

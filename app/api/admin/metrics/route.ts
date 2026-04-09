@@ -1,17 +1,39 @@
-import { NextResponse } from 'next/server'
-
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/supabase/require-admin'
+import {
+  apiLog,
+  checkRateLimit,
+  createApiContext,
+  errorJson,
+  reportServerError,
+  successJson,
+} from '@/lib/server/api-utils'
 
 type ReservationStatus = 'pending' | 'confirmed' | 'cancelled'
 type MatchType = 'rival' | 'players' | 'open'
 type RangeKey = 'day' | '7d' | '15d' | 'month' | 'semester' | 'year'
 
 export async function GET(req: Request) {
+  const ctx = createApiContext(req)
+  const rl = checkRateLimit(req, {
+    bucket: 'api:admin:metrics:get',
+    limit: 120,
+    windowMs: 60_000,
+  })
+  if (!rl.ok) {
+    return errorJson(
+      ctx,
+      429,
+      'Demasiadas solicitudes de métricas.',
+      'rate_limited',
+      undefined,
+      { 'Retry-After': String(rl.retryAfterSec) }
+    )
+  }
   try {
     const auth = await requireAdmin(req)
     if (!auth.ok) {
-      return NextResponse.json({ error: auth.error }, { status: 403 })
+      return errorJson(ctx, 403, auth.error, 'forbidden')
     }
     const admin = createAdminClient()
     const reqUrl = new URL(req.url)
@@ -217,7 +239,8 @@ export async function GET(req: Request) {
       .sort((a, b) => b.startsAt.localeCompare(a.startsAt))
       .slice(0, 200)
 
-    return NextResponse.json({
+    apiLog('info', 'admin_metrics_served', ctx, { range })
+    return successJson(ctx, {
       range,
       totals: {
         reservations: total,
@@ -234,7 +257,9 @@ export async function GET(req: Request) {
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Error inesperado'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    apiLog('error', 'admin_metrics_unhandled_error', ctx, { message: msg })
+    void reportServerError(e, ctx, { route: 'admin/metrics' })
+    return errorJson(ctx, 500, msg, 'internal_error')
   }
 }
 

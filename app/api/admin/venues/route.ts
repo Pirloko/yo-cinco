@@ -1,13 +1,35 @@
-import { NextResponse } from 'next/server'
-
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/supabase/require-admin'
+import {
+  apiLog,
+  checkRateLimit,
+  createApiContext,
+  errorJson,
+  reportServerError,
+  successJson,
+} from '@/lib/server/api-utils'
 
 export async function GET(req: Request) {
+  const ctx = createApiContext(req)
+  const rl = checkRateLimit(req, {
+    bucket: 'api:admin:venues:get',
+    limit: 120,
+    windowMs: 60_000,
+  })
+  if (!rl.ok) {
+    return errorJson(
+      ctx,
+      429,
+      'Demasiadas solicitudes al panel de centros.',
+      'rate_limited',
+      undefined,
+      { 'Retry-After': String(rl.retryAfterSec) }
+    )
+  }
   try {
     const auth = await requireAdmin(req)
     if (!auth.ok) {
-      return NextResponse.json({ error: auth.error }, { status: 403 })
+      return errorJson(ctx, 403, auth.error, 'forbidden')
     }
     const admin = createAdminClient()
     const { data: rows, error } = await admin
@@ -17,7 +39,8 @@ export async function GET(req: Request) {
       )
       .order('name', { ascending: true })
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      apiLog('error', 'admin_venues_query_failed', ctx, { message: error.message })
+      return errorJson(ctx, 500, error.message, 'admin_venues_query_failed')
     }
     const venueRows =
       (rows as
@@ -87,9 +110,12 @@ export async function GET(req: Request) {
       }
     })
 
-    return NextResponse.json({ venues })
+    apiLog('info', 'admin_venues_listed', ctx, { count: venues.length })
+    return successJson(ctx, { venues })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Error inesperado'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    apiLog('error', 'admin_venues_unhandled_error', ctx, { message: msg })
+    void reportServerError(e, ctx, { route: 'admin/venues' })
+    return errorJson(ctx, 500, msg, 'internal_error')
   }
 }
