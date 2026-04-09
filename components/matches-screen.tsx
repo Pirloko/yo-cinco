@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { queryKeys, stableIdsKey } from '@/lib/query-keys'
@@ -57,6 +57,27 @@ import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { MATCH_CARD_SHELL, COMPACT_CARD_ROW } from '@/lib/card-shell'
 import { cn } from '@/lib/utils'
 
+const MATCH_TYPE_META = {
+  rival: {
+    icon: <Target className="w-4 h-4" />,
+    label: 'Rival vs rival',
+    color: 'bg-red-500/20 text-red-400',
+    headerBg: 'bg-red-500/10 border-red-500/30',
+  },
+  players: {
+    icon: <Users className="w-4 h-4" />,
+    label: 'Yo + cinco',
+    color: 'bg-primary/20 text-primary',
+    headerBg: 'bg-primary/10 border-primary/30',
+  },
+  open: {
+    icon: <Shuffle className="w-4 h-4" />,
+    label: 'Revuelta abierta',
+    color: 'bg-accent/20 text-accent',
+    headerBg: 'bg-accent/10 border-accent/30',
+  },
+} as const
+
 function isUserInvolved(
   m: MatchOpportunity,
   userId: string,
@@ -99,7 +120,7 @@ function soloReserveStatusBadge(r: PlayerVenueReservationListItem): string {
   return 'Pendiente'
 }
 
-function SoloReserveHubCard({
+const SoloReserveHubCard = memo(function SoloReserveHubCard({
   r,
   variant,
   playerFirstName,
@@ -238,10 +259,10 @@ function SoloReserveHubCard({
       </div>
     </div>
   )
-}
+})
 
 /** CTA uniforme: confirmar cancha con el centro por WhatsApp (pestaña Próximos). */
-function UpcomingVenueWhatsappCta({
+const UpcomingVenueWhatsappCta = memo(function UpcomingVenueWhatsappCta({
   phone,
   venueName,
   dateLine,
@@ -286,7 +307,7 @@ function UpcomingVenueWhatsappCta({
       Contactar centro por WhatsApp
     </a>
   )
-}
+})
 
 function formatCompletedOutcome(m: MatchOpportunity): string {
   if (m.status === 'cancelled') return 'Cancelado'
@@ -592,51 +613,7 @@ export function MatchesScreen() {
     })
   }, [queryClient, venuePastReservationIdsKey])
 
-  const getTypeIcon = (type: 'rival' | 'players' | 'open') => {
-    switch (type) {
-      case 'rival':
-        return <Target className="w-4 h-4" />
-      case 'players':
-        return <Users className="w-4 h-4" />
-      case 'open':
-        return <Shuffle className="w-4 h-4" />
-    }
-  }
-
-  const getTypeLabel = (type: 'rival' | 'players' | 'open') => {
-    switch (type) {
-      case 'rival':
-        return 'Rival vs rival'
-      case 'players':
-        return 'Yo + cinco'
-      case 'open':
-        return 'Revuelta abierta'
-    }
-  }
-
-  const getTypeColor = (type: 'rival' | 'players' | 'open') => {
-    switch (type) {
-      case 'rival':
-        return 'bg-red-500/20 text-red-400'
-      case 'players':
-        return 'bg-primary/20 text-primary'
-      case 'open':
-        return 'bg-accent/20 text-accent'
-    }
-  }
-
-  const getTypeHeaderBg = (type: 'rival' | 'players' | 'open') => {
-    switch (type) {
-      case 'rival':
-        return 'bg-red-500/10 border-red-500/30'
-      case 'players':
-        return 'bg-primary/10 border-primary/30'
-      case 'open':
-        return 'bg-accent/10 border-accent/30'
-    }
-  }
-
-  const openChat = (opportunityId: string) => {
+  const openChat = useCallback((opportunityId: string) => {
     if (!currentUser) return
     const m = matchOpportunities.find((x) => x.id === opportunityId)
     if (!m) return
@@ -646,12 +623,18 @@ export function MatchesScreen() {
     if (!can) return
     setSelectedChatOpportunityId(opportunityId)
     setCurrentScreen('chat')
-  }
+  }, [
+    currentUser,
+    matchOpportunities,
+    participatingOpportunityIds,
+    setSelectedChatOpportunityId,
+    setCurrentScreen,
+  ])
 
-  const openDetails = (opportunityId: string) => {
+  const openDetails = useCallback((opportunityId: string) => {
     setSelectedMatchOpportunityId(opportunityId)
     setCurrentScreen('matchDetails')
-  }
+  }, [setSelectedMatchOpportunityId, setCurrentScreen])
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -767,21 +750,17 @@ export function MatchesScreen() {
                 return (
                   <div key={match.id} className={MATCH_CARD_SHELL}>
                     <div
-                      className={`px-4 py-3 border-b border-border ${getTypeHeaderBg(
-                        match.type
-                      )}`}
+                      className={`px-4 py-3 border-b border-border ${MATCH_TYPE_META[match.type].headerBg}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <div
-                            className={`p-1.5 rounded-lg ${getTypeColor(
-                              match.type
-                            )}`}
+                            className={`p-1.5 rounded-lg ${MATCH_TYPE_META[match.type].color}`}
                           >
-                            {getTypeIcon(match.type)}
+                            {MATCH_TYPE_META[match.type].icon}
                           </div>
                           <span className="text-sm font-medium text-foreground truncate">
-                            {getTypeLabel(match.type)}
+                            {MATCH_TYPE_META[match.type].label}
                           </span>
                         </div>
                         <Badge variant="outline" className="text-xs">
@@ -921,21 +900,17 @@ export function MatchesScreen() {
                     )}
                   >
                     <div
-                      className={`px-4 py-3 border-b border-border ${getTypeHeaderBg(
-                        chat.type
-                      )}`}
+                      className={`px-4 py-3 border-b border-border ${MATCH_TYPE_META[chat.type].headerBg}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <div
-                            className={`p-1.5 rounded-lg ${getTypeColor(
-                              chat.type
-                            )}`}
+                            className={`p-1.5 rounded-lg ${MATCH_TYPE_META[chat.type].color}`}
                           >
-                            {getTypeIcon(chat.type)}
+                            {MATCH_TYPE_META[chat.type].icon}
                           </div>
                           <span className="text-sm font-medium text-foreground truncate">
-                            {getTypeLabel(chat.type)}
+                            {MATCH_TYPE_META[chat.type].label}
                           </span>
                         </div>
                         <Badge variant="outline" className="text-xs">
@@ -1032,21 +1007,17 @@ export function MatchesScreen() {
                 return (
                   <div key={match.id} className={MATCH_CARD_SHELL}>
                     <div
-                      className={`px-4 py-3 border-b border-border ${getTypeHeaderBg(
-                        match.type
-                      )}`}
+                      className={`px-4 py-3 border-b border-border ${MATCH_TYPE_META[match.type].headerBg}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <div
-                            className={`p-1.5 rounded-lg ${getTypeColor(
-                              match.type
-                            )}`}
+                            className={`p-1.5 rounded-lg ${MATCH_TYPE_META[match.type].color}`}
                           >
-                            {getTypeIcon(match.type)}
+                            {MATCH_TYPE_META[match.type].icon}
                           </div>
                           <span className="text-sm font-medium text-foreground truncate">
-                            {getTypeLabel(match.type)}
+                            {MATCH_TYPE_META[match.type].label}
                           </span>
                         </div>
                         <Badge variant="outline" className="text-xs">
@@ -1163,7 +1134,7 @@ export function MatchesScreen() {
   )
 }
 
-function TabButton({
+const TabButton = memo(function TabButton({
   active,
   onClick,
   icon,
@@ -1198,9 +1169,9 @@ function TabButton({
       )}
     </button>
   )
-}
+})
 
-function EmptyState({
+const EmptyState = memo(function EmptyState({
   icon,
   title,
   description,
@@ -1218,4 +1189,4 @@ function EmptyState({
       <p className="text-sm text-muted-foreground mt-1 px-4">{description}</p>
     </div>
   )
-}
+})

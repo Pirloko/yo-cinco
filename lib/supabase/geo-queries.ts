@@ -7,16 +7,16 @@ import { GEO_DEFAULT_CITY_SLUG } from '@/lib/geo-constants'
  * cadenas con muchos niveles; país/región se leen vía `fetchGeoCatalogActive` cuando haga falta.
  */
 export const PROFILE_SELECT_WITH_GEO =
-  '*,geo_city:geo_cities!city_id(id,name,slug,region_id)'
+  'id, name, age, birth_date, gender, position, level, city, city_id, availability, photo_url, bio, whatsapp_phone, player_essentials_completed_at, stats_player_wins, stats_player_draws, stats_player_losses, stats_organized_completed, stats_organizer_wins, mod_yellow_cards, mod_red_cards, mod_suspended_until, mod_banned_at, mod_ban_reason, mod_last_yellow_at, mod_last_red_at, created_at, account_type, geo_city:geo_cities!city_id(id,name,slug,region_id)'
 
 export const MATCH_OPPORTUNITY_SELECT_WITH_GEO =
-  '*,geo_city:geo_cities!city_id(id,name,slug,region_id)'
+  'id, type, title, description, location, venue, city_id, date_time, level, creator_id, team_name, players_needed, players_joined, players_seek_profile, gender, status, created_at, finalized_at, rival_result, casual_completed, suspended_at, suspended_reason, revuelta_lineup, revuelta_result, rival_captain_vote_challenger, rival_captain_vote_accepted, rival_outcome_disputed, match_stats_applied_at, sports_venue_id, venue_reservation_id, private_revuelta_team_id, geo_city:geo_cities!city_id(id,name,slug,region_id)'
 
 export const SPORTS_VENUE_SELECT_WITH_GEO =
-  '*,geo_city:geo_cities!city_id(id,name,slug,region_id)'
+  'id, owner_id, name, address, maps_url, phone, city_id, city, is_paused, slot_duration_minutes, created_at, geo_city:geo_cities!city_id(id,name,slug,region_id)'
 
 export const TEAM_SELECT_WITH_GEO =
-  '*,geo_city:geo_cities!city_id(id,name,slug,region_id)'
+  'id, name, logo_url, level, captain_id, vice_captain_id, city_id, city, gender, description, stats_wins, stats_draws, stats_losses, stats_win_streak, stats_loss_streak, created_at, geo_city:geo_cities!city_id(id,name,slug,region_id)'
 
 function mapCountryRow(r: Record<string, unknown>): GeoCountry {
   return {
@@ -103,7 +103,10 @@ export async function fetchGeoCountries(
   supabase: SupabaseClient,
   activeOnly = true
 ): Promise<GeoCountry[]> {
-  let q = supabase.from('geo_countries').select('*').order('name')
+  let q = supabase
+    .from('geo_countries')
+    .select('id, iso_code, name, is_active')
+    .order('name')
   if (activeOnly) q = q.eq('is_active', true)
   const { data, error } = await q
   if (error || !data) return []
@@ -117,7 +120,7 @@ export async function fetchGeoRegionsForCountry(
 ): Promise<GeoRegion[]> {
   let q = supabase
     .from('geo_regions')
-    .select('*')
+    .select('id, country_id, code, name, is_active')
     .eq('country_id', countryId)
     .order('name')
   if (activeOnly) q = q.eq('is_active', true)
@@ -133,7 +136,7 @@ export async function fetchGeoCitiesForRegion(
 ): Promise<GeoCity[]> {
   let q = supabase
     .from('geo_cities')
-    .select('*')
+    .select('id, region_id, name, slug, is_active')
     .eq('region_id', regionId)
     .order('name')
   if (activeOnly) q = q.eq('is_active', true)

@@ -50,41 +50,19 @@ import { formatAuthError } from '@/lib/supabase/auth-errors'
 import { payOrganizerToastMessage } from '@/lib/court-pricing'
 import { teamIsInPlayerGeo } from '@/lib/team-geo-filter'
 import {
-  fetchMatchOpportunities,
-  fetchOtherProfiles,
-  fetchProfileForUser,
-} from '@/lib/supabase/queries'
-import {
   MATCH_OPPORTUNITY_SELECT_WITH_GEO,
   TEAM_SELECT_WITH_GEO,
   fetchDefaultCityId,
   resolveCityIdFromLabel,
 } from '@/lib/supabase/geo-queries'
-import {
-  fetchTeamInvitesForUser,
-  fetchTeamJoinRequestsForUser,
-  fetchTeamPrivateSettings,
-  fetchTeamsWithMembers,
-} from '@/lib/supabase/team-queries'
-import { fetchParticipatingOpportunityIds } from '@/lib/supabase/message-queries'
-import { TEAM_ROSTER_MAX, TEAM_USER_MAX_MEMBERSHIPS } from '@/lib/team-roster'
+import { TEAM_ROSTER_MAX } from '@/lib/team-roster'
 import {
   userIsConfirmedMemberOfTeam,
   userIsTeamStaffCaptain,
 } from '@/lib/team-membership'
-import { fetchRivalChallengesForUser } from '@/lib/supabase/rival-challenge-queries'
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js'
 import {
-  isValidTeamInviteId,
-  JOIN_REGISTER_STORAGE_KEY,
-  JOIN_TEAM_STORAGE_KEY,
-} from '@/lib/team-invite-url'
-import {
-  JOIN_MATCH_STORAGE_KEY,
-} from '@/lib/match-invite-url'
-import {
   capturePrefillCreateQuery,
-  OPEN_CREATE_AFTER_AUTH_KEY,
   tryNavigateCreateAfterPlayerReady,
 } from '@/lib/create-prefill'
 import { buildRandomRevueltaLineup } from '@/lib/revuelta-lineup'
@@ -93,7 +71,6 @@ import {
   uploadProfileAvatarFile,
   cacheBustPublicUrl,
 } from '@/lib/supabase/profile-photo'
-import { fetchVenueForOwner } from '@/lib/supabase/venue-queries'
 import {
   persistPlayerLastNav,
   type PlayerNavId,
@@ -104,54 +81,37 @@ import {
   parseBirthDateLocal,
 } from '@/lib/age-birthday'
 import { isValidFullPlayerWhatsapp } from '@/lib/player-whatsapp'
-
-function isTeamLimitReached(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false
-  const e = err as { message?: unknown }
-  return typeof e.message === 'string' && e.message.includes('team_limit_reached')
-}
-
-function toastTeamLimitReached() {
-  toast.error(
-    `Llegaste al máximo de ${TEAM_USER_MAX_MEMBERSHIPS} equipos en los que podés participar.`
-  )
-}
-
-function getAuthUserEmail(u: SupabaseAuthUser): string | undefined {
-  if (u.email) return u.email
-  const meta = u.user_metadata
-  if (meta && typeof meta.email === 'string') return meta.email
-  return undefined
-}
-
-function isUserReadOnly(u: User | null): { readonly: boolean; reason: string } {
-  if (!u) return { readonly: false, reason: '' }
-  if (u.modBannedAt) return { readonly: true, reason: 'Cuenta baneada.' }
-  if (u.modSuspendedUntil && u.modSuspendedUntil.getTime() > Date.now()) {
-    return { readonly: true, reason: 'Cuenta suspendida temporalmente.' }
-  }
-  return { readonly: false, reason: '' }
-}
-
-function toastReadOnly(reason?: string) {
-  toast.error(
-    reason?.trim() || 'Tu cuenta está restringida y solo puedes visualizar contenido.'
-  )
-}
-
-function effectivePlayerAge(u: User): number {
-  if (u.birthDate) return computeAgeFromBirthDate(u.birthDate)
-  return u.age
-}
-
-function needsOnboardingProfile(u: User): boolean {
-  if (u.accountType !== 'player') return false
-  const age = effectivePlayerAge(u)
-  const demoIncomplete = u.name.trim().length < 2 || age < 17
-  /** Registro email marca esto al guardar WhatsApp + género; OAuth queda NULL hasta onboarding. */
-  const essentialsMissing = !u.playerEssentialsCompletedAt
-  return demoIncomplete || essentialsMissing
-}
+import {
+  getAuthUserEmail,
+  isTeamLimitReached,
+  isUserReadOnly,
+  needsOnboardingProfile,
+  toastReadOnly,
+  toastTeamLimitReached,
+} from '@/lib/core/auth-store'
+import {
+  captureInviteParamsFromUrl,
+  clearSessionNavigationState,
+  consumePendingPlayerDeepLink,
+  consumeScreenQueryParam,
+  resolvePlayerScreenFromQuery,
+  shouldOpenAuthFromRegisterInvite,
+} from '@/lib/core/navigation-store'
+import { usePlayerRealtimeManager } from '@/lib/core/realtime-manager'
+import {
+  fetchLatestMatchOpportunities,
+  loadPlayerMatchBundle,
+} from '@/lib/services/match.service'
+import {
+  fetchLatestTeams,
+  fetchLatestTeamInvitesForUser,
+  fetchLatestTeamJoinRequestsForUser,
+  saveTeamPrivateSettings,
+  loadPlayerTeamBundle,
+  loadPlayerTeamsAndInvites,
+} from '@/lib/services/team.service'
+import { loadOtherPlayersForUser, loadProfileForUser } from '@/lib/services/user.service'
+import { loadVenueForOwner } from '@/lib/services/venue.service'
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [authLoading, setAuthLoading] = useState(true)
@@ -314,7 +274,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return { ok: false, error: 'No se pudo obtener la sesión.' }
       }
 
-      const profile = await fetchProfileForUser(supabase, user.id, user.email)
+      const profile = await loadProfileForUser(supabase, user.id, user.email)
       if (!profile) {
         return { ok: false, error: 'No se encontró el perfil.' }
       }
@@ -345,7 +305,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setTeamJoinRequests([])
         setParticipatingOpportunityIds([])
         setRivalChallenges([])
-        const venueRow = await fetchVenueForOwner(supabase, user.id)
+        const venueRow = await loadVenueForOwner(supabase, user.id)
         return {
           ok: true,
           needsOnboarding: false,
@@ -354,23 +314,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const [matches, others, teamList, invites, joinReqs, partIds, challenges] =
-        await Promise.all([
-          fetchMatchOpportunities(supabase),
-          fetchOtherProfiles(supabase, user.id, profile.gender),
-          fetchTeamsWithMembers(supabase),
-          fetchTeamInvitesForUser(supabase, user.id),
-          fetchTeamJoinRequestsForUser(supabase, user.id),
-          fetchParticipatingOpportunityIds(supabase, user.id),
-          fetchRivalChallengesForUser(supabase, user.id),
-        ])
-      setMatchOpportunities(matches)
+      const [matchBundle, teamBundle, others] = await Promise.all([
+        loadPlayerMatchBundle(supabase, user.id),
+        loadPlayerTeamBundle(supabase, user.id),
+        loadOtherPlayersForUser(supabase, user.id, profile.gender),
+      ])
+      setMatchOpportunities(matchBundle.matchOpportunities)
       setUsers(others)
-      setTeams(teamList)
-      setTeamInvites(invites)
-      setTeamJoinRequests(joinReqs)
-      setParticipatingOpportunityIds(partIds)
-      setRivalChallenges(challenges)
+      setTeams(teamBundle.teams)
+      setTeamInvites(teamBundle.teamInvites)
+      setTeamJoinRequests(teamBundle.teamJoinRequests)
+      setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+      setRivalChallenges(matchBundle.rivalChallenges)
 
       return {
         ok: true,
@@ -425,13 +380,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // ignorar
     }
     try {
-      sessionStorage.removeItem(JOIN_TEAM_STORAGE_KEY)
-      sessionStorage.removeItem(JOIN_MATCH_STORAGE_KEY)
-      sessionStorage.removeItem(JOIN_REGISTER_STORAGE_KEY)
-      sessionStorage.removeItem(OPEN_CREATE_AFTER_AUTH_KEY)
-    } catch {
-      // ignore
-    }
+      clearSessionNavigationState()
+    } catch {}
     setCurrentUser(null)
     setProfilePhotoCacheBust(0)
     setProfilePhotoEpochByUser({})
@@ -499,7 +449,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const refreshed = await fetchProfileForUser(
+    const refreshed = await loadProfileForUser(
       supabase,
       currentUser.id,
       currentUser.email
@@ -544,7 +494,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (currentUser.accountType !== 'venue') return
     const supabase = getBrowserSupabase()
     if (!supabase) return
-    const existing = await fetchVenueForOwner(supabase, currentUser.id)
+    const existing = await loadVenueForOwner(supabase, currentUser.id)
     if (existing) {
       setCurrentScreen('venueDashboard')
       return
@@ -678,12 +628,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { ok: false as const, error: msg }
     }
 
-    const [matches, partIds] = await Promise.all([
-      fetchMatchOpportunities(supabase),
-      fetchParticipatingOpportunityIds(supabase, currentUser.id),
-    ])
-    setMatchOpportunities(matches)
-    setParticipatingOpportunityIds(partIds)
+    const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
+    setMatchOpportunities(matchBundle.matchOpportunities)
+    setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
     return { ok: true as const }
   })
 
@@ -788,15 +735,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.error(msg)
       return
     }
-    const [partIds, matches] = await Promise.all([
-      fetchParticipatingOpportunityIds(supabase, currentUser.id),
-      fetchMatchOpportunities(supabase),
-    ])
-    setParticipatingOpportunityIds(partIds)
-    setMatchOpportunities(matches)
+    const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
+    setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+    setMatchOpportunities(matchBundle.matchOpportunities)
     setSelectedChatOpportunityId(opportunityId)
     setCurrentScreen('chat')
-    const joinedFresh = matches.find((m) => m.id === opportunityId)
+    const joinedFresh = matchBundle.matchOpportunities.find((m) => m.id === opportunityId)
     const payLine = joinedFresh
       ? payOrganizerToastMessage(joinedFresh)
       : null
@@ -895,12 +839,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast.success(
       accept ? 'Jugador agregado al partido.' : 'Solicitud rechazada.'
     )
-    const [matches, partIds] = await Promise.all([
-      fetchMatchOpportunities(supabase),
-      fetchParticipatingOpportunityIds(supabase, currentUser.id),
-    ])
-    setMatchOpportunities(matches)
-    setParticipatingOpportunityIds(partIds)
+    const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
+    setMatchOpportunities(matchBundle.matchOpportunities)
+    setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
     return { ok: true }
   })
 
@@ -992,7 +933,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.error(error.message)
       return
     }
-    const matches = await fetchMatchOpportunities(supabase)
+    const matches = await fetchLatestMatchOpportunities(supabase)
     setMatchOpportunities(matches)
     toast.success('¡Equipos sorteados! Equipo A y Equipo B listos.')
   })
@@ -1005,7 +946,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user?.email) return
-    const profile = await fetchProfileForUser(supabase, user.id, user.email)
+    const profile = await loadProfileForUser(supabase, user.id, user.email)
     if (profile) setCurrentUser(profile)
   })
 
@@ -1036,7 +977,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       return
     }
-    const matches = await fetchMatchOpportunities(supabase)
+    const matches = await fetchLatestMatchOpportunities(supabase)
     setMatchOpportunities(matches)
     await refreshCurrentUserProfile()
     toast.success('Voto registrado.')
@@ -1066,7 +1007,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       return
     }
-    const matches = await fetchMatchOpportunities(supabase)
+    const matches = await fetchLatestMatchOpportunities(supabase)
     setMatchOpportunities(matches)
     await refreshCurrentUserProfile()
     toast.success('Resultado confirmado. Ventana de calificaciones 48 h.')
@@ -1129,7 +1070,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         return false
       }
-      const matches = await fetchMatchOpportunities(supabase)
+      const matches = await fetchLatestMatchOpportunities(supabase)
       setMatchOpportunities(matches)
       await refreshCurrentUserProfile()
       toast.success('Partido finalizado. Los jugadores pueden calificar en las próximas 48 h.')
@@ -1145,7 +1086,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toast.error(error.message)
         return false
       }
-      const matches = await fetchMatchOpportunities(supabase)
+      const matches = await fetchLatestMatchOpportunities(supabase)
       setMatchOpportunities(matches)
       await refreshCurrentUserProfile()
       toast.success('Partido finalizado. Los jugadores pueden calificar en las próximas 48 h.')
@@ -1171,7 +1112,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return false
     }
 
-    const matches = await fetchMatchOpportunities(supabase)
+    const matches = await fetchLatestMatchOpportunities(supabase)
     setMatchOpportunities(matches)
     await refreshCurrentUserProfile()
     toast.success('Partido finalizado. Los jugadores pueden calificar en las próximas 48 h.')
@@ -1222,7 +1163,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const matches = await fetchMatchOpportunities(supabase)
+    const matches = await fetchLatestMatchOpportunities(supabase)
     setMatchOpportunities(matches)
     toast.success('Partido suspendido.')
   })
@@ -1314,12 +1255,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const [freshTeams, freshInvites] = await Promise.all([
-      fetchTeamsWithMembers(supabase),
-      fetchTeamInvitesForUser(supabase, currentUser.id),
-    ])
-    setTeams(freshTeams)
-    setTeamInvites(freshInvites)
+    const teamBundle = await loadPlayerTeamsAndInvites(supabase, currentUser.id)
+    setTeams(teamBundle.teams)
+    setTeamInvites(teamBundle.teamInvites)
   })
 
   const updateTeam = useStableCallback(async (
@@ -1371,7 +1309,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const freshTeams = await fetchTeamsWithMembers(supabase)
+    const freshTeams = await fetchLatestTeams(supabase)
     setTeams(freshTeams)
     toast.success('Equipo actualizado')
   })
@@ -1396,7 +1334,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
     toast.success('Equipo eliminado')
-    const freshTeams = await fetchTeamsWithMembers(supabase)
+    const freshTeams = await fetchLatestTeams(supabase)
     setTeams(freshTeams)
   })
 
@@ -1425,9 +1363,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     toast.success('Te retiraste del equipo')
     const [freshTeams, freshInvites, joinReqs] = await Promise.all([
-      fetchTeamsWithMembers(supabase),
-      fetchTeamInvitesForUser(supabase, currentUser.id),
-      fetchTeamJoinRequestsForUser(supabase, currentUser.id),
+      fetchLatestTeams(supabase),
+      fetchLatestTeamInvitesForUser(supabase, currentUser.id),
+      fetchLatestTeamJoinRequestsForUser(supabase, currentUser.id),
     ])
     setTeams(freshTeams)
     setTeamInvites(freshInvites)
@@ -1449,42 +1387,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const team = teams.find((t) => t.id === teamId)
     if (!team || team.captainId !== currentUser.id) return null
 
-    const { data: cur } = await supabase
-      .from('team_private_settings')
-      .select('whatsapp_invite_url, rules_text')
-      .eq('team_id', teamId)
-      .maybeSingle()
-
-    const nextWhatsapp =
-      payload.whatsappInviteUrl !== undefined
-        ? (payload.whatsappInviteUrl?.trim() || null)
-        : ((cur?.whatsapp_invite_url as string | null) ?? null)
-    const nextRules =
-      payload.rulesText !== undefined
-        ? (payload.rulesText?.trim() || null)
-        : ((cur?.rules_text as string | null) ?? null)
-
-    const { error } = await supabase.from('team_private_settings').upsert(
-      {
-        team_id: teamId,
-        whatsapp_invite_url: nextWhatsapp,
-        rules_text: nextRules,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'team_id' }
-    )
-
-    if (error) {
-      toast.error(error.message)
+    const saved = await saveTeamPrivateSettings(supabase, teamId, payload)
+    if (!saved) {
+      toast.error('No se pudo guardar la coordinación del equipo.')
       return null
     }
 
     toast.success('Coordinación del equipo guardada')
-    return {
-      teamId,
-      whatsappInviteUrl: nextWhatsapp,
-      rulesText: nextRules,
-    }
+    return saved
   })
 
   const createRivalChallenge = useStableCallback(async (payload: {
@@ -1556,10 +1466,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     // Estado fuente: refrescar desde DB para mantener consistencia (evita duplicar lógica de mapeo).
-    const freshChallenges = await fetchRivalChallengesForUser(supabase, currentUser.id)
-    setRivalChallenges(freshChallenges)
-    const matches = await fetchMatchOpportunities(supabase)
-    setMatchOpportunities(matches)
+    const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
+    setRivalChallenges(matchBundle.rivalChallenges)
+    setMatchOpportunities(matchBundle.matchOpportunities)
     toast.success(
       payload.mode === 'direct'
         ? `Desafío enviado a ${payload.challengedTeam?.name ?? 'equipo rival'}`
@@ -1614,14 +1523,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.success('Desafío rechazado.')
     }
 
-    const [freshChallenges, matches, partIds] = await Promise.all([
-      fetchRivalChallengesForUser(supabase, currentUser.id),
-      fetchMatchOpportunities(supabase),
-      fetchParticipatingOpportunityIds(supabase, currentUser.id),
-    ])
-    setRivalChallenges(freshChallenges)
-    setMatchOpportunities(matches)
-    setParticipatingOpportunityIds(partIds)
+    const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
+    setRivalChallenges(matchBundle.rivalChallenges)
+    setMatchOpportunities(matchBundle.matchOpportunities)
+    setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
   })
 
   const acceptRivalOpportunityWithTeam = useStableCallback(async (
@@ -1672,7 +1577,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       )
       return
     }
-    const invites = await fetchTeamInvitesForUser(supabase, currentUser.id)
+    const invites = await fetchLatestTeamInvitesForUser(supabase, currentUser.id)
     setTeamInvites(invites)
   })
 
@@ -1720,12 +1625,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const [freshTeams, freshInvites] = await Promise.all([
-      fetchTeamsWithMembers(supabase),
-      fetchTeamInvitesForUser(supabase, currentUser.id),
-    ])
-    setTeams(freshTeams)
-    setTeamInvites(freshInvites)
+    const teamBundle = await loadPlayerTeamsAndInvites(supabase, currentUser.id)
+    setTeams(teamBundle.teams)
+    setTeamInvites(teamBundle.teamInvites)
   })
 
   const requestToJoinTeam = useStableCallback(async (teamId: string) => {
@@ -1750,7 +1652,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       )
       return
     }
-    const list = await fetchTeamJoinRequestsForUser(supabase, currentUser.id)
+    const list = await fetchLatestTeamJoinRequestsForUser(supabase, currentUser.id)
     setTeamJoinRequests(list)
     toast.success('Solicitud enviada al equipo')
   })
@@ -1794,7 +1696,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.error(error.message)
       return
     }
-    const freshTeams = await fetchTeamsWithMembers(supabase)
+    const freshTeams = await fetchLatestTeams(supabase)
     setTeams(freshTeams)
     toast.success(
       viceUserId ? 'Vicecapitán designado.' : 'Vicecapitán removido.'
@@ -1835,9 +1737,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
     const [freshTeams, invites, joinReqs] = await Promise.all([
-      fetchTeamsWithMembers(supabase),
-      fetchTeamInvitesForUser(supabase, currentUser.id),
-      fetchTeamJoinRequestsForUser(supabase, currentUser.id),
+      fetchLatestTeams(supabase),
+      fetchLatestTeamInvitesForUser(supabase, currentUser.id),
+      fetchLatestTeamJoinRequestsForUser(supabase, currentUser.id),
     ])
     setTeams(freshTeams)
     setTeamInvites(invites)
@@ -1880,7 +1782,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toast.error(msg)
         return
       }
-      const list = await fetchTeamJoinRequestsForUser(supabase, currentUser.id)
+      const list = await fetchLatestTeamJoinRequestsForUser(supabase, currentUser.id)
       setTeamJoinRequests(list)
       toast.success('Solicitud rechazada')
       return
@@ -1909,8 +1811,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     const [freshTeams, list] = await Promise.all([
-      fetchTeamsWithMembers(supabase),
-      fetchTeamJoinRequestsForUser(supabase, currentUser.id),
+      fetchLatestTeams(supabase),
+      fetchLatestTeamJoinRequestsForUser(supabase, currentUser.id),
     ])
     setTeams(freshTeams)
     setTeamJoinRequests(list)
@@ -1937,7 +1839,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.error(error.message)
       return
     }
-    const list = await fetchTeamJoinRequestsForUser(supabase, currentUser.id)
+    const list = await fetchLatestTeamJoinRequestsForUser(supabase, currentUser.id)
     setTeamJoinRequests(list)
     toast.success('Solicitud cancelada')
   })
@@ -1963,14 +1865,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   })
 
   const clearSessionState = useCallback(() => {
-    try {
-      sessionStorage.removeItem(JOIN_TEAM_STORAGE_KEY)
-      sessionStorage.removeItem(JOIN_MATCH_STORAGE_KEY)
-      sessionStorage.removeItem(JOIN_REGISTER_STORAGE_KEY)
-      sessionStorage.removeItem(OPEN_CREATE_AFTER_AUTH_KEY)
-    } catch {
-      // ignore
-    }
+    clearSessionNavigationState()
     setCurrentUser(null)
     setProfilePhotoCacheBust(0)
     setProfilePhotoEpochByUser({})
@@ -1996,7 +1891,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const supabase = getBrowserSupabase()
       if (!supabase) return
-      const profile = await fetchProfileForUser(supabase, authUser.id, email)
+      const profile = await loadProfileForUser(supabase, authUser.id, email)
       if (!profile) return
       setCurrentUser(profile)
 
@@ -2011,23 +1906,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      const [matches, others, teamList, invites, joinReqs, partIds, challenges] =
-        await Promise.all([
-          fetchMatchOpportunities(supabase),
-          fetchOtherProfiles(supabase, authUser.id, profile.gender),
-          fetchTeamsWithMembers(supabase),
-          fetchTeamInvitesForUser(supabase, authUser.id),
-          fetchTeamJoinRequestsForUser(supabase, authUser.id),
-          fetchParticipatingOpportunityIds(supabase, authUser.id),
-          fetchRivalChallengesForUser(supabase, authUser.id),
-        ])
-      setMatchOpportunities(matches)
+      const [matchBundle, teamBundle, others] = await Promise.all([
+        loadPlayerMatchBundle(supabase, authUser.id),
+        loadPlayerTeamBundle(supabase, authUser.id),
+        loadOtherPlayersForUser(supabase, authUser.id, profile.gender),
+      ])
+      setMatchOpportunities(matchBundle.matchOpportunities)
       setUsers(others)
-      setTeams(teamList)
-      setTeamInvites(invites)
-      setTeamJoinRequests(joinReqs)
-      setParticipatingOpportunityIds(partIds)
-      setRivalChallenges(challenges)
+      setTeams(teamBundle.teams)
+      setTeamInvites(teamBundle.teamInvites)
+      setTeamJoinRequests(teamBundle.teamJoinRequests)
+      setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+      setRivalChallenges(matchBundle.rivalChallenges)
     } catch {
       // offline / error de red
     }
@@ -2133,26 +2023,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   /** ?joinTeam= & ?register=1 → sessionStorage y URL limpia */
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      const sp = new URLSearchParams(window.location.search)
-      const jt = sp.get('joinTeam')
-      if (jt && isValidTeamInviteId(jt)) {
-        sessionStorage.setItem(JOIN_TEAM_STORAGE_KEY, jt)
-      }
-      const jm = sp.get('joinMatch')
-      if (jm && isValidTeamInviteId(jm)) {
-        sessionStorage.setItem(JOIN_MATCH_STORAGE_KEY, jm)
-      }
-      if (sp.get('register') === '1') {
-        sessionStorage.setItem(JOIN_REGISTER_STORAGE_KEY, '1')
-      }
-      if (jt || jm || sp.get('register') === '1') {
-        window.history.replaceState({}, '', '/')
-      }
-    } catch {
-      // modo privado / storage bloqueado
-    }
+    captureInviteParamsFromUrl()
   }, [])
 
   useEffect(() => {
@@ -2163,14 +2034,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (authLoading) return
     if (currentUser) return
-    if (typeof window === 'undefined') return
-    try {
-      const sp = new URLSearchParams(window.location.search)
-      if (sp.get('screen') !== 'auth') return
+    const screen = consumeScreenQueryParam()
+    if (screen === 'auth') {
       setCurrentScreen('auth')
-      window.history.replaceState({}, '', '/')
-    } catch {
-      // ignore
     }
   }, [authLoading, currentUser])
 
@@ -2179,21 +2045,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (authLoading || !currentUser) return
     if (currentUser.accountType !== 'player') return
     if (needsOnboardingProfile(currentUser)) return
-    if (typeof window === 'undefined') return
-    try {
-      const sp = new URLSearchParams(window.location.search)
-      const screen = sp.get('screen')
-      if (!screen) return
-      if (!PLAYER_NAV_SCREENS.has(screen as AppScreen)) {
-        window.history.replaceState({}, '', '/')
-        return
-      }
-      setCurrentScreen(screen as AppScreen)
-      persistPlayerLastNav(screen as PlayerNavId)
-      window.history.replaceState({}, '', '/')
-    } catch {
-      // ignore
-    }
+    const screen = resolvePlayerScreenFromQuery(
+      consumeScreenQueryParam(),
+      PLAYER_NAV_SCREENS
+    )
+    if (!screen) return
+    setCurrentScreen(screen)
+    persistPlayerLastNav(screen as PlayerNavId)
   }, [authLoading, currentUser])
 
   /** Recordar última pestaña principal (barra inferior en `/centro/...`). */
@@ -2219,7 +2077,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (!isSupabaseConfigured()) return
         const supabase = getBrowserSupabase()
         if (!supabase) return
-        const v = await fetchVenueForOwner(supabase, currentUser.id)
+        const v = await loadVenueForOwner(supabase, currentUser.id)
         if (cancelled) return
 
         if (!v) {
@@ -2272,13 +2130,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (authLoading || currentUser) return
     if (currentScreen !== 'landing') return
-    try {
-      if (sessionStorage.getItem(JOIN_REGISTER_STORAGE_KEY) === '1') {
-        setCurrentScreen('auth')
-      }
-    } catch {
-      // ignore
-    }
+    if (shouldOpenAuthFromRegisterInvite()) setCurrentScreen('auth')
   }, [authLoading, currentUser, currentScreen])
 
   /**
@@ -2311,294 +2163,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (currentUser.accountType !== 'player') return
     if (currentUser.modBannedAt) return
     if (needsOnboardingProfile(currentUser)) return
-    let tid: string | null = null
-    let mid: string | null = null
-    try {
-      tid = sessionStorage.getItem(JOIN_TEAM_STORAGE_KEY)
-      mid = sessionStorage.getItem(JOIN_MATCH_STORAGE_KEY)
-    } catch {
-      return
-    }
-    if (tid && isValidTeamInviteId(tid)) {
-      try {
-        sessionStorage.removeItem(JOIN_TEAM_STORAGE_KEY)
-      } catch {
-        // ignore
-      }
-      setTeamsDetailFocusTeamId(tid)
+    const { teamId, matchId } = consumePendingPlayerDeepLink()
+    if (teamId) {
+      setTeamsDetailFocusTeamId(teamId)
       setCurrentScreen('teams')
       return
     }
-    if (mid && isValidTeamInviteId(mid)) {
-      try {
-        sessionStorage.removeItem(JOIN_MATCH_STORAGE_KEY)
-      } catch {
-        // ignore
-      }
-      setSelectedMatchOpportunityId(mid)
+    if (matchId) {
+      setSelectedMatchOpportunityId(matchId)
       setCurrentScreen('matchDetails')
     }
   }, [authLoading, currentUser])
 
-  /**
-   * Realtime (jugadores): tres canales por dominio (match / team / users) para aislar
-   * suscripciones; el debounce incremental sigue siendo el mismo (scheduleFlush).
-   */
-  useEffect(() => {
-    if (!currentUser || !isSupabaseConfigured()) return
-    if (currentUser.accountType !== 'player') return
-
-    const supabase = getBrowserSupabase()
-    if (!supabase) return
-
-    const flushState = {
-      debounceTimer: null as number | null,
-      maxWaitTimer: null as number | null,
-      match: false,
-      team: false,
-      users: false,
-    }
-    const DEBOUNCE_MS = 250
-    const MAX_WAIT_MS = 2000
-
-    const scheduleFlush = (kind: 'match' | 'team' | 'users') => {
-      flushState[kind] = true
-      if (flushState.maxWaitTimer == null) {
-        flushState.maxWaitTimer = window.setTimeout(() => {
-          flushState.maxWaitTimer = null
-          if (flushState.debounceTimer != null) {
-            window.clearTimeout(flushState.debounceTimer)
-            flushState.debounceTimer = null
-          }
-          void runIncrementalFlush()
-        }, MAX_WAIT_MS)
-      }
-      if (flushState.debounceTimer != null) {
-        window.clearTimeout(flushState.debounceTimer)
-      }
-      flushState.debounceTimer = window.setTimeout(() => {
-        flushState.debounceTimer = null
-        if (flushState.maxWaitTimer != null) {
-          window.clearTimeout(flushState.maxWaitTimer)
-          flushState.maxWaitTimer = null
-        }
-        void runIncrementalFlush()
-      }, DEBOUNCE_MS)
-    }
-
-    const runIncrementalFlush = async () => {
-      const u = currentUserRef.current
-      if (!u || u.accountType !== 'player' || !isSupabaseConfigured()) return
-
-      const needMatch = flushState.match
-      const needTeam = flushState.team
-      const needUsers = flushState.users
-      flushState.match = false
-      flushState.team = false
-      flushState.users = false
-
-      if (!needMatch && !needTeam && !needUsers) return
-
-      try {
-        const tasks: Promise<void>[] = []
-
-        if (needMatch) {
-          tasks.push(
-            (async () => {
-              const [matches, partIds, challenges] = await Promise.all([
-                fetchMatchOpportunities(supabase),
-                fetchParticipatingOpportunityIds(supabase, u.id),
-                fetchRivalChallengesForUser(supabase, u.id),
-              ])
-              setMatchOpportunities(matches)
-              setParticipatingOpportunityIds(partIds)
-              setRivalChallenges(challenges)
-            })()
-          )
-        }
-
-        if (needTeam) {
-          tasks.push(
-            (async () => {
-              const [teamList, invites, joinReqs] = await Promise.all([
-                fetchTeamsWithMembers(supabase),
-                fetchTeamInvitesForUser(supabase, u.id),
-                fetchTeamJoinRequestsForUser(supabase, u.id),
-              ])
-              setTeams(teamList)
-              setTeamInvites(invites)
-              setTeamJoinRequests(joinReqs)
-            })()
-          )
-        }
-
-        if (needUsers) {
-          tasks.push(
-            (async () => {
-              const others = await fetchOtherProfiles(supabase, u.id, u.gender)
-              setUsers(others)
-            })()
-          )
-        }
-
-        await Promise.all(tasks)
-      } catch {
-        // red / offline
-      }
-    }
-
-    const uid = currentUser.id
-    const channelMatch = supabase.channel(`app-rt:${uid}:match`)
-    const channelTeam = supabase.channel(`app-rt:${uid}:team`)
-    const channelUsers = supabase.channel(`app-rt:${uid}:users`)
-
-    const rowEvents = ['INSERT', 'UPDATE', 'DELETE'] as const
-    for (const event of rowEvents) {
-      channelMatch.on(
-        'postgres_changes',
-        { event, schema: 'public', table: 'match_opportunities' },
-        () => {
-          scheduleFlush('match')
-        }
-      )
-      channelMatch.on(
-        'postgres_changes',
-        { event, schema: 'public', table: 'match_opportunity_participants' },
-        () => {
-          scheduleFlush('match')
-        }
-      )
-      channelMatch.on(
-        'postgres_changes',
-        { event, schema: 'public', table: 'rival_challenges' },
-        () => {
-          scheduleFlush('match')
-        }
-      )
-      channelTeam.on(
-        'postgres_changes',
-        { event, schema: 'public', table: 'team_invites' },
-        () => {
-          scheduleFlush('team')
-        }
-      )
-      channelTeam.on(
-        'postgres_changes',
-        { event, schema: 'public', table: 'team_join_requests' },
-        () => {
-          scheduleFlush('team')
-        }
-      )
-      channelTeam.on(
-        'postgres_changes',
-        { event, schema: 'public', table: 'team_members' },
-        () => {
-          scheduleFlush('team')
-        }
-      )
-      channelTeam.on(
-        'postgres_changes',
-        { event, schema: 'public', table: 'teams' },
-        () => {
-          scheduleFlush('team')
-        }
-      )
-      channelTeam.on(
-        'postgres_changes',
-        { event, schema: 'public', table: 'team_private_settings' },
-        () => {
-          scheduleFlush('team')
-        }
-      )
-    }
-
-    for (const event of ['INSERT', 'DELETE'] as const) {
-      channelUsers.on(
-        'postgres_changes',
-        { event, schema: 'public', table: 'profiles' },
-        () => {
-          scheduleFlush('users')
-        }
-      )
-    }
-
-    channelUsers.on(
-      'postgres_changes',
-      { event: 'UPDATE', schema: 'public', table: 'profiles' },
-      (payload) => {
-        scheduleFlush('users')
-        const row = payload.new as Record<string, unknown> | null
-        const id = typeof row?.id === 'string' ? row.id : null
-        if (id) {
-          setProfilePhotoEpochByUser((prev) => ({
-            ...prev,
-            [id]: (prev[id] ?? 0) + 1,
-          }))
-          setProfilesRealtimeGeneration((g) => g + 1)
-        }
-        setCurrentUser((u) => {
-          if (!u || !id || u.id !== id || !row) return u
-          const photo = row.photo_url
-          const name = row.name
-          const next: typeof u = {
-            ...u,
-            photo:
-              typeof photo === 'string' && photo.trim()
-                ? photo
-                : u.photo,
-            name:
-              typeof name === 'string' && name.trim() ? name : u.name,
-          }
-          if ('mod_banned_at' in row) {
-            const v = row.mod_banned_at
-            next.modBannedAt =
-              v != null && String(v).trim() !== '' ? new Date(String(v)) : undefined
-          }
-          if ('mod_ban_reason' in row && typeof row.mod_ban_reason === 'string') {
-            next.modBanReason = row.mod_ban_reason
-          }
-          if ('mod_yellow_cards' in row && typeof row.mod_yellow_cards === 'number') {
-            next.modYellowCards = row.mod_yellow_cards
-          }
-          if ('mod_red_cards' in row && typeof row.mod_red_cards === 'number') {
-            next.modRedCards = row.mod_red_cards
-          }
-          if ('mod_last_yellow_at' in row) {
-            const v = row.mod_last_yellow_at
-            next.modLastYellowAt =
-              v != null && String(v).trim() !== '' ? new Date(String(v)) : null
-          }
-          if ('mod_last_red_at' in row) {
-            const v = row.mod_last_red_at
-            next.modLastRedAt =
-              v != null && String(v).trim() !== '' ? new Date(String(v)) : null
-          }
-          return next
-        })
-      }
-    )
-
-    channelMatch.subscribe()
-    channelTeam.subscribe()
-    channelUsers.subscribe()
-
-    return () => {
-      if (flushState.debounceTimer != null) {
-        window.clearTimeout(flushState.debounceTimer)
-        flushState.debounceTimer = null
-      }
-      if (flushState.maxWaitTimer != null) {
-        window.clearTimeout(flushState.maxWaitTimer)
-        flushState.maxWaitTimer = null
-      }
-      flushState.match = false
-      flushState.team = false
-      flushState.users = false
-      void supabase.removeChannel(channelMatch)
-      void supabase.removeChannel(channelTeam)
-      void supabase.removeChannel(channelUsers)
-    }
-  }, [currentUser?.id, currentUser?.accountType])
+  usePlayerRealtimeManager({
+    currentUser,
+    currentUserRef,
+    setMatchOpportunities,
+    setParticipatingOpportunityIds,
+    setRivalChallenges,
+    setTeams,
+    setTeamInvites,
+    setTeamJoinRequests,
+    setUsers,
+    setProfilePhotoEpochByUser,
+    setProfilesRealtimeGeneration,
+    setCurrentUser,
+  })
 
   const openPublicProfile = useStableCallback((userId: string) => {
     const id = userId?.trim()

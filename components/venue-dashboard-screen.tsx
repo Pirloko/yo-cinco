@@ -762,7 +762,25 @@ export function VenueDashboardScreen() {
       channel.on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
+          schema: 'public',
+          table: 'venue_reservations',
+        },
+        scheduleReload
+      )
+      channel.on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'venue_reservations',
+        },
+        scheduleReload
+      )
+      channel.on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
           schema: 'public',
           table: 'venue_reservations',
         },

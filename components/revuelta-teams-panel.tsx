@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { useAppAuth } from '@/lib/app-context'
 import type { MatchOpportunity } from '@/lib/types'
 import type { OpportunityParticipantRow } from '@/lib/supabase/message-queries'
@@ -19,7 +19,7 @@ function shirtEmojiColor(hex: string): string {
   return lum < 0.45 ? '#fff' : '#171717'
 }
 
-function JerseyBadge({ hex }: { hex: string }) {
+const JerseyBadge = memo(function JerseyBadge({ hex }: { hex: string }) {
   return (
     <div
       className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border-2 border-border text-2xl shadow-sm"
@@ -32,7 +32,7 @@ function JerseyBadge({ hex }: { hex: string }) {
       👕
     </div>
   )
-}
+})
 
 type Props = {
   opportunity: MatchOpportunity
@@ -71,23 +71,42 @@ export function RevueltaTeamsPanel({
     return m
   }, [participants])
 
+  const joinedParticipants = useMemo(
+    () =>
+      participants.filter(
+        (p) =>
+          p.status === 'creator' || p.status === 'confirmed' || p.status === 'pending'
+      ),
+    [participants]
+  )
+
+  const joined = joinedParticipants.length
+  const gkCount = useMemo(
+    () => joinedParticipants.filter((p) => p.isGoalkeeper === true).length,
+    [joinedParticipants]
+  )
+
   if (opportunity.type !== 'open') return null
 
   const needed = opportunity.playersNeeded ?? 0
-  const joined = participants.filter(
-    (p) =>
-      p.status === 'creator' || p.status === 'confirmed' || p.status === 'pending'
-  ).length
-  const gkCount = participants.filter(
-    (p) =>
-      (p.status === 'creator' ||
-        p.status === 'confirmed' ||
-        p.status === 'pending') &&
-      p.isGoalkeeper === true
-  ).length
   const full = needed > 0 && joined >= needed
   const hasTwoGoalkeepers = gkCount >= 2
   const lineup = opportunity.revueltaLineup
+
+  const handleRandomize = useCallback(() => {
+    void (async () => {
+      setBusy(true)
+      try {
+        await randomizeRevueltaTeams(
+          opportunity.id,
+          colorA,
+          colorB
+        )
+      } finally {
+        setBusy(false)
+      }
+    })()
+  }, [randomizeRevueltaTeams, opportunity.id, colorA, colorB])
 
   const renderTeam = (label: string, userIds: string[], hex: string) => (
     <div className="rounded-xl border border-border bg-secondary/40 p-3 space-y-2">
@@ -209,20 +228,7 @@ export function RevueltaTeamsPanel({
             size={compact ? 'sm' : 'default'}
             className="w-full bg-accent text-accent-foreground hover:bg-accent/90"
             disabled={busy}
-            onClick={() => {
-              void (async () => {
-                setBusy(true)
-                try {
-                  await randomizeRevueltaTeams(
-                    opportunity.id,
-                    colorA,
-                    colorB
-                  )
-                } finally {
-                  setBusy(false)
-                }
-              })()
-            }}
+            onClick={handleRandomize}
           >
             {busy ? (
               <>

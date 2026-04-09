@@ -99,7 +99,7 @@ export async function fetchTeamInvitesForUser(
 ): Promise<TeamInvite[]> {
   const { data: invs, error } = await supabase
     .from('team_invites')
-    .select('*')
+    .select('id, team_id, inviter_id, invitee_id, status, created_at')
     .or(`invitee_id.eq.${userId},inviter_id.eq.${userId}`)
     .order('created_at', { ascending: false })
 
@@ -145,7 +145,7 @@ export async function fetchTeamJoinRequestsForUser(
 
   let query = supabase
     .from('team_join_requests')
-    .select('*')
+    .select('id, team_id, requester_id, status, created_at')
     .order('created_at', { ascending: false })
 
   if (staffTeamIds.length > 0) {

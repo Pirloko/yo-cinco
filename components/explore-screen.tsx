@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useAppAuth, useAppUI } from '@/lib/app-context'
@@ -159,7 +159,7 @@ export function ExploreScreen() {
   const loadingAvailability =
     displayedVenues.length > 0 && availabilityQuery.isFetching
 
-  const goToQuickCreate = (row: AvailabilityRow) => {
+  const goToQuickCreate = useCallback((row: AvailabilityRow) => {
     if (!row.nextSlotAt) return
     writeCreatePrefill({
       sportsVenueId: row.venueId,
@@ -170,7 +170,11 @@ export function ExploreScreen() {
       bookCourtSlot: true,
     })
     setCurrentScreen('create')
-  }
+  }, [setCurrentScreen])
+
+  const clearSearch = useCallback(() => {
+    setSearchQuery('')
+  }, [])
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -189,7 +193,7 @@ export function ExploreScreen() {
             {searchQuery && (
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
+                onClick={clearSearch}
                 className="absolute right-3 top-1/2 -translate-y-1/2"
               >
                 <X className="w-4 h-4 text-muted-foreground" />

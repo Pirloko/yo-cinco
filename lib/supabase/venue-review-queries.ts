@@ -69,7 +69,7 @@ export async function fetchPublicVenueReviewStats(
 ): Promise<PublicVenueReviewStats | null> {
   const { data, error } = await supabase
     .from('sports_venue_review_stats')
-    .select('*')
+    .select('venue_id, review_count, avg_court_quality, avg_management, avg_facilities, avg_overall')
     .eq('venue_id', venueId)
     .maybeSingle()
   if (error || !data) return null

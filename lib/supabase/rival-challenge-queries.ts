@@ -38,13 +38,17 @@ export async function fetchRivalChallengesForUser(
 
   const { data: directRows } = await supabase
     .from('rival_challenges')
-    .select('*')
+    .select(
+      'id, opportunity_id, challenger_team_id, challenger_captain_id, challenged_team_id, challenged_captain_id, accepted_team_id, accepted_captain_id, mode, status, created_at, responded_at'
+    )
     .or(directOrParts.join(','))
     .order('created_at', { ascending: false })
 
   const { data: openRows } = await supabase
     .from('rival_challenges')
-    .select('*')
+    .select(
+      'id, opportunity_id, challenger_team_id, challenger_captain_id, challenged_team_id, challenged_captain_id, accepted_team_id, accepted_captain_id, mode, status, created_at, responded_at'
+    )
     .eq('mode', 'open')
     .eq('status', 'pending')
     .neq('challenger_captain_id', userId)

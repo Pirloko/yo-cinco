@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import { toast } from 'sonner'
 import {
@@ -50,6 +50,7 @@ import {
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { playersSeekProfileLabel } from '@/lib/players-seek-profile'
 import { MatchCourtPricingBlock } from '@/components/match-court-pricing'
+import { prefetchPublicPlayerProfile } from '@/lib/public-player-prefetch'
 import { getOrganizerTier } from '@/lib/organizer-level'
 import { fetchOrganizerCompletedCount } from '@/lib/supabase/queries'
 import { userIsConfirmedMemberOfTeam } from '@/lib/team-membership'
@@ -93,9 +94,13 @@ export function MatchDetailsScreen() {
 
   const queryClient = useQueryClient()
 
-  const opportunity = selectedMatchOpportunityId
-    ? matchOpportunities.find((m) => m.id === selectedMatchOpportunityId)
-    : undefined
+  const opportunity = useMemo(
+    () =>
+      selectedMatchOpportunityId
+        ? matchOpportunities.find((m) => m.id === selectedMatchOpportunityId)
+        : undefined,
+    [matchOpportunities, selectedMatchOpportunityId]
+  )
 
   const rivalChallengeForOpp = useMemo(
     () =>
@@ -257,25 +262,51 @@ export function MatchDetailsScreen() {
     const supabase = getBrowserSupabase()
     if (!supabase) return
     const oppId = selectedMatchOpportunityId
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const scheduleParticipantsRefresh = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.matchOpportunity.participants(oppId),
+        })
+      }, 250)
+    }
     const channel = supabase
       .channel(`match-detail-participants:${oppId}`)
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'INSERT',
           schema: 'public',
           table: 'match_opportunity_participants',
           filter: `opportunity_id=eq.${oppId}`,
         },
-        () => {
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.matchOpportunity.participants(oppId),
-          })
-        }
+        scheduleParticipantsRefresh
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'match_opportunity_participants',
+          filter: `opportunity_id=eq.${oppId}`,
+        },
+        scheduleParticipantsRefresh
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'match_opportunity_participants',
+          filter: `opportunity_id=eq.${oppId}`,
+        },
+        scheduleParticipantsRefresh
       )
       .subscribe()
 
     return () => {
+      if (timer) clearTimeout(timer)
       void supabase.removeChannel(channel)
     }
   }, [selectedMatchOpportunityId, currentUser?.id, queryClient])
@@ -296,12 +327,12 @@ export function MatchDetailsScreen() {
     reservationQuery.data ?? null
 
 
-  const goBack = () => {
+  const goBack = useCallback(() => {
     setSelectedMatchOpportunityId(null)
     setCurrentScreen('matches')
-  }
+  }, [setCurrentScreen, setSelectedMatchOpportunityId])
 
-  const openChat = () => {
+  const openChat = useCallback(() => {
     if (!opportunity || !currentUser) return
     const can =
       currentUser.id === opportunity.creatorId ||
@@ -309,7 +340,13 @@ export function MatchDetailsScreen() {
     if (!can) return
     setSelectedChatOpportunityId(opportunity.id)
     setCurrentScreen('chat')
-  }
+  }, [
+    opportunity,
+    currentUser,
+    participatingOpportunityIds,
+    setSelectedChatOpportunityId,
+    setCurrentScreen,
+  ])
 
   const extJoinDataQuery = useQuery({
     queryKey: queryKeys.matchOpportunity.revueltaExternalJoin(
@@ -456,15 +493,15 @@ export function MatchDetailsScreen() {
     reservationState.status === 'pending' &&
     reservationState.bookerUserId === currentUser.id
 
-  const contactWaHref = (() => {
+  const contactWaHref = useMemo(() => {
     const raw = venueContact?.phone?.trim() ?? ''
     const digits = raw.replace(/\D/g, '')
     if (!digits || !opportunity) return null
     const msg = `Hola ${venueContact?.name ?? opportunity.venue}. Soy ${currentUser.name} y vengo de la app futmatch (soy el organizador del partido "${opportunity.title}"). Quiero confirmar la reserva de cancha para el ${formatMatchInTimezone(opportunity.dateTime, "d 'de' MMMM")} a las ${formatMatchInTimezone(opportunity.dateTime, 'HH:mm')} hrs. ¿quisiera saber si Está disponible y cómo realizo el pago?`
     return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`
-  })()
+  }, [venueContact?.phone, venueContact?.name, opportunity, currentUser.name])
 
-  const handleSelfConfirmReservation = async () => {
+  const handleSelfConfirmReservation = useCallback(async () => {
     if (!reservationState || !isSupabaseConfigured()) return
     if (
       !confirm(
@@ -480,7 +517,22 @@ export function MatchDetailsScreen() {
       })
     } finally {
     }
-  }
+  }, [reservationState, selfConfirmReservationMutation, currentUser.id])
+
+  const openParticipantProfile = useCallback((userId: string) => {
+    void prefetchPublicPlayerProfile(userId)
+    openPublicProfile(userId)
+  }, [openPublicProfile])
+
+  const reloadMyRating = useCallback(() => {
+    if (!opportunity) return
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.matchOpportunity.myRating(opportunity.id, currentUser.id),
+    })
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.matchOpportunity.ratingsOverview(opportunity.id),
+    })
+  }, [queryClient, opportunity, currentUser.id])
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -706,39 +758,13 @@ export function MatchDetailsScreen() {
           ) : participants.length > 0 ? (
             <div className="space-y-2">
               {participants.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => openPublicProfile(p.id)}
-                      className="flex items-center gap-2 min-w-0 text-left"
-                    >
-                      <img
-                        src={avatarDisplayUrl(p.photo, p.id)}
-                        alt={p.name}
-                        className="w-8 h-8 rounded-full object-cover border border-border"
-                      />
-                      <span className="text-sm text-foreground truncate hover:underline">
-                        {p.name}
-                        {(opportunity.type === 'open' || opportunity.type === 'players') &&
-                        p.isGoalkeeper
-                          ? ' 🧤'
-                          : ''}
-                      </span>
-                    </button>
-                  </div>
-                  <Badge variant="secondary" className="capitalize text-xs">
-                    {p.status === 'creator'
-                      ? 'Organizador'
-                      : p.status === 'confirmed'
-                        ? 'Confirmado'
-                        : p.status === 'pending'
-                          ? 'Pendiente'
-                          : p.status === 'invited'
-                            ? 'Invitado'
-                            : 'Cancelado'}
-                  </Badge>
-                </div>
+                <ParticipantListItem
+                  key={p.id}
+                  participant={p}
+                  opportunityType={opportunity.type}
+                  avatarDisplayUrl={avatarDisplayUrl}
+                  onOpenProfile={openParticipantProfile}
+                />
               ))}
             </div>
           ) : (
@@ -989,14 +1015,7 @@ export function MatchDetailsScreen() {
         isConfirmedParticipant={isParticipant}
         myRating={myRating}
         loadingRating={loadingRating}
-        onReloadMyRating={() => {
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.matchOpportunity.myRating(opportunity.id, currentUser.id),
-          })
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.matchOpportunity.ratingsOverview(opportunity.id),
-          })
-        }}
+        onReloadMyRating={reloadMyRating}
         finalizeMatchOpportunity={finalizeMatchOpportunity}
         submitRivalCaptainVote={submitRivalCaptainVote}
         finalizeRivalOrganizerOverride={finalizeRivalOrganizerOverride}
@@ -1009,11 +1028,65 @@ export function MatchDetailsScreen() {
   )
 }
 
-function StatBox({ label, value }: { label: string; value: string }) {
+const StatBox = memo(function StatBox({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-border bg-secondary/40 p-2">
       <p className="text-[11px] text-muted-foreground">{label}</p>
       <p className="text-sm font-semibold text-foreground">{value}</p>
     </div>
   )
-}
+})
+
+const ParticipantListItem = memo(function ParticipantListItem({
+  participant,
+  opportunityType,
+  avatarDisplayUrl,
+  onOpenProfile,
+}: {
+  participant: OpportunityParticipantRow
+  opportunityType: 'rival' | 'players' | 'open'
+  avatarDisplayUrl: (photo?: string, userId?: string) => string
+  onOpenProfile: (userId: string) => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2 min-w-0">
+        <button
+          type="button"
+          onMouseEnter={() => {
+            void prefetchPublicPlayerProfile(participant.id)
+          }}
+          onFocus={() => {
+            void prefetchPublicPlayerProfile(participant.id)
+          }}
+          onClick={() => onOpenProfile(participant.id)}
+          className="flex items-center gap-2 min-w-0 text-left"
+        >
+          <img
+            src={avatarDisplayUrl(participant.photo, participant.id)}
+            alt={participant.name}
+            className="w-8 h-8 rounded-full object-cover border border-border"
+          />
+          <span className="text-sm text-foreground truncate hover:underline">
+            {participant.name}
+            {(opportunityType === 'open' || opportunityType === 'players') &&
+            participant.isGoalkeeper
+              ? ' 🧤'
+              : ''}
+          </span>
+        </button>
+      </div>
+      <Badge variant="secondary" className="capitalize text-xs">
+        {participant.status === 'creator'
+          ? 'Organizador'
+          : participant.status === 'confirmed'
+            ? 'Confirmado'
+            : participant.status === 'pending'
+              ? 'Pendiente'
+              : participant.status === 'invited'
+                ? 'Invitado'
+                : 'Cancelado'}
+      </Badge>
+    </div>
+  )
+})

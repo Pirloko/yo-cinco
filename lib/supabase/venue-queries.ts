@@ -150,7 +150,7 @@ export async function fetchVenueCourts(
 ): Promise<VenueCourt[]> {
   const { data, error } = await supabase
     .from('venue_courts')
-    .select('*')
+    .select('id, venue_id, name, sort_order, price_per_hour')
     .eq('venue_id', venueId)
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true })
@@ -171,7 +171,7 @@ export async function fetchVenueWeeklyHours(
 ): Promise<VenueWeeklyHour[]> {
   const { data, error } = await supabase
     .from('venue_weekly_hours')
-    .select('*')
+    .select('id, venue_id, day_of_week, open_time, close_time')
     .eq('venue_id', venueId)
     .order('day_of_week', { ascending: true })
   if (error || !data) return []
@@ -274,7 +274,10 @@ export async function fetchVenueReservationsRange(
   const courtIds = courts.map((c) => c.id)
   const { data, error } = await supabase
     .from('venue_reservations')
-    .select('*')
+    // Mantener string literal para que el tipado de Supabase no degrade en TS.
+    .select(
+      'id, court_id, starts_at, ends_at, booker_user_id, match_opportunity_id, status, payment_status, price_per_hour, currency, deposit_amount, paid_amount, confirmed_at, cancelled_at, cancelled_reason, confirmed_by_user_id, confirmation_source, confirmation_note, notes'
+    )
     .in('court_id', courtIds)
     .lt('starts_at', toIso)
     .gt('ends_at', fromIso)

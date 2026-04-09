@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import {
   keepPreviousData,
   useMutation,
@@ -22,6 +22,7 @@ import {
   type ChatMessageRow,
   type OpportunityParticipantRow,
 } from '@/lib/supabase/message-queries'
+import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
 import {
   fetchMyRatingForOpportunity,
   getRatingDeadline,
@@ -35,6 +36,7 @@ import { ArrowLeft, Send, Calendar, MapPin, Info } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
+import { prefetchPublicPlayerProfile } from '@/lib/public-player-prefetch'
 import { toast } from 'sonner'
 
 type UiMessage = ChatMessageRow & { isMe: boolean }
@@ -60,9 +62,13 @@ export function ChatScreen() {
     finalizeRivalOrganizerOverride,
   } = useAppMatch()
 
-  const opportunity = selectedChatOpportunityId
-    ? matchOpportunities.find((m) => m.id === selectedChatOpportunityId)
-    : undefined
+  const opportunity = useMemo(
+    () =>
+      selectedChatOpportunityId
+        ? matchOpportunities.find((m) => m.id === selectedChatOpportunityId)
+        : undefined,
+    [matchOpportunities, selectedChatOpportunityId]
+  )
 
   const canAccessThread = useMemo(() => {
     if (!opportunity || !currentUser) return false
@@ -80,9 +86,10 @@ export function ChatScreen() {
     [rivalChallenges, opportunity?.id]
   )
 
-  const chatMessagingOpen = opportunity
-    ? isMatchChatMessagingOpen(opportunity)
-    : false
+  const chatMessagingOpen = useMemo(
+    () => (opportunity ? isMatchChatMessagingOpen(opportunity) : false),
+    [opportunity]
+  )
 
   const queryClient = useQueryClient()
   const oppId = selectedChatOpportunityId ?? ''
@@ -163,13 +170,43 @@ export function ChatScreen() {
           table: 'messages',
           filter: `opportunity_id=eq.${oid}`,
         },
-        () => {
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.chat.messages(oid, uid),
-          })
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.matchOpportunity.participants(oid),
-          })
+        (payload) => {
+          const row = payload.new as
+            | {
+                id?: string
+                sender_id?: string
+                content?: string
+                created_at?: string
+              }
+            | null
+          if (!row?.id || !row.sender_id || typeof row.content !== 'string') {
+            void queryClient.invalidateQueries({
+              queryKey: queryKeys.chat.messages(oid, uid),
+            })
+            return
+          }
+          const participantsCached =
+            queryClient.getQueryData<OpportunityParticipantRow[]>(
+              queryKeys.matchOpportunity.participants(oid)
+            ) ?? []
+          const sender = participantsCached.find((p) => p.id === row.sender_id)
+          const newMessage: UiMessage = {
+            id: row.id,
+            senderId: row.sender_id,
+            content: row.content,
+            createdAt: row.created_at ? new Date(row.created_at) : new Date(),
+            senderName: sender?.name ?? 'Jugador',
+            senderPhoto: sender?.photo ?? DEFAULT_AVATAR,
+            isMe: row.sender_id === uid,
+          }
+          queryClient.setQueryData<UiMessage[]>(
+            queryKeys.chat.messages(oid, uid),
+            (prev) => {
+              if (!prev?.length) return [newMessage]
+              if (prev.some((m) => m.id === newMessage.id)) return prev
+              return [...prev, newMessage]
+            }
+          )
         }
       )
       .subscribe()
@@ -199,21 +236,13 @@ export function ChatScreen() {
     },
     onSuccess: () => {
       setNewMessage('')
-      if (selectedChatOpportunityId && currentUser) {
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.chat.messages(
-            selectedChatOpportunityId,
-            currentUser.id
-          ),
-        })
-      }
     },
     onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'No se pudo enviar el mensaje')
     },
   })
 
-  const handleSend = async () => {
+  const handleSend = useCallback(async () => {
     if (
       !newMessage.trim() ||
       !currentUser ||
@@ -242,19 +271,41 @@ export function ChatScreen() {
     } catch {
       // toast en onError
     }
-  }
+  }, [
+    newMessage,
+    currentUser,
+    selectedChatOpportunityId,
+    canAccessThread,
+    chatMessagingOpen,
+    sendMessageMutation,
+  ])
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       void handleSend()
     }
-  }
+  }, [handleSend])
 
-  const goBack = () => {
+  const goBack = useCallback(() => {
     setSelectedChatOpportunityId(null)
     setCurrentScreen('matches')
-  }
+  }, [setCurrentScreen, setSelectedChatOpportunityId])
+
+  const openParticipantProfile = useCallback((userId: string) => {
+    void prefetchPublicPlayerProfile(userId)
+    openPublicProfile(userId)
+  }, [openPublicProfile])
+
+  const openMatchDetails = useCallback(() => {
+    if (!opportunity) return
+    setSelectedMatchOpportunityId(opportunity.id)
+    setCurrentScreen('matchDetails')
+  }, [opportunity, setCurrentScreen, setSelectedMatchOpportunityId])
+
+  const toggleInfo = useCallback(() => {
+    setShowInfo((prev) => !prev)
+  }, [])
 
   if (!currentUser) {
     return null
@@ -321,7 +372,7 @@ export function ChatScreen() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setShowInfo(!showInfo)}
+            onClick={toggleInfo}
             className="text-muted-foreground hover:text-foreground"
           >
             <Info className="w-5 h-5" />
@@ -329,10 +380,7 @@ export function ChatScreen() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {
-              setSelectedMatchOpportunityId(opportunity.id)
-              setCurrentScreen('matchDetails')
-            }}
+            onClick={openMatchDetails}
             className="text-primary"
           >
             Ver detalle
@@ -400,32 +448,13 @@ export function ChatScreen() {
               ) : participants.length > 0 ? (
                 <div className="space-y-2">
                   {participants.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <button
-                          type="button"
-                          onClick={() => openPublicProfile(p.id)}
-                          className="flex items-center gap-2 min-w-0 text-left"
-                        >
-                          <img
-                            src={avatarDisplayUrl(p.photo, p.id)}
-                            alt={p.name}
-                            className="w-7 h-7 rounded-full object-cover border border-border"
-                          />
-                          <span className="text-sm text-foreground truncate hover:underline">
-                            {p.name}
-                            {(opportunity?.type === 'open' ||
-                              opportunity?.type === 'players') &&
-                            p.isGoalkeeper
-                              ? ' 🧤'
-                              : ''}
-                          </span>
-                        </button>
-                      </div>
-                      <span className="text-[11px] text-muted-foreground capitalize">
-                        {p.status === 'creator' ? 'Organizador' : p.status}
-                      </span>
-                    </div>
+                    <ParticipantRow
+                      key={p.id}
+                      participant={p}
+                      opportunityType={opportunity.type}
+                      avatarDisplayUrl={avatarDisplayUrl}
+                      onOpenProfile={openParticipantProfile}
+                    />
                   ))}
                 </div>
               ) : (
@@ -477,48 +506,11 @@ export function ChatScreen() {
             </div>
 
             {messages.map((message) => (
-              <div
+              <MessageRow
                 key={message.id}
-                className={`flex ${message.isMe ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`flex items-end gap-2 max-w-[80%] ${message.isMe ? 'flex-row-reverse' : ''}`}
-                >
-                  {!message.isMe && (
-                    <img
-                      src={avatarDisplayUrl(
-                        message.senderPhoto,
-                        message.senderId
-                      )}
-                      alt=""
-                      className="w-8 h-8 rounded-full object-cover border border-border"
-                    />
-                  )}
-                  <div
-                    className={`px-4 py-2.5 rounded-2xl ${
-                      message.isMe
-                        ? 'bg-primary text-primary-foreground rounded-br-sm'
-                        : 'bg-secondary text-foreground rounded-bl-sm'
-                    }`}
-                  >
-                    {!message.isMe && (
-                      <p className="text-[10px] text-muted-foreground mb-0.5">
-                        {message.senderName}
-                      </p>
-                    )}
-                    <p className="text-sm">{message.content}</p>
-                    <p
-                      className={`text-[10px] mt-1 ${
-                        message.isMe
-                          ? 'text-primary-foreground/70'
-                          : 'text-muted-foreground'
-                      }`}
-                    >
-                      {format(new Date(message.createdAt), 'HH:mm')}
-                    </p>
-                  </div>
-                </div>
-              </div>
+                message={message}
+                avatarDisplayUrl={avatarDisplayUrl}
+              />
             ))}
           </>
         )}
@@ -579,3 +571,99 @@ export function ChatScreen() {
     </div>
   )
 }
+
+const ParticipantRow = memo(function ParticipantRow({
+  participant,
+  opportunityType,
+  avatarDisplayUrl,
+  onOpenProfile,
+}: {
+  participant: OpportunityParticipantRow
+  opportunityType: 'rival' | 'players' | 'open'
+  avatarDisplayUrl: (photo?: string, userId?: string) => string
+  onOpenProfile: (userId: string) => void
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2 min-w-0">
+        <button
+          type="button"
+          onMouseEnter={() => {
+            void prefetchPublicPlayerProfile(participant.id)
+          }}
+          onFocus={() => {
+            void prefetchPublicPlayerProfile(participant.id)
+          }}
+          onClick={() => onOpenProfile(participant.id)}
+          className="flex items-center gap-2 min-w-0 text-left"
+        >
+          <img
+            src={avatarDisplayUrl(participant.photo, participant.id)}
+            alt={participant.name}
+            className="w-7 h-7 rounded-full object-cover border border-border"
+          />
+          <span className="text-sm text-foreground truncate hover:underline">
+            {participant.name}
+            {(opportunityType === 'open' || opportunityType === 'players') &&
+            participant.isGoalkeeper
+              ? ' 🧤'
+              : ''}
+          </span>
+        </button>
+      </div>
+      <span className="text-[11px] text-muted-foreground capitalize">
+        {participant.status === 'creator' ? 'Organizador' : participant.status}
+      </span>
+    </div>
+  )
+})
+
+const MessageRow = memo(function MessageRow({
+  message,
+  avatarDisplayUrl,
+}: {
+  message: UiMessage
+  avatarDisplayUrl: (photo?: string, userId?: string) => string
+}) {
+  return (
+    <div className={`flex ${message.isMe ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`flex items-end gap-2 max-w-[80%] ${message.isMe ? 'flex-row-reverse' : ''}`}
+      >
+        {!message.isMe && (
+          <img
+            src={avatarDisplayUrl(
+              message.senderPhoto,
+              message.senderId
+            )}
+            alt=""
+            className="w-8 h-8 rounded-full object-cover border border-border"
+          />
+        )}
+        <div
+          className={`px-4 py-2.5 rounded-2xl ${
+            message.isMe
+              ? 'bg-primary text-primary-foreground rounded-br-sm'
+              : 'bg-secondary text-foreground rounded-bl-sm'
+          }`}
+        >
+          {!message.isMe && (
+            <p className="text-[10px] text-muted-foreground mb-0.5">
+              {message.senderName}
+            </p>
+          )}
+          <p className="text-sm">{message.content}</p>
+          <p
+            className={`text-[10px] mt-1 ${
+              message.isMe
+                ? 'text-primary-foreground/70'
+                : 'text-muted-foreground'
+            }`}
+          >
+            {format(new Date(message.createdAt), 'HH:mm')}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+})

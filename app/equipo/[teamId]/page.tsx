@@ -7,12 +7,15 @@ import { Crown, Shield } from 'lucide-react'
 import { TeamCardStatsStrip } from '@/components/team-card-stats-strip'
 import { TeamRivalMomentumBlock } from '@/components/team-rival-momentum-block'
 import { teamRivalSnapshotFromTeam } from '@/lib/team-rival-momentum'
+import { CACHE_REVALIDATE_SECONDS } from '@/lib/cache-policy'
 import { fetchPublicTeamSnapshot } from '@/lib/supabase/public-team-server'
 import { isValidTeamInviteId } from '@/lib/team-invite-url'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import type { Level, Position } from '@/lib/types'
+
+export const revalidate = CACHE_REVALIDATE_SECONDS.publicStatic
 
 const levelLabels: Record<Level, string> = {
   principiante: 'Principiante',

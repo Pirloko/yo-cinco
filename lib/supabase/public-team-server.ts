@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { unstable_cache } from 'next/cache'
 import type { Gender, Level, Position } from '@/lib/types'
+import { CACHE_REVALIDATE_SECONDS } from '@/lib/cache-policy'
 import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
 import { TEAM_SELECT_WITH_GEO } from '@/lib/supabase/geo-queries'
 import { isValidTeamInviteId } from '@/lib/team-invite-url'
@@ -58,7 +58,7 @@ function mapSnapshot(
 }
 
 /** Servidor: datos de equipo para /equipo/[id]. Service role si existe (nombres en plantilla); si no, anon + “Jugador”. */
-export async function fetchPublicTeamSnapshot(
+async function fetchPublicTeamSnapshotUncached(
   teamId: string
 ): Promise<PublicTeamSnapshot | null> {
   if (!isValidTeamInviteId(teamId)) return null
@@ -122,16 +122,8 @@ export async function fetchPublicTeamSnapshot(
     return mapSnapshot(team as Record<string, unknown>, members)
   }
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(url, anonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll() {
-        // lectura pública; sin mutar cookies
-      },
-    },
+  const supabase = createClient(url, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
   })
 
   const { data: team, error: teamErr } = await supabase
@@ -163,4 +155,16 @@ export async function fetchPublicTeamSnapshot(
   })
 
   return mapSnapshot(team as Record<string, unknown>, members)
+}
+
+const fetchPublicTeamSnapshotCached = unstable_cache(
+  async (teamId: string) => fetchPublicTeamSnapshotUncached(teamId),
+  ['public-team-snapshot-v1'],
+  { revalidate: CACHE_REVALIDATE_SECONDS.publicStatic }
+)
+
+export async function fetchPublicTeamSnapshot(
+  teamId: string
+): Promise<PublicTeamSnapshot | null> {
+  return fetchPublicTeamSnapshotCached(teamId)
 }

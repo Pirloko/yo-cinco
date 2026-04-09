@@ -25,7 +25,8 @@ export async function fetchProfileForUser(
     .maybeSingle()
 
   if (error || !data) return null
-  return profileRowToUser(data as ProfileRow, email)
+  // Tipado de embeds de Supabase puede degradar (geo_city como array). Cast explícito para mantener mapper.
+  return profileRowToUser(data as unknown as ProfileRow, email)
 }
 
 /** Solo `stats_organized_completed` (badge nivel organizador en detalle de partido). */
@@ -82,7 +83,8 @@ export async function fetchMatchOpportunities(
 
   if (error || !opps?.length) return []
 
-  const rows = opps as MatchOpportunityRow[]
+  // Tipado de embeds de Supabase puede degradar (geo_city como array). Cast explícito para mantener mapper.
+  const rows = opps as unknown as MatchOpportunityRow[]
   const opportunityIds = rows.map((r) => r.id)
   const creatorIds = [...new Set(rows.map((r) => r.creator_id))]
   const { data: creators } = await supabase
@@ -195,6 +197,7 @@ export async function fetchOtherProfiles(
 
   if (error || !data) return []
 
-  const rows = data as ProfileRow[]
+  // Tipado de embeds de Supabase puede degradar (geo_city como array). Cast explícito para mantener mapper.
+  const rows = data as unknown as ProfileRow[]
   return rows.map((row) => profileRowToUser(row, placeholderEmail(row.id)))
 }

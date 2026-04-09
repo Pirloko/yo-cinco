@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { unstable_cache } from 'next/cache'
 import type { Gender, Level, MatchType } from '@/lib/types'
+import { CACHE_REVALIDATE_SECONDS } from '@/lib/cache-policy'
 import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
 import { isValidOpportunityInviteId } from '@/lib/match-invite-url'
 
@@ -81,7 +81,7 @@ function buildSnapshot(
   }
 }
 
-export async function fetchPublicRevueltaSnapshot(
+async function fetchPublicRevueltaSnapshotUncached(
   opportunityId: string
 ): Promise<PublicRevueltaSnapshot | null> {
   if (!isValidOpportunityInviteId(opportunityId)) return null
@@ -98,7 +98,9 @@ export async function fetchPublicRevueltaSnapshot(
     })
     const { data: row, error } = await admin
       .from('match_opportunities')
-      .select('*')
+      .select(
+        'id, type, title, description, location, venue, date_time, level, gender, creator_id, players_needed, players_joined'
+      )
       .eq('id', opportunityId)
       .maybeSingle()
     if (error || !row) return null
@@ -135,19 +137,15 @@ export async function fetchPublicRevueltaSnapshot(
     return loadWithAdmin()
   }
 
-  const cookieStore = await cookies()
-  const supabase = createServerClient(url, anonKey, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll()
-      },
-      setAll() {},
-    },
+  const supabase = createClient(url, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
   })
 
   const { data: row, error } = await supabase
     .from('match_opportunities')
-    .select('*')
+    .select(
+      'id, type, title, description, location, venue, date_time, level, gender, creator_id, players_needed, players_joined'
+    )
     .eq('id', opportunityId)
     .maybeSingle()
 
@@ -171,4 +169,16 @@ export async function fetchPublicRevueltaSnapshot(
   }
 
   return buildSnapshot(r, parts, pmap, creatorId)
+}
+
+const fetchPublicRevueltaSnapshotCached = unstable_cache(
+  async (opportunityId: string) => fetchPublicRevueltaSnapshotUncached(opportunityId),
+  ['public-revuelta-snapshot-v1'],
+  { revalidate: CACHE_REVALIDATE_SECONDS.publicDynamic }
+)
+
+export async function fetchPublicRevueltaSnapshot(
+  opportunityId: string
+): Promise<PublicRevueltaSnapshot | null> {
+  return fetchPublicRevueltaSnapshotCached(opportunityId)
 }

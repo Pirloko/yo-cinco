@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ShieldAlert,
@@ -16,16 +16,13 @@ import {
 } from 'lucide-react'
 
 import { useAppAuth, useAppUI } from '@/lib/app-context'
-import {
-  getBrowserSupabase,
-  isSupabaseConfigured,
-} from '@/lib/supabase/client'
 import { insertPublicProfilePlayerReport } from '@/lib/supabase/player-report-queries'
-import { fetchPublicPlayerProfile } from '@/lib/supabase/queries'
+import { getBrowserSupabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { getOrganizerTierProgress } from '@/lib/organizer-level'
+import { CLIENT_PROFILE_CACHE_TTL_MS } from '@/lib/cache-policy'
 import type { Level, Position, PublicPlayerProfile } from '@/lib/types'
 
 const LEVEL_LABELS: Record<Level, string> = {
@@ -57,10 +54,10 @@ function formatDayLabel(day: string): string {
 
 export function PublicPlayerProfileSheet() {
   const { publicProfileUserId, closePublicProfile } = useAppUI()
-  const { currentUser, profilesRealtimeGeneration, avatarDisplayUrl } =
-    useAppAuth()
+  const { currentUser, avatarDisplayUrl } = useAppAuth()
   const [loading, setLoading] = useState(false)
   const [profile, setProfile] = useState<PublicPlayerProfile | null>(null)
+  const profileCacheRef = useRef<Record<string, { at: number; profile: PublicPlayerProfile | null }>>({})
   const [reportOpen, setReportOpen] = useState(false)
   const [reportReason, setReportReason] = useState('conducta')
   const [reportDetails, setReportDetails] = useState('')
@@ -68,26 +65,49 @@ export function PublicPlayerProfileSheet() {
   const open = !!publicProfileUserId
 
   useEffect(() => {
-    if (!open || !publicProfileUserId || !isSupabaseConfigured()) {
+    if (!open || !publicProfileUserId) {
       setProfile(null)
       return
     }
     let cancelled = false
+    const controller = new AbortController()
+    const cached = profileCacheRef.current[publicProfileUserId]
+    if (cached && Date.now() - cached.at < CLIENT_PROFILE_CACHE_TTL_MS) {
+      setProfile(cached.profile)
+      setLoading(false)
+      return () => {
+        cancelled = true
+        controller.abort()
+      }
+    }
     setLoading(true)
     void (async () => {
       try {
-        const sb = getBrowserSupabase()
-        if (!sb) return
-        const p = await fetchPublicPlayerProfile(sb, publicProfileUserId)
-        if (!cancelled) setProfile(p)
+        const res = await fetch(
+          `/api/public-player-profile?userId=${encodeURIComponent(publicProfileUserId)}`,
+          { signal: controller.signal, cache: 'force-cache' }
+        )
+        if (!res.ok) {
+          if (!cancelled) setProfile(null)
+          return
+        }
+        const json = (await res.json()) as { profile?: PublicPlayerProfile | null }
+        const p = json.profile ?? null
+        if (!cancelled) {
+          profileCacheRef.current[publicProfileUserId] = { at: Date.now(), profile: p }
+          setProfile(p)
+        }
+      } catch {
+        if (!cancelled) setProfile(null)
       } finally {
         if (!cancelled) setLoading(false)
       }
     })()
     return () => {
       cancelled = true
+      controller.abort()
     }
-  }, [open, publicProfileUserId, profilesRealtimeGeneration])
+  }, [open, publicProfileUserId])
 
   const organizerProgress = useMemo(() => {
     const n = profile?.statsOrganizedCompleted ?? 0

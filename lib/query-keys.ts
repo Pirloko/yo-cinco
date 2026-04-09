@@ -1,7 +1,7 @@
 /**
  * Claves centralizadas de TanStack Query para fetch/invalidación consistentes.
- * Los prefijos por dominio permiten invalidar en bloque, p. ej.
- * `queryClient.invalidateQueries({ queryKey: queryKeys.matchOpportunity.all })`.
+ * Preferir claves específicas (p. ej. `participants(id)`) frente a `.all` para no
+ * disparar refetch masivos; el prefijo `.all` solo cuando realmente afecte todo el dominio.
  */
 
 export const queryKeyRoot = {

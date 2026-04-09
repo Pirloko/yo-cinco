@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
+import { unstable_cache } from 'next/cache'
 import { isValidTeamInviteId } from '@/lib/team-invite-url'
+import { CACHE_REVALIDATE_SECONDS } from '@/lib/cache-policy'
 import { SPORTS_VENUE_SELECT_WITH_GEO } from '@/lib/supabase/geo-queries'
 import { mapVenueRow } from '@/lib/supabase/venue-queries'
 import {
@@ -23,7 +25,7 @@ export type PublicVenuePageData = {
 }
 
 /** SSR: metadata y datos públicos del centro (políticas SELECT anon). */
-export async function fetchPublicVenuePageData(
+async function fetchPublicVenuePageDataUncached(
   venueId: string
 ): Promise<PublicVenuePageData | null> {
   if (!isValidTeamInviteId(venueId)) return null
@@ -51,13 +53,13 @@ export async function fetchPublicVenuePageData(
     await Promise.all([
       supabase
         .from('venue_courts')
-        .select('*')
+        .select('id, venue_id, name, sort_order, price_per_hour')
         .eq('venue_id', venueId)
         .order('sort_order', { ascending: true })
         .order('name', { ascending: true }),
       supabase
         .from('venue_weekly_hours')
-        .select('*')
+        .select('id, venue_id, day_of_week, open_time, close_time')
         .eq('venue_id', venueId)
         .order('day_of_week', { ascending: true }),
       fetchPublicVenueReviewStats(supabase, venueId),
@@ -82,4 +84,16 @@ export async function fetchPublicVenuePageData(
   }))
 
   return { venue, courts, weeklyHours, reviewStats, recentReviews }
+}
+
+const fetchPublicVenuePageDataCached = unstable_cache(
+  async (venueId: string) => fetchPublicVenuePageDataUncached(venueId),
+  ['public-venue-page-data-v1'],
+  { revalidate: CACHE_REVALIDATE_SECONDS.publicStatic }
+)
+
+export async function fetchPublicVenuePageData(
+  venueId: string
+): Promise<PublicVenuePageData | null> {
+  return fetchPublicVenuePageDataCached(venueId)
 }

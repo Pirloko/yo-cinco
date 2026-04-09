@@ -27,7 +27,9 @@ export async function fetchMyRatingForOpportunity(
 ): Promise<MatchOpportunityRatingRow | null> {
   const { data, error } = await supabase
     .from('match_opportunity_ratings')
-    .select('*')
+    .select(
+      'id, opportunity_id, rater_id, organizer_rating, match_rating, level_rating, comment, created_at'
+    )
     .eq('opportunity_id', opportunityId)
     .eq('rater_id', userId)
     .maybeSingle()
@@ -113,11 +115,20 @@ export async function fetchRatingSummaryForOpportunity(
 ): Promise<RatingSummary> {
   const { data, error } = await supabase
     .from('match_opportunity_ratings')
-    .select('*')
+    .select('opportunity_id, organizer_rating, match_rating, level_rating')
     .eq('opportunity_id', opportunityId)
 
-  const rows = error || !data ? [] : (data as MatchOpportunityRatingRow[])
-  return buildSummary(opportunityId, rows)
+  const rows =
+    error || !data
+      ? []
+      : (data as Array<
+          Pick<
+            MatchOpportunityRatingRow,
+            'opportunity_id' | 'organizer_rating' | 'match_rating' | 'level_rating'
+          >
+        >)
+  // buildSummary solo usa organizer/match/level ratings.
+  return buildSummary(opportunityId, rows as unknown as MatchOpportunityRatingRow[])
 }
 
 export async function fetchRatingSummariesForOpportunities(
@@ -129,16 +140,24 @@ export async function fetchRatingSummariesForOpportunities(
 
   const { data, error } = await supabase
     .from('match_opportunity_ratings')
-    .select('*')
+    .select('opportunity_id, organizer_rating, match_rating, level_rating')
     .in('opportunity_id', opportunityIds)
 
-  const rows = error || !data ? [] : (data as MatchOpportunityRatingRow[])
+  const rows =
+    error || !data
+      ? []
+      : (data as Array<
+          Pick<
+            MatchOpportunityRatingRow,
+            'opportunity_id' | 'organizer_rating' | 'match_rating' | 'level_rating'
+          >
+        >)
   const grouped = new Map<string, MatchOpportunityRatingRow[]>()
   for (const id of opportunityIds) grouped.set(id, [])
   for (const r of rows) {
     const oid = r.opportunity_id
     const list = grouped.get(oid)
-    if (list) list.push(r)
+    if (list) list.push(r as unknown as MatchOpportunityRatingRow)
   }
 
   for (const [oid, list] of grouped) {
