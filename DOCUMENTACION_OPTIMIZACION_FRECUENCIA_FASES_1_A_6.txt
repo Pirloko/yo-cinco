@@ -1,0 +1,260 @@
+================================================================================
+  SPORTMATCH — Optimización de frecuencia, egress e invocaciones (Fases 1 a 6)
+  Documento de referencia: qué se hizo, qué falta y dónde está en código.
+  Última actualización del contenido: post Fase 6 (prefetch perfil público) completada.
+================================================================================
+
+CONTEXTO
+--------------------------------------------------------------------------------
+Objetivo general: reducir número de requests, invocaciones serverless (Vercel) y
+consumo de egress en Supabase, sin romper UX ni funcionalidades. El problema
+principal observado en métricas era la FRECUENCIA de llamadas pequeñas, no solo
+el tamaño de los payloads.
+
+Stack relevante: Next.js 16, React 19, Supabase, TanStack Query.
+
+ESTADO POR FASE (resumen)
+--------------------------------------------------------------------------------
+  Fase 1  Presencia sin heartbeat /api/presence     HECHA
+  Fase 2  Control de frecuencia en cliente (enabled) HECHA
+  Fase 3  TanStack Query más conservador (stale/gc) HECHA
+  Fase 4  Agrupación de requests (bundles / API)      HECHA (cerrada)
+  Fase 5  Realtime sin invalidateQueries masivo     HECHA
+  Fase 6  Prefetch + caché inteligente               HECHA
+
+Fase 4 cerrada en código (hub RPC + detalle RPC + explore batch). Opcional a futuro:
+batch en create-screen (alternativas por horario) u otros listados N×3.
+Las fases 1–6 de este documento están cerradas en código (salvo despliegue SQL
+u opcionales descritos en Fase 4).
+
+
+================================================================================
+FASE 1 — Eliminar heartbeat POST /api/presence (crítico)
+================================================================================
+
+Objetivo
+  Eliminar el polling periódico que disparaba la mayor parte de invocaciones
+  serverless asociadas a la app.
+
+Implementado
+  - Eliminado el endpoint app/api/presence/route.ts (ya no existe ruta API).
+  - Eliminado el useEffect en lib/app-context.tsx que hacía fetch cada ~75 s y
+    en visibilitychange de la pestaña.
+  - Nuevo servicio lib/services/presence.service.ts:
+      updateLastSeen(supabase, userId, { force?, minIntervalMs? })
+      resetPresenceDebounceState() al cerrar sesión.
+  - last_seen_at en public.profiles se actualiza vía cliente Supabase (RLS
+    profiles_update_own), con throttle (~90 s) salvo force en acciones claras.
+  - Puntos con force u carga de sesión: login/carga de estado, onboarding,
+    crear partido, reservar cancha, unirse a partido, revuelta privada,
+    equipos (crear, invitación, solicitudes), mensajes de chat
+    (components/chat-screen.tsx).
+
+Migración SQL
+  - supabase/migrations/20260429120000_profiles_last_seen_at.sql define la
+    columna last_seen_at si aún no existe en el proyecto remoto.
+
+Documentación tocada (además de este archivo)
+  - DOCUMENTACION_PROYECTO.txt (sección presencia).
+  - DOCUMENTACION_FASES_1_A_9.md, OPTIMIZACION_EGRESS_FASES.md (referencias a
+    /api/presence retiradas o actualizadas).
+
+
+================================================================================
+FASE 2 — Control de frecuencia en cliente (anti-spam de queries)
+================================================================================
+
+Objetivo
+  Evitar que TanStack Query dispare fetches cuando no hay sesión lista o el
+  cliente Supabase no está disponible; unificar criterios de enabled.
+
+Implementado
+  - lib/query-session-enabled.ts: función sessionQueryEnabled(userId).
+  - useGeoCitiesWithVenuesInRegion(regionId, userId) exige usuario además de
+    región (lib/hooks/use-geo-cities-with-venues.ts).
+  - Pantallas ajustadas (entre otras): explore-screen, home-screen, create-
+    screen, matches-screen, chat-screen, match-details-screen, teams-screen,
+    venue-dashboard-screen, venue-centro-client.tsx.
+
+Notas
+  - La app monta una sola pantalla principal a la vez (app/page.tsx); no se
+    duplicaron hooks equivalentes en paralelo en el mismo árbol para la misma
+    clave; TanStack deduplica por queryKey si varios observadores comparten clave.
+
+
+================================================================================
+FASE 3 — TanStack Query más agresivo en ahorro de refetch
+================================================================================
+
+Objetivo
+  Menos refetch al navegar entre pantallas y menos tráfico repetido, manteniendo
+  datos razonablemente frescos.
+
+Implementado (lib/query-defaults.ts + lib/query-client-provider.tsx)
+  - QUERY_STALE_TIME_MS = 5 minutos (ventana “fresca” por defecto).
+  - QUERY_STALE_TIME_STATIC_MS = 15 minutos para catálogos / metadata estable.
+  - QUERY_GC_TIME_MS = 30 minutos (caché tras desmontar observadores).
+  - refetchOnWindowFocus: false
+  - refetchOnReconnect: false
+  - refetchOnMount: se mantiene el default de TanStack (no false global), para
+    que tras mucho tiempo en segundo plano el usuario no vea chat/partidos
+    obsoletos sin un refetch al volver a la pantalla.
+
+Queries con staleTime “estático” (15 min), ejemplo
+  - Ciudades con centros por región (hook geo).
+  - Explore: listado público de centros.
+  - Crear: centros por geo y canchas del centro seleccionado.
+  - Detalle de partido: contacto del centro, conteo organizador.
+  - Equipos: ajustes privados (tras guardar se usa setQueryData donde aplica).
+
+Invalidaciones
+  - Revisión: no hay invalidateQueries globales amplias; se usan claves
+    específicas en lib/query-keys.ts.
+
+
+================================================================================
+FASE 4 — Agrupación de requests (bundle strategy) — CERRADA
+================================================================================
+
+Objetivo
+  Menos viajes HTTP a Supabase donde encaja, menos observadores TanStack, claves
+  de caché coherentes y fallback REST si la migración RPC no está aplicada.
+
+A) Migración SQL (aplicar en el proyecto remoto con supabase db push / SQL)
+  - supabase/migrations/20260431130000_matches_hub_and_detail_ratings_bundle_rpc.sql
+    · public.matches_hub_secondary_bundle(finished_opp_ids, chat_opp_ids,
+      reservation_ids) → jsonb (rating_rows, last_messages, venue_reviews).
+      SECURITY INVOKER (RLS igual que antes).
+    · public.match_detail_ratings_bundle(p_opportunity_id) → jsonb
+      (rating_rows, comments, my_rating). my_rating usa auth.uid().
+    · GRANT EXECUTE … TO authenticated.
+
+B) Hub “Partidos” (components/matches-screen.tsx)
+  - 1 useQuery: queryKeys.matchesHub.secondaryBundle(signature).
+  - lib/services/matches-hub.service.ts:
+      Llama RPC; si error (p. ej. función ausente), fallback Promise.all de 3
+      .from() como antes.
+  - lib/supabase/rating-queries.ts: mapRatingPartialRowsToSummariesMap exportado
+      para reutilizar la misma lógica de agregación que el cliente.
+
+C) Detalle de partido — reseñas (components/match-details-screen.tsx)
+  - 1 useQuery: queryKeys.matchOpportunity.ratingsSession(oppId, userId).
+  - lib/services/match-detail.service.ts → RPC match_detail_ratings_bundle + parse.
+  - lib/services/match-detail-rest.ts → fetchMatchDetailRatingsBlockViaRest
+      (fallback 3 lecturas en paralelo).
+
+D) Explorar — grilla de disponibilidad (components/explore-screen.tsx)
+  - Antes: por cada centro, 3 peticiones (canchas + horarios + reservas) = 3×N.
+  - Ahora: lib/supabase/venue-queries.ts → fetchExploreVenueAvailabilityInputsBatch
+      (3 peticiones totales: IN venue_id en canchas y horarios; IN court_id en
+      reservas con el mismo rango temporal).
+  - lib/services/explore-availability.service.ts → fetchExploreVenuesAvailabilityGrid
+      agrupa por venue y aplica findNextVenueSlot igual que antes.
+
+E) Claves legacy en lib/query-keys.ts
+  - lastMessages, ratingSummaries, venueReviewsByReservations, ratingsOverview
+    se mantienen por compatibilidad; el flujo activo usa secondaryBundle y
+    ratingsSession.
+
+F) Crear partido — alternativas con mismo horario (components/create-screen.tsx)
+  - Antes: por cada centro candidato, 3 peticiones (canchas, horarios, reservas del día).
+  - Ahora: lib/services/create-alternatives.service.ts →
+      fetchAlternativeVenuesWithSlotAtTime reutiliza
+      fetchExploreVenueAvailabilityInputsBatch (3 peticiones en total) y aplica
+      computeVenueAvailableSlots por venue en memoria; mismo orden (ciudad del
+      formulario primero) y tope 5 resultados.
+
+G) Ampliación futura (opcional)
+  - AppProvider / bundles de perfil+partidos vía RPC si se desea un solo round-trip
+    al iniciar sesión (hoy ya hay Promise.all en loadAppStateForAuthUser).
+
+
+================================================================================
+FASE 5 — Realtime sin refetch completo  [HECHA]
+================================================================================
+
+Objetivo
+  En listeners de Supabase Realtime, preferir queryClient.setQueryData sobre
+  invalidateQueries para no disparar refetch de listas completas.
+
+Implementado
+  - lib/realtime/match-opportunity-participants-realtime.ts
+      applyMatchOpportunityParticipantsRealtime: fusiona INSERT/UPDATE/DELETE
+      sobre la caché de participants; si no hay datos previos o el caso es
+      ambiguo (p. ej. organizador ausente en caché), devuelve refetch.
+      replaceParticipantsCacheFromServer: un fetch + setQueryData (sin invalidate).
+  - lib/hooks/use-match-opportunity-participants-realtime.ts
+      Suscripción postgres_changes (debounce 250 ms) usada en detalle y chat.
+  - components/match-details-screen.tsx
+      Hook anterior; al aceptar/rechazar revuelta externa o tras solicitud de
+      ingreso se actualiza participants con replaceParticipantsCacheFromServer;
+      revueltaExternalJoin sigue invalidándose (lista de solicitudes).
+  - components/chat-screen.tsx
+      Mismo hook para la lista de participantes del hilo abierto.
+  - Chat mensajes: se mantiene setQueryData en INSERT válido; fallback con
+    invalidate solo en payload incompleto (sin cambio adicional en esta fase).
+
+Notas
+  - usePlayerRealtimeManager sigue recargando el bundle de partidos vía
+    loadPlayerMatchBundle ante cambios en match_opportunities / participants a
+    nivel app; la Fase 5 reduce refetch TanStack en la query de participantes
+    por oportunidad en pantallas que la observan.
+
+
+================================================================================
+FASE 6 — Prefetch + caché inteligente  [HECHA]
+================================================================================
+
+Objetivo
+  Prefetch solo donde aporte UX real, deduplicar requests en vuelo y políticas
+  de TTL local coherentes con Fases 2–3.
+
+Implementado
+  - lib/query-keys.ts: queryKeys.publicPlayer.detail(userId).
+  - lib/public-player-profile-fetch.ts: fetch compartido para API pública.
+  - lib/public-player-prefetch.ts: prefetchPublicPlayerProfile(queryClient, userId)
+    vía queryClient.prefetchQuery (dedupe con useQuery del sheet y otros prefetch).
+    staleTime: QUERY_STALE_TIME_MS (alineado con Fase 3).
+  - components/public-player-profile-sheet.tsx: useQuery con la misma clave;
+    sin caché ref manual; clave __closed__ cuando el sheet está cerrado para no
+    mezclar datos entre usuarios.
+  - Eliminado lib/public-player-profile-client.ts (duplicaba fetch + Map propio;
+    no tenía consumidores).
+  - Prefetch en hover/focus (alto valor, sin barrer listas enteras):
+      · match-details-screen / chat-screen: participantes (callback con queryClient).
+      · teams-screen: tarjeta de cada jugador de la plantilla (onMouseEnter en Card).
+      · admin-dashboard-screen: reportes (reportado y reportante).
+
+Notas
+  - No se añadió prefetch masivo en landing ni listas largas sin interacción.
+
+
+ARCHIVOS CLAVE (mapa rápido)
+--------------------------------------------------------------------------------
+  lib/query-defaults.ts              staleTime / gcTime globales y STATIC
+  lib/query-client-provider.tsx      QueryClient defaults
+  lib/query-session-enabled.ts       Fase 2 — enabled con sesión
+  lib/query-keys.ts                  Claves e invalidación específica
+  lib/services/presence.service.ts   Fase 1 — last_seen_at
+  lib/services/matches-hub.service.ts     Fase 4 — hub + RPC / fallback REST
+  lib/services/match-detail.service.ts    Fase 4 — detalle reseñas RPC / fallback
+  lib/services/match-detail-rest.ts       Fase 4 — fallback REST detalle
+  lib/services/explore-availability.service.ts  Fase 4 — grilla explorar (batch)
+  lib/services/create-alternatives.service.ts   Fase 4 — alternativas crear partido
+  lib/app-context.tsx                Estado app, presencia por eventos
+  lib/realtime/match-opportunity-participants-realtime.ts  Fase 5 — merge caché
+  lib/hooks/use-match-opportunity-participants-realtime.ts Fase 5 — suscripción
+  lib/public-player-profile-fetch.ts   Fase 6 — fetch perfil público
+  lib/public-player-prefetch.ts        Fase 6 — prefetchQuery TanStack
+  components/chat-screen.tsx         Chat + presencia al enviar mensaje
+  components/public-player-profile-sheet.tsx  Perfil público (useQuery Fase 6)
+
+RELACIÓN CON OTROS DOCUMENTOS
+--------------------------------------------------------------------------------
+  OPTIMIZACION_EGRESS_FASES.md       Historial técnico detallado y verificaciones
+  DOCUMENTACION_FASES_1_A_9.md       Fases amplias del proyecto (no solo egress)
+  DOCUMENTACION_PROYECTO.txt         Visión general del repositorio
+
+================================================================================
+Fin del documento
+================================================================================

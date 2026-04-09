@@ -17,26 +17,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  getBrowserSupabase,
-  isSupabaseConfigured,
-} from '@/lib/supabase/client'
-import {
-  fetchSportsVenuesInRegion,
-  fetchSportsVenuesList,
-  fetchVenueCourts,
-  fetchVenueReservationsRange,
-  fetchVenueWeeklyHours,
-} from '@/lib/supabase/venue-queries'
+import { getBrowserSupabase } from '@/lib/supabase/client'
+import { fetchSportsVenuesInRegion, fetchSportsVenuesList } from '@/lib/supabase/venue-queries'
 import type { SportsVenue } from '@/lib/types'
+import {
+  fetchExploreVenuesAvailabilityGrid,
+  type ExploreAvailabilityRow,
+} from '@/lib/services/explore-availability.service'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { MATCH_CARD_SHELL, TABLE_OUTLINE } from '@/lib/card-shell'
 import { cn } from '@/lib/utils'
 import { Search, X, MapPin, Building2, CalendarRange, Clock } from 'lucide-react'
 import { RegionCityFilterSelect } from '@/components/region-city-filter'
-import { findNextVenueSlot } from '@/lib/venue-slots'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { writeCreatePrefill } from '@/lib/create-prefill'
+import { sessionQueryEnabled } from '@/lib/query-session-enabled'
+import { QUERY_STALE_TIME_STATIC_MS } from '@/lib/query-defaults'
 
 const HORIZON_OPTIONS = [
   { days: 1, label: 'Hoy' },
@@ -45,14 +41,7 @@ const HORIZON_OPTIONS = [
   { days: 14, label: '14 días' },
 ] as const
 
-type AvailabilityRow = {
-  venueId: string
-  venueName: string
-  city: string
-  totalCourts: number
-  nextSlotAt: Date | null
-  freeCourtsAtNextSlot: number
-}
+type AvailabilityRow = ExploreAvailabilityRow
 
 export function ExploreScreen() {
   const { setCurrentScreen } = useAppUI()
@@ -61,7 +50,10 @@ export function ExploreScreen() {
   const [cityFilter, setCityFilter] = useState('')
   const [horizonDays, setHorizonDays] = useState(7)
 
-  const citiesQuery = useGeoCitiesWithVenuesInRegion(currentUser?.regionId)
+  const citiesQuery = useGeoCitiesWithVenuesInRegion(
+    currentUser?.regionId,
+    currentUser?.id
+  )
   const cityFilterOptions = citiesQuery.data ?? []
 
   useEffect(() => {
@@ -70,7 +62,8 @@ export function ExploreScreen() {
 
   const publicVenuesQuery = useQuery({
     queryKey: queryKeys.explore.publicVenues(currentUser?.regionId ?? null),
-    enabled: isSupabaseConfigured(),
+    staleTime: QUERY_STALE_TIME_STATIC_MS,
+    enabled: sessionQueryEnabled(currentUser?.id),
     queryFn: async (): Promise<SportsVenue[]> => {
       const supabase = getBrowserSupabase()
       if (!supabase) return []
@@ -104,54 +97,18 @@ export function ExploreScreen() {
   const availabilityQuery = useQuery({
     queryKey: queryKeys.explore.venueAvailabilityGrid(venueIdsKey, horizonDays),
     enabled:
-      displayedVenues.length > 0 &&
-      isSupabaseConfigured() &&
-      Boolean(getBrowserSupabase()),
+      displayedVenues.length > 0 && sessionQueryEnabled(currentUser?.id),
     placeholderData: keepPreviousData,
     queryFn: async (): Promise<AvailabilityRow[]> => {
       const supabase = getBrowserSupabase()
       if (!supabase) return []
       const now = new Date()
-      const to = new Date(now)
-      to.setDate(to.getDate() + horizonDays)
-      const results = await Promise.all(
-        displayedVenues.map(async (venue) => {
-          const [courts, weeklyHours, reservations] = await Promise.all([
-            fetchVenueCourts(supabase, venue.id),
-            fetchVenueWeeklyHours(supabase, venue.id),
-            fetchVenueReservationsRange(
-              supabase,
-              venue.id,
-              new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(),
-              to.toISOString()
-            ),
-          ])
-          const next = findNextVenueSlot({
-            slotDurationMinutes: venue.slotDurationMinutes,
-            courtsCount: courts.length,
-            weeklyHours,
-            reservations,
-            horizonDays,
-            now,
-          })
-          return {
-            venueId: venue.id,
-            venueName: venue.name,
-            city: venue.city,
-            totalCourts: courts.length,
-            nextSlotAt: next.nextSlotAt,
-            freeCourtsAtNextSlot: next.freeCourtsAtNextSlot,
-          } satisfies AvailabilityRow
-        })
+      return fetchExploreVenuesAvailabilityGrid(
+        supabase,
+        displayedVenues,
+        horizonDays,
+        now
       )
-      const withSlot = results.filter((r) => r.nextSlotAt != null) as Array<
-        AvailabilityRow & { nextSlotAt: Date }
-      >
-      const withoutSlot = results.filter((r) => r.nextSlotAt == null)
-      withSlot.sort(
-        (a, b) => a.nextSlotAt.getTime() - b.nextSlotAt.getTime()
-      )
-      return [...withSlot, ...withoutSlot]
     },
   })
 

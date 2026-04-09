@@ -113,7 +113,9 @@ export function VenueCentroClient({
 
   const reservationsQuery = useQuery({
     queryKey: queryKeys.venueCentro.publicReservationsForDay(venue.id, dayStr),
-    enabled: isSupabaseConfigured(),
+    enabled: Boolean(
+      venue.id && isSupabaseConfigured() && getBrowserSupabase()
+    ),
     placeholderData: keepPreviousData,
     queryFn: async () => {
       const supabase = getBrowserSupabase()

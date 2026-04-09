@@ -37,6 +37,9 @@ import { format, formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { prefetchPublicPlayerProfile } from '@/lib/public-player-prefetch'
+import { sessionQueryEnabled } from '@/lib/query-session-enabled'
+import { updateLastSeen } from '@/lib/services/presence.service'
+import { useMatchOpportunityParticipantsRealtime } from '@/lib/hooks/use-match-opportunity-participants-realtime'
 import { toast } from 'sonner'
 
 type UiMessage = ChatMessageRow & { isMe: boolean }
@@ -98,7 +101,7 @@ export function ChatScreen() {
   const messagesQuery = useQuery({
     queryKey: queryKeys.chat.messages(oppId, chatUserId),
     enabled: Boolean(
-      oppId && chatUserId && canAccessThread && isSupabaseConfigured()
+      oppId && canAccessThread && sessionQueryEnabled(chatUserId)
     ),
     queryFn: async () => {
       const uid = chatUserId
@@ -122,7 +125,7 @@ export function ChatScreen() {
   const participantsQuery = useQuery({
     queryKey: queryKeys.matchOpportunity.participants(oppId),
     enabled: Boolean(
-      oppId && chatUserId && canAccessThread && isSupabaseConfigured()
+      oppId && canAccessThread && sessionQueryEnabled(chatUserId)
     ),
     placeholderData: keepPreviousData,
     queryFn: async () => {
@@ -134,9 +137,21 @@ export function ChatScreen() {
   const participants: OpportunityParticipantRow[] = participantsQuery.data ?? []
   const loadingParticipants = participantsQuery.isFetching
 
+  useMatchOpportunityParticipantsRealtime(
+    selectedChatOpportunityId,
+    opportunity?.creatorId,
+    Boolean(
+      selectedChatOpportunityId &&
+        canAccessThread &&
+        sessionQueryEnabled(chatUserId) &&
+        isSupabaseConfigured() &&
+        getBrowserSupabase()
+    )
+  )
+
   const myRatingQuery = useQuery({
     queryKey: queryKeys.matchOpportunity.myRating(oppId, chatUserId),
-    enabled: Boolean(oppId && chatUserId && isSupabaseConfigured()),
+    enabled: Boolean(oppId && sessionQueryEnabled(chatUserId)),
     placeholderData: keepPreviousData,
     queryFn: async () => {
       const supabase = getBrowserSupabase()
@@ -236,6 +251,10 @@ export function ChatScreen() {
     },
     onSuccess: () => {
       setNewMessage('')
+      const supabase = getBrowserSupabase()
+      if (supabase && currentUser) {
+        void updateLastSeen(supabase, currentUser.id, { force: true })
+      }
     },
     onError: (e) => {
       toast.error(e instanceof Error ? e.message : 'No se pudo enviar el mensaje')
@@ -292,10 +311,20 @@ export function ChatScreen() {
     setCurrentScreen('matches')
   }, [setCurrentScreen, setSelectedChatOpportunityId])
 
-  const openParticipantProfile = useCallback((userId: string) => {
-    void prefetchPublicPlayerProfile(userId)
-    openPublicProfile(userId)
-  }, [openPublicProfile])
+  const prefetchParticipantProfile = useCallback(
+    (userId: string) => {
+      void prefetchPublicPlayerProfile(queryClient, userId)
+    },
+    [queryClient]
+  )
+
+  const openParticipantProfile = useCallback(
+    (userId: string) => {
+      void prefetchPublicPlayerProfile(queryClient, userId)
+      openPublicProfile(userId)
+    },
+    [openPublicProfile, queryClient]
+  )
 
   const openMatchDetails = useCallback(() => {
     if (!opportunity) return
@@ -453,6 +482,7 @@ export function ChatScreen() {
                       participant={p}
                       opportunityType={opportunity.type}
                       avatarDisplayUrl={avatarDisplayUrl}
+                      onPrefetchProfile={prefetchParticipantProfile}
                       onOpenProfile={openParticipantProfile}
                     />
                   ))}
@@ -576,11 +606,13 @@ const ParticipantRow = memo(function ParticipantRow({
   participant,
   opportunityType,
   avatarDisplayUrl,
+  onPrefetchProfile,
   onOpenProfile,
 }: {
   participant: OpportunityParticipantRow
   opportunityType: 'rival' | 'players' | 'open'
   avatarDisplayUrl: (photo?: string, userId?: string) => string
+  onPrefetchProfile?: (userId: string) => void
   onOpenProfile: (userId: string) => void
 }) {
   return (
@@ -589,10 +621,10 @@ const ParticipantRow = memo(function ParticipantRow({
         <button
           type="button"
           onMouseEnter={() => {
-            void prefetchPublicPlayerProfile(participant.id)
+            onPrefetchProfile?.(participant.id)
           }}
           onFocus={() => {
-            void prefetchPublicPlayerProfile(participant.id)
+            onPrefetchProfile?.(participant.id)
           }}
           onClick={() => onOpenProfile(participant.id)}
           className="flex items-center gap-2 min-w-0 text-left"

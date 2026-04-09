@@ -2,13 +2,19 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/query-keys'
-import { getBrowserSupabase, isSupabaseConfigured } from '@/lib/supabase/client'
+import { QUERY_STALE_TIME_STATIC_MS } from '@/lib/query-defaults'
+import { getBrowserSupabase } from '@/lib/supabase/client'
 import { fetchGeoCitiesWithVenuesInRegion } from '@/lib/supabase/venue-queries'
+import { sessionQueryEnabled } from '@/lib/query-session-enabled'
 
-export function useGeoCitiesWithVenuesInRegion(regionId: string | null | undefined) {
+export function useGeoCitiesWithVenuesInRegion(
+  regionId: string | null | undefined,
+  userId: string | null | undefined
+) {
   return useQuery({
     queryKey: queryKeys.geo.citiesWithVenuesInRegion(regionId),
-    enabled: Boolean(regionId && isSupabaseConfigured()),
+    staleTime: QUERY_STALE_TIME_STATIC_MS,
+    enabled: Boolean(regionId && sessionQueryEnabled(userId)),
     queryFn: async () => {
       const sb = getBrowserSupabase()
       if (!sb || !regionId) return []

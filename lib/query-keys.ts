@@ -10,6 +10,8 @@ export const queryKeyRoot = {
   sportsVenue: ['sportsVenue'] as const,
   matchOpportunity: ['matchOpportunity'] as const,
   profile: ['profile'] as const,
+  /** Perfil público vía /api/public-player-profile (Fase 6 — prefetch + sheet comparten clave). */
+  publicPlayer: ['publicPlayer'] as const,
   matchesHub: ['matchesHub'] as const,
   chat: ['chat'] as const,
   explore: ['explore'] as const,
@@ -51,6 +53,17 @@ export const queryKeys = {
       userId: string | null | undefined
     ) =>
       [...queryKeyRoot.matchOpportunity, 'myRating', opportunityId, userId] as const,
+    /** Fase 4: summary + comentarios recientes + mi reseña (detalle de partido). */
+    ratingsSession: (
+      opportunityId: string | null | undefined,
+      userId: string | null | undefined
+    ) =>
+      [
+        ...queryKeyRoot.matchOpportunity,
+        'ratingsSession',
+        opportunityId,
+        userId,
+      ] as const,
     venueReservation: (reservationId: string | null | undefined) =>
       [...queryKeyRoot.matchOpportunity, 'venueReservation', reservationId] as const,
     revueltaExternalJoin: (
@@ -69,6 +82,11 @@ export const queryKeys = {
     organizerCompletedCount: (userId: string | null | undefined) =>
       [...queryKeyRoot.profile, 'organizerCompletedCount', userId] as const,
   },
+  publicPlayer: {
+    all: queryKeyRoot.publicPlayer,
+    detail: (userId: string) =>
+      [...queryKeyRoot.publicPlayer, 'detail', userId] as const,
+  },
   matchesHub: {
     all: queryKeyRoot.matchesHub,
     soloVenueReservations: (userId: string | null | undefined) =>
@@ -83,6 +101,9 @@ export const queryKeys = {
         'venueReviewsByReservations',
         reservationIdsKey,
       ] as const,
+    /** Fase 4: reseñas de partidos + últimos mensajes + reseñas de reservas solo (una query). */
+    secondaryBundle: (signature: string) =>
+      [...queryKeyRoot.matchesHub, 'secondaryBundle', signature] as const,
   },
   chat: {
     all: queryKeyRoot.chat,

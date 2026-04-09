@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useAppAuth, useAppUI } from '@/lib/app-context'
 import { Button } from '@/components/ui/button'
@@ -42,6 +43,7 @@ import {
   isSupabaseConfigured,
 } from '@/lib/supabase/client'
 import { formatAuthError } from '@/lib/supabase/auth-errors'
+import { prefetchPublicPlayerProfile } from '@/lib/public-player-prefetch'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -211,8 +213,15 @@ const RANGE_OPTIONS: Array<{ id: RangeKey; label: string }> = [
 ]
 
 export function AdminDashboardScreen() {
+  const queryClient = useQueryClient()
   const { currentUser, logout } = useAppAuth()
   const { openPublicProfile } = useAppUI()
+  const prefetchReportPlayerProfile = useCallback(
+    (userId: string) => {
+      void prefetchPublicPlayerProfile(queryClient, userId)
+    },
+    [queryClient]
+  )
   const [loading, setLoading] = useState(true)
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null)
   const [range, setRange] = useState<RangeKey>('month')
@@ -1975,6 +1984,9 @@ export function AdminDashboardScreen() {
                               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                                 <button
                                   type="button"
+                                  onMouseEnter={() =>
+                                    prefetchReportPlayerProfile(r.reported_user_id)
+                                  }
                                   onClick={() => openPublicProfile(r.reported_user_id)}
                                   className="flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-left transition-colors hover:bg-amber-500/10 hover:ring-2 hover:ring-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                 >
@@ -1999,6 +2011,9 @@ export function AdminDashboardScreen() {
                                 </button>
                                 <button
                                   type="button"
+                                  onMouseEnter={() =>
+                                    prefetchReportPlayerProfile(r.reporter_id)
+                                  }
                                   onClick={() => openPublicProfile(r.reporter_id)}
                                   className="flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-left transition-colors hover:bg-muted/50 hover:ring-2 hover:ring-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                 >

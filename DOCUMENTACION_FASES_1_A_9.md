@@ -26,7 +26,7 @@ Reducir refetch innecesario y descargas repetidas por defaults agresivos.
   - `QUERY_STALE_TIME_MS = 3 * 60 * 1000`
   - `QUERY_GC_TIME_MS = 20 * 60 * 1000`
 - Se actualizo `lib/query-client-provider.tsx`:
-  - `staleTime` a 3 min
+  - `staleTime` global **5 min**; datos poco volátiles **15 min** (`QUERY_STALE_TIME_STATIC_MS`)
   - `gcTime` a 20 min
   - `refetchOnWindowFocus: false`
   - `refetchOnReconnect: false`
@@ -243,7 +243,6 @@ Agregar observabilidad, consistencia de errores y control de abuso en API.
   - reporter opcional de errores a Sentry (`SENTRY_DSN`)
 - Endpoints endurecidos:
   - `app/api/public-player-profile/route.ts`
-  - `app/api/presence/route.ts`
   - `app/api/admin/geo/route.ts`
   - `app/api/admin/metrics/route.ts`
   - `app/api/admin/venues/route.ts`

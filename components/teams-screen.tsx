@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
@@ -58,8 +58,11 @@ import {
   type TeamPrivateSettings,
 } from '@/lib/types'
 import { queryKeys } from '@/lib/query-keys'
+import { sessionQueryEnabled } from '@/lib/query-session-enabled'
+import { QUERY_STALE_TIME_STATIC_MS } from '@/lib/query-defaults'
 import { fetchTeamPrivateSettings } from '@/lib/supabase/team-queries'
 import { teamInviteAbsoluteUrl } from '@/lib/team-invite-url'
+import { prefetchPublicPlayerProfile } from '@/lib/public-player-prefetch'
 import { saveRivalTargetTeamId } from '@/lib/rival-prefill'
 import { TEAM_ROSTER_MAX, TEAM_USER_MAX_MEMBERSHIPS } from '@/lib/team-roster'
 import {
@@ -180,7 +183,14 @@ export function TeamsScreen() {
     setCurrentScreen,
     openPublicProfile,
   } = useAppUI()
-  
+
+  const prefetchMemberPublicProfile = useCallback(
+    (userId: string) => {
+      void prefetchPublicPlayerProfile(queryClient, userId)
+    },
+    [queryClient]
+  )
+
   const [view, setView] = useState<TeamsView>('list')
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -303,7 +313,8 @@ export function TeamsScreen() {
 
   const privateSettingsQuery = useQuery({
     queryKey: queryKeys.teams.privateSettings(detailTeam?.id, currentUser?.id),
-    enabled: privateSettingsEnabled,
+    staleTime: QUERY_STALE_TIME_STATIC_MS,
+    enabled: privateSettingsEnabled && sessionQueryEnabled(currentUser?.id),
     queryFn: async () => {
       const supabase = getBrowserSupabase()
       if (!supabase || !detailTeam) return null
@@ -1538,7 +1549,11 @@ export function TeamsScreen() {
 
             <div className="space-y-3">
               {rosterMembersOrdered(team).map((member) => (
-                <Card key={member.id} className="bg-card border-border">
+                <Card
+                  key={member.id}
+                  className="bg-card border-border"
+                  onMouseEnter={() => prefetchMemberPublicProfile(member.id)}
+                >
                   <CardContent className="p-3">
                     <div className="flex items-center gap-3">
                       <button

@@ -1,33 +1,33 @@
 'use client'
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { queryKeys, stableIdsKey } from '@/lib/query-keys'
+import { sessionQueryEnabled } from '@/lib/query-session-enabled'
 import { useAppAuth, useAppMatch, useAppUI } from '@/lib/app-context'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { BottomNav } from '@/components/bottom-nav'
 import { Badge } from '@/components/ui/badge'
-import {
-  getBrowserSupabase,
-  isSupabaseConfigured,
-} from '@/lib/supabase/client'
+import { getBrowserSupabase } from '@/lib/supabase/client'
 import { confirmSoloVenueReservationFromMatchesHub } from '@/lib/supabase/venue-reservation-mutations'
 import {
   fetchPlayerVenueReservationsSoloForHub,
   type PlayerVenueReservationListItem,
 } from '@/lib/supabase/venue-queries'
-import {
-  fetchVenueReviewsByReservationIds,
-  type SoloVenueReviewSummary,
-} from '@/lib/supabase/venue-review-queries'
+import type { LastMessagePreview } from '@/lib/supabase/message-queries'
+import type { SoloVenueReviewSummary } from '@/lib/supabase/venue-review-queries'
 import { SoloReserveVenueRatingBlock } from '@/components/solo-reserve-venue-rating'
-import { fetchLastMessagesForOpportunities } from '@/lib/supabase/message-queries'
 import {
-  fetchRatingSummariesForOpportunities,
   isMatchChatMessagingOpen,
   type RatingSummary,
 } from '@/lib/supabase/rating-queries'
+import { fetchMatchesHubSecondaryBundle } from '@/lib/services/matches-hub.service'
 import type { MatchOpportunity, MatchesHubTab, RivalResult } from '@/lib/types'
 import {
   formatClp,
@@ -342,13 +342,12 @@ export function MatchesScreen() {
     currentScreen === 'matches' &&
       currentUser?.id &&
       (currentUser.accountType === 'player' ||
-        currentUser.accountType === 'admin') &&
-      isSupabaseConfigured()
+        currentUser.accountType === 'admin')
   )
 
   const soloReservesQuery = useQuery({
     queryKey: queryKeys.matchesHub.soloVenueReservations(currentUser?.id),
-    enabled: soloHubEnabled,
+    enabled: soloHubEnabled && sessionQueryEnabled(currentUser?.id),
     queryFn: async () => {
       if (!currentUser?.id) return []
       const supabase = getBrowserSupabase()
@@ -466,27 +465,6 @@ export function MatchesScreen() {
     [venueReservePast]
   )
 
-  const venueReviewsQuery = useQuery({
-    queryKey: queryKeys.matchesHub.venueReviewsByReservations(
-      venuePastReservationIdsKey
-    ),
-    enabled: Boolean(
-      venuePastReservationIdsKey &&
-        isSupabaseConfigured() &&
-        currentUser?.id &&
-        (currentUser.accountType === 'player' ||
-          currentUser.accountType === 'admin')
-    ),
-    queryFn: async () => {
-      const ids = venueReservePast.map((r) => r.id)
-      if (ids.length === 0) return new Map<string, SoloVenueReviewSummary>()
-      const supabase = getBrowserSupabase()
-      if (!supabase) return new Map<string, SoloVenueReviewSummary>()
-      return fetchVenueReviewsByReservationIds(supabase, ids)
-    },
-  })
-  const venueReviewByReservationId = venueReviewsQuery.data ?? new Map()
-
   const upcomingMerged = useMemo(() => {
     const items: Array<
       | { kind: 'match'; match: MatchOpportunity }
@@ -525,20 +503,6 @@ export function MatchesScreen() {
     () => stableIdsKey(finishedList.map((f) => f.id)),
     [finishedList]
   )
-
-  const ratingSummariesQuery = useQuery({
-    queryKey: queryKeys.matchesHub.ratingSummaries(finishedIdsKey),
-    enabled: Boolean(finishedIdsKey) && isSupabaseConfigured(),
-    queryFn: async () => {
-      const supabase = getBrowserSupabase()
-      if (!supabase) return new Map<string, RatingSummary>()
-      return fetchRatingSummariesForOpportunities(
-        supabase,
-        finishedList.map((f) => f.id)
-      )
-    },
-  })
-  const ratingByOpp = ratingSummariesQuery.data ?? new Map<string, RatingSummary>()
 
   const finishedMerged = useMemo(() => {
     const items: Array<
@@ -582,36 +546,52 @@ export function MatchesScreen() {
     [activeChatOpportunities]
   )
 
-  const lastMessagesQuery = useQuery({
-    queryKey: queryKeys.matchesHub.lastMessages(activeChatIdsKey),
-    enabled:
-      Boolean(activeChatIdsKey) &&
-      isSupabaseConfigured() &&
-      activeChatOpportunities.length > 0,
+  const hubSecondarySignature = useMemo(
+    () =>
+      [finishedIdsKey, activeChatIdsKey, venuePastReservationIdsKey].join('|'),
+    [finishedIdsKey, activeChatIdsKey, venuePastReservationIdsKey]
+  )
+
+  const hubSecondaryEnabled = Boolean(
+    soloHubEnabled &&
+      sessionQueryEnabled(currentUser?.id) &&
+      (finishedIdsKey || activeChatIdsKey || venuePastReservationIdsKey)
+  )
+
+  const hubSecondaryQuery = useQuery({
+    queryKey: queryKeys.matchesHub.secondaryBundle(hubSecondarySignature),
+    enabled: hubSecondaryEnabled,
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const supabase = getBrowserSupabase()
       if (!supabase) {
-        return new Map() as Awaited<
-          ReturnType<typeof fetchLastMessagesForOpportunities>
-        >
+        return {
+          ratingByOpp: new Map<string, RatingSummary>(),
+          lastByOpp: new Map<string, LastMessagePreview>(),
+          venueReviewByReservationId: new Map<string, SoloVenueReviewSummary>(),
+        }
       }
-      return fetchLastMessagesForOpportunities(
-        supabase,
-        activeChatOpportunities.map((c) => c.id)
-      )
+      return fetchMatchesHubSecondaryBundle(supabase, {
+        finishedOpportunityIds: finishedList.map((f) => f.id),
+        activeChatOpportunityIds: activeChatOpportunities.map((c) => c.id),
+        pastSoloReservationIds: venueReservePast.map((r) => r.id),
+      })
     },
   })
+
+  const ratingByOpp =
+    hubSecondaryQuery.data?.ratingByOpp ?? new Map<string, RatingSummary>()
   const lastByOpp =
-    lastMessagesQuery.data ??
-    (new Map() as Awaited<ReturnType<typeof fetchLastMessagesForOpportunities>>)
+    hubSecondaryQuery.data?.lastByOpp ?? new Map<string, LastMessagePreview>()
+  const venueReviewByReservationId =
+    hubSecondaryQuery.data?.venueReviewByReservationId ??
+    new Map<string, SoloVenueReviewSummary>()
 
   const invalidatePastVenueReviews = useCallback(() => {
     void queryClient.invalidateQueries({
-      queryKey: queryKeys.matchesHub.venueReviewsByReservations(
-        venuePastReservationIdsKey
-      ),
+      queryKey: queryKeys.matchesHub.secondaryBundle(hubSecondarySignature),
     })
-  }, [queryClient, venuePastReservationIdsKey])
+  }, [queryClient, hubSecondarySignature])
 
   const openChat = useCallback((opportunityId: string) => {
     if (!currentUser) return

@@ -263,27 +263,8 @@ export async function fetchPlayerVenueReservationsSoloForHub(
   })
 }
 
-export async function fetchVenueReservationsRange(
-  supabase: SupabaseClient,
-  venueId: string,
-  fromIso: string,
-  toIso: string
-): Promise<VenueReservationRow[]> {
-  const courts = await fetchVenueCourts(supabase, venueId)
-  if (!courts.length) return []
-  const courtIds = courts.map((c) => c.id)
-  const { data, error } = await supabase
-    .from('venue_reservations')
-    // Mantener string literal para que el tipado de Supabase no degrade en TS.
-    .select(
-      'id, court_id, starts_at, ends_at, booker_user_id, match_opportunity_id, status, payment_status, price_per_hour, currency, deposit_amount, paid_amount, confirmed_at, cancelled_at, cancelled_reason, confirmed_by_user_id, confirmation_source, confirmation_note, notes'
-    )
-    .in('court_id', courtIds)
-    .lt('starts_at', toIso)
-    .gt('ends_at', fromIso)
-    .order('starts_at', { ascending: true })
-  if (error || !data) return []
-  return data.map((r) => ({
+function mapVenueReservationDbRow(r: Record<string, unknown>): VenueReservationRow {
+  return {
     id: r.id as string,
     courtId: r.court_id as string,
     startsAt: new Date(r.starts_at as string),
@@ -305,7 +286,129 @@ export async function fetchVenueReservationsRange(
       (r.confirmation_source as VenueReservationRow['confirmationSource']) ?? null,
     confirmationNote: (r.confirmation_note as string | null) ?? null,
     notes: (r.notes as string | null) ?? null,
-  }))
+  }
+}
+
+const VENUE_RESERVATIONS_RANGE_SELECT =
+  'id, court_id, starts_at, ends_at, booker_user_id, match_opportunity_id, status, payment_status, price_per_hour, currency, deposit_amount, paid_amount, confirmed_at, cancelled_at, cancelled_reason, confirmed_by_user_id, confirmation_source, confirmation_note, notes'
+
+export async function fetchVenueReservationsRange(
+  supabase: SupabaseClient,
+  venueId: string,
+  fromIso: string,
+  toIso: string
+): Promise<VenueReservationRow[]> {
+  const courts = await fetchVenueCourts(supabase, venueId)
+  if (!courts.length) return []
+  const courtIds = courts.map((c) => c.id)
+  const { data, error } = await supabase
+    .from('venue_reservations')
+    .select(VENUE_RESERVATIONS_RANGE_SELECT)
+    .in('court_id', courtIds)
+    .lt('starts_at', toIso)
+    .gt('ends_at', fromIso)
+    .order('starts_at', { ascending: true })
+  if (error || !data) return []
+  return data.map((r) => mapVenueReservationDbRow(r as Record<string, unknown>))
+}
+
+/**
+ * Fase 4 — Explorar: canchas, horarios y reservas para muchos centros en 3 queries.
+ */
+export async function fetchExploreVenueAvailabilityInputsBatch(
+  supabase: SupabaseClient,
+  venueIds: string[],
+  fromIso: string,
+  toIso: string
+): Promise<{
+  courtsByVenue: Map<string, VenueCourt[]>
+  hoursByVenue: Map<string, VenueWeeklyHour[]>
+  reservationsByVenue: Map<string, VenueReservationRow[]>
+}> {
+  const uniq = [...new Set(venueIds.filter(Boolean))]
+  const courtsByVenue = new Map<string, VenueCourt[]>()
+  const hoursByVenue = new Map<string, VenueWeeklyHour[]>()
+  const reservationsByVenue = new Map<string, VenueReservationRow[]>()
+  for (const id of uniq) {
+    courtsByVenue.set(id, [])
+    hoursByVenue.set(id, [])
+    reservationsByVenue.set(id, [])
+  }
+  if (uniq.length === 0) {
+    return { courtsByVenue, hoursByVenue, reservationsByVenue }
+  }
+
+  const [courtsRes, hoursRes] = await Promise.all([
+    supabase
+      .from('venue_courts')
+      .select('id, venue_id, name, sort_order, price_per_hour')
+      .in('venue_id', uniq)
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true }),
+    supabase
+      .from('venue_weekly_hours')
+      .select('id, venue_id, day_of_week, open_time, close_time')
+      .in('venue_id', uniq)
+      .order('day_of_week', { ascending: true }),
+  ])
+
+  for (const r of courtsRes.data ?? []) {
+    const vid = r.venue_id as string
+    const list = courtsByVenue.get(vid) ?? []
+    list.push({
+      id: r.id as string,
+      venueId: vid,
+      name: r.name as string,
+      sortOrder: (r.sort_order as number) ?? 0,
+      pricePerHour:
+        r.price_per_hour != null ? (r.price_per_hour as number) : null,
+    })
+    courtsByVenue.set(vid, list)
+  }
+
+  for (const r of hoursRes.data ?? []) {
+    const vid = r.venue_id as string
+    const list = hoursByVenue.get(vid) ?? []
+    list.push({
+      id: r.id as string,
+      venueId: vid,
+      dayOfWeek: r.day_of_week as number,
+      openTime: (r.open_time as string).slice(0, 5),
+      closeTime: (r.close_time as string).slice(0, 5),
+    })
+    hoursByVenue.set(vid, list)
+  }
+
+  const allCourts = [...courtsByVenue.values()].flat()
+  const courtIds = allCourts.map((c) => c.id)
+  if (courtIds.length === 0) {
+    return { courtsByVenue, hoursByVenue, reservationsByVenue }
+  }
+
+  const courtToVenue = new Map(allCourts.map((c) => [c.id, c.venueId] as const))
+
+  const { data: resRows, error: resErr } = await supabase
+    .from('venue_reservations')
+    .select(VENUE_RESERVATIONS_RANGE_SELECT)
+    .in('court_id', courtIds)
+    .lt('starts_at', toIso)
+    .gt('ends_at', fromIso)
+    .order('starts_at', { ascending: true })
+
+  if (!resErr && resRows?.length) {
+    for (const raw of resRows) {
+      const r = raw as Record<string, unknown>
+      const courtId = r.court_id as string
+      const vid = courtToVenue.get(courtId)
+      if (!vid) continue
+      const row = mapVenueReservationDbRow(r)
+      const list = reservationsByVenue.get(vid) ?? []
+      list.push(row)
+      reservationsByVenue.set(vid, list)
+    }
+  }
+
+  return { courtsByVenue, hoursByVenue, reservationsByVenue }
 }
 
 export async function fetchSportsVenueContactById(

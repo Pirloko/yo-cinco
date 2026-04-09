@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import Image from 'next/image'
 import { toast } from 'sonner'
 import {
@@ -27,12 +27,10 @@ import {
   type OpportunityParticipantRow,
 } from '@/lib/supabase/message-queries'
 import {
-  fetchMyRatingForOpportunity,
-  fetchRatingSummaryForOpportunity,
-  fetchRecentRatingCommentsForOpportunity,
   type RatingSummary,
   type MatchOpportunityRatingRow,
 } from '@/lib/supabase/rating-queries'
+import { fetchMatchDetailRatingsBlock } from '@/lib/services/match-detail.service'
 import { MatchCompletionPanel } from '@/components/match-completion-panel'
 import { JoinRevueltaDialog } from '@/components/join-revuelta-dialog'
 import { JoinPlayersSearchDialog } from '@/components/join-players-search-dialog'
@@ -66,6 +64,10 @@ import {
 import { confirmVenueReservationBookerSelfMatchDetail } from '@/lib/supabase/venue-reservation-mutations'
 import { fetchSportsVenueContactById } from '@/lib/supabase/venue-queries'
 import { queryKeys } from '@/lib/query-keys'
+import { sessionQueryEnabled } from '@/lib/query-session-enabled'
+import { QUERY_STALE_TIME_STATIC_MS } from '@/lib/query-defaults'
+import { replaceParticipantsCacheFromServer } from '@/lib/realtime/match-opportunity-participants-realtime'
+import { useMatchOpportunityParticipantsRealtime } from '@/lib/hooks/use-match-opportunity-participants-realtime'
 
 export function MatchDetailsScreen() {
   const {
@@ -112,7 +114,9 @@ export function MatchDetailsScreen() {
 
   const participantsQuery = useQuery({
     queryKey: queryKeys.matchOpportunity.participants(selectedMatchOpportunityId),
-    enabled: Boolean(selectedMatchOpportunityId && currentUser?.id && isSupabaseConfigured()),
+    enabled: Boolean(
+      selectedMatchOpportunityId && sessionQueryEnabled(currentUser?.id)
+    ),
     placeholderData: keepPreviousData,
     queryFn: async () => {
       if (!selectedMatchOpportunityId) return []
@@ -124,44 +128,44 @@ export function MatchDetailsScreen() {
   const participants: OpportunityParticipantRow[] = participantsQuery.data ?? []
   const loadingParticipants = participantsQuery.isFetching
 
-  const ratingsOverviewQuery = useQuery({
-    queryKey: queryKeys.matchOpportunity.ratingsOverview(selectedMatchOpportunityId),
-    enabled: Boolean(selectedMatchOpportunityId && isSupabaseConfigured()),
-    placeholderData: keepPreviousData,
-    queryFn: async () => {
-      if (!selectedMatchOpportunityId) {
-        return { summary: null as RatingSummary | null, comments: [] as Array<{ comment: string; createdAt: Date }> }
-      }
-      const sb = getBrowserSupabase()
-      if (!sb) {
-        return { summary: null as RatingSummary | null, comments: [] as Array<{ comment: string; createdAt: Date }> }
-      }
-      const [summary, comments] = await Promise.all([
-        fetchRatingSummaryForOpportunity(sb, selectedMatchOpportunityId),
-        fetchRecentRatingCommentsForOpportunity(sb, selectedMatchOpportunityId),
-      ])
-      return { summary, comments }
-    },
-  })
-  const ratingSummary: RatingSummary | null = ratingsOverviewQuery.data?.summary ?? null
-  const recentComments = ratingsOverviewQuery.data?.comments ?? []
-
-  const myRatingQuery = useQuery({
-    queryKey: queryKeys.matchOpportunity.myRating(
+  const ratingsSessionQuery = useQuery({
+    queryKey: queryKeys.matchOpportunity.ratingsSession(
       selectedMatchOpportunityId,
       currentUser?.id
     ),
-    enabled: Boolean(selectedMatchOpportunityId && currentUser?.id && isSupabaseConfigured()),
+    enabled: Boolean(
+      selectedMatchOpportunityId && sessionQueryEnabled(currentUser?.id)
+    ),
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      if (!selectedMatchOpportunityId || !currentUser?.id) return null
+      if (!selectedMatchOpportunityId || !currentUser?.id) {
+        return {
+          summary: null as RatingSummary | null,
+          comments: [] as Array<{ comment: string; createdAt: Date }>,
+          myRating: null as MatchOpportunityRatingRow | null,
+        }
+      }
       const sb = getBrowserSupabase()
-      if (!sb) return null
-      return await fetchMyRatingForOpportunity(sb, selectedMatchOpportunityId, currentUser.id)
+      if (!sb) {
+        return {
+          summary: null as RatingSummary | null,
+          comments: [] as Array<{ comment: string; createdAt: Date }>,
+          myRating: null as MatchOpportunityRatingRow | null,
+        }
+      }
+      return fetchMatchDetailRatingsBlock(
+        sb,
+        selectedMatchOpportunityId,
+        currentUser.id
+      )
     },
   })
-  const myRating: MatchOpportunityRatingRow | null = myRatingQuery.data ?? null
-  const loadingRating = myRatingQuery.isFetching
+  const ratingSummary: RatingSummary | null =
+    ratingsSessionQuery.data?.summary ?? null
+  const recentComments = ratingsSessionQuery.data?.comments ?? []
+  const myRating: MatchOpportunityRatingRow | null =
+    ratingsSessionQuery.data?.myRating ?? null
+  const loadingRating = ratingsSessionQuery.isFetching
 
   const [joinRevueltaOpen, setJoinRevueltaOpen] = useState(false)
   const [respondingId, setRespondingId] = useState<string | null>(null)
@@ -169,11 +173,11 @@ export function MatchDetailsScreen() {
   const organizerId = opportunity?.creatorId ?? null
   const organizerOrganizedCountQuery = useQuery({
     queryKey: queryKeys.profile.organizerCompletedCount(organizerId),
+    staleTime: QUERY_STALE_TIME_STATIC_MS,
     enabled: Boolean(
       organizerId &&
-        isSupabaseConfigured() &&
-        currentUser?.id &&
-        organizerId !== currentUser.id
+        sessionQueryEnabled(currentUser?.id) &&
+        organizerId !== currentUser?.id
     ),
     placeholderData: keepPreviousData,
     queryFn: async () => {
@@ -194,7 +198,10 @@ export function MatchDetailsScreen() {
   const venueFallbackName = opportunity?.venue ?? ''
   const venueContactQuery = useQuery({
     queryKey: queryKeys.sportsVenue.contact(sportsVenueId ?? ''),
-    enabled: Boolean(sportsVenueId && isSupabaseConfigured()),
+    staleTime: QUERY_STALE_TIME_STATIC_MS,
+    enabled: Boolean(
+      sportsVenueId && isSupabaseConfigured() && getBrowserSupabase()
+    ),
     placeholderData: keepPreviousData,
     queryFn: async () => {
       if (!sportsVenueId) return null
@@ -254,67 +261,23 @@ export function MatchDetailsScreen() {
     },
   })
 
-  /** Tiempo real: cambios en participantes sin depender de `profiles` (evita bucle con heartbeat / last_seen). */
-  useEffect(() => {
-    if (!selectedMatchOpportunityId || !currentUser?.id || !isSupabaseConfigured()) {
-      return
-    }
-    const supabase = getBrowserSupabase()
-    if (!supabase) return
-    const oppId = selectedMatchOpportunityId
-    let timer: ReturnType<typeof setTimeout> | null = null
-    const scheduleParticipantsRefresh = () => {
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(() => {
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.matchOpportunity.participants(oppId),
-        })
-      }, 250)
-    }
-    const channel = supabase
-      .channel(`match-detail-participants:${oppId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'match_opportunity_participants',
-          filter: `opportunity_id=eq.${oppId}`,
-        },
-        scheduleParticipantsRefresh
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'match_opportunity_participants',
-          filter: `opportunity_id=eq.${oppId}`,
-        },
-        scheduleParticipantsRefresh
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'match_opportunity_participants',
-          filter: `opportunity_id=eq.${oppId}`,
-        },
-        scheduleParticipantsRefresh
-      )
-      .subscribe()
-
-    return () => {
-      if (timer) clearTimeout(timer)
-      void supabase.removeChannel(channel)
-    }
-  }, [selectedMatchOpportunityId, currentUser?.id, queryClient])
+  useMatchOpportunityParticipantsRealtime(
+    selectedMatchOpportunityId,
+    opportunity?.creatorId,
+    Boolean(
+      selectedMatchOpportunityId &&
+        sessionQueryEnabled(currentUser?.id) &&
+        isSupabaseConfigured() &&
+        getBrowserSupabase()
+    )
+  )
 
   const venueReservationId = opportunity?.venueReservationId ?? null
   const reservationQuery = useQuery({
     queryKey: queryKeys.matchOpportunity.venueReservation(venueReservationId),
-    enabled: Boolean(venueReservationId && currentUser?.id && isSupabaseConfigured()),
+    enabled: Boolean(
+      venueReservationId && sessionQueryEnabled(currentUser?.id)
+    ),
     placeholderData: keepPreviousData,
     queryFn: async () => {
       if (!venueReservationId) return null
@@ -353,7 +316,9 @@ export function MatchDetailsScreen() {
       selectedMatchOpportunityId,
       currentUser?.id
     ),
-    enabled: Boolean(selectedMatchOpportunityId && currentUser?.id && isSupabaseConfigured()),
+    enabled: Boolean(
+      selectedMatchOpportunityId && sessionQueryEnabled(currentUser?.id)
+    ),
     placeholderData: keepPreviousData,
     queryFn: async () => {
       if (!selectedMatchOpportunityId || !currentUser?.id) {
@@ -408,9 +373,14 @@ export function MatchDetailsScreen() {
       try {
         const res = await respondToRevueltaExternalRequest(requestId, accept)
         if (res.ok) {
-          await queryClient.invalidateQueries({
-            queryKey: queryKeys.matchOpportunity.participants(selectedMatchOpportunityId),
-          })
+          const sb = getBrowserSupabase()
+          if (sb && selectedMatchOpportunityId) {
+            await replaceParticipantsCacheFromServer(
+              sb,
+              queryClient,
+              selectedMatchOpportunityId
+            )
+          }
           await queryClient.invalidateQueries({
             queryKey: queryKeys.matchOpportunity.revueltaExternalJoin(
               selectedMatchOpportunityId,
@@ -519,18 +489,28 @@ export function MatchDetailsScreen() {
     }
   }, [reservationState, selfConfirmReservationMutation, currentUser.id])
 
-  const openParticipantProfile = useCallback((userId: string) => {
-    void prefetchPublicPlayerProfile(userId)
-    openPublicProfile(userId)
-  }, [openPublicProfile])
+  const prefetchParticipantProfile = useCallback(
+    (userId: string) => {
+      void prefetchPublicPlayerProfile(queryClient, userId)
+    },
+    [queryClient]
+  )
+
+  const openParticipantProfile = useCallback(
+    (userId: string) => {
+      void prefetchPublicPlayerProfile(queryClient, userId)
+      openPublicProfile(userId)
+    },
+    [openPublicProfile, queryClient]
+  )
 
   const reloadMyRating = useCallback(() => {
     if (!opportunity) return
     void queryClient.invalidateQueries({
-      queryKey: queryKeys.matchOpportunity.myRating(opportunity.id, currentUser.id),
-    })
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.matchOpportunity.ratingsOverview(opportunity.id),
+      queryKey: queryKeys.matchOpportunity.ratingsSession(
+        opportunity.id,
+        currentUser.id
+      ),
     })
   }, [queryClient, opportunity, currentUser.id])
 
@@ -763,6 +743,7 @@ export function MatchDetailsScreen() {
                   participant={p}
                   opportunityType={opportunity.type}
                   avatarDisplayUrl={avatarDisplayUrl}
+                  onPrefetchProfile={prefetchParticipantProfile}
                   onOpenProfile={openParticipantProfile}
                 />
               ))}
@@ -986,6 +967,10 @@ export function MatchDetailsScreen() {
           if (isPrivateRevueltaNonMember) {
             const r = await requestJoinPrivateRevuelta(opportunity.id, isGk)
             if (r.ok) {
+              const sb = getBrowserSupabase()
+              if (sb) {
+                await replaceParticipantsCacheFromServer(sb, queryClient, opportunity.id)
+              }
               await queryClient.invalidateQueries({
                 queryKey: queryKeys.matchOpportunity.revueltaExternalJoin(
                   opportunity.id,
@@ -1041,11 +1026,13 @@ const ParticipantListItem = memo(function ParticipantListItem({
   participant,
   opportunityType,
   avatarDisplayUrl,
+  onPrefetchProfile,
   onOpenProfile,
 }: {
   participant: OpportunityParticipantRow
   opportunityType: 'rival' | 'players' | 'open'
   avatarDisplayUrl: (photo?: string, userId?: string) => string
+  onPrefetchProfile?: (userId: string) => void
   onOpenProfile: (userId: string) => void
 }) {
   return (
@@ -1054,10 +1041,10 @@ const ParticipantListItem = memo(function ParticipantListItem({
         <button
           type="button"
           onMouseEnter={() => {
-            void prefetchPublicPlayerProfile(participant.id)
+            onPrefetchProfile?.(participant.id)
           }}
           onFocus={() => {
-            void prefetchPublicPlayerProfile(participant.id)
+            onPrefetchProfile?.(participant.id)
           }}
           onClick={() => onOpenProfile(participant.id)}
           className="flex items-center gap-2 min-w-0 text-left"

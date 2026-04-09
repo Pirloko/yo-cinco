@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useAppAuth } from '@/lib/app-context'
 import { queryKeys } from '@/lib/query-keys'
+import { sessionQueryEnabled } from '@/lib/query-session-enabled'
 import {
   getBrowserSupabase,
   isSupabaseConfigured,
@@ -368,7 +369,7 @@ export function VenueDashboardScreen() {
 
   const ownerBundleQuery = useQuery({
     queryKey: queryKeys.venueDashboard.ownerBundle(ownerId),
-    enabled: Boolean(ownerId && isSupabaseConfigured()),
+    enabled: sessionQueryEnabled(ownerId),
     queryFn: async () => {
       const supabase = getBrowserSupabase()
       if (!supabase || !ownerId) {

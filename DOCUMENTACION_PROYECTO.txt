@@ -34,7 +34,6 @@ app/                    Rutas Next.js: página principal SPA, API routes, SEO
   layout.tsx            Metadatos OG/Twitter, fuentes, Providers, Analytics
   globals.css           Tokens y estilos globales
   api/admin/*           Endpoints protegidos (admin, sesión, service role)
-  api/presence          Heartbeat de jugadores (perfil last_seen_at)
   centro/[venueId]     Página pública del centro deportivo
   equipo/[teamId]       Página pública de equipo
   revuelta/[opportunityId]  Página pública de revuelta / partido abierto
@@ -125,8 +124,10 @@ Admin (protección con require-admin u equivalente):
   POST      /api/admin/create-venue-user           Crear usuario centro
   GET       /api/admin/players-dashboard          Dashboard jugadores / presencia
 
-Presencia:
-  POST      /api/presence               Heartbeat (actualiza last_seen_at en perfil)
+Presencia (sin ruta API):
+  `profiles.last_seen_at` se actualiza desde el cliente con Supabase (RLS) vía
+  `lib/services/presence.service.ts` en sesión y en acciones relevantes (partido,
+  chat, equipo, etc.). Objetivo: evitar invocaciones serverless por heartbeat.
 
 (Ver cada route.ts para métodos exactos, body y códigos de error.)
 

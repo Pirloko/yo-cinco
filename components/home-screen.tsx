@@ -60,7 +60,10 @@ export function HomeScreen() {
   const [rivalPickOppId, setRivalPickOppId] = useState<string | null>(null)
   const [activeFilter, setActiveFilter] = useState<FilterType>('all')
   const [cityFilter, setCityFilter] = useState('')
-  const citiesQuery = useGeoCitiesWithVenuesInRegion(currentUser?.regionId)
+  const citiesQuery = useGeoCitiesWithVenuesInRegion(
+    currentUser?.regionId,
+    currentUser?.id
+  )
   const cityFilterOptions = citiesQuery.data ?? []
 
   useEffect(() => {

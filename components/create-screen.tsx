@@ -49,6 +49,9 @@ import {
 import { resolveCityIdFromLabel } from '@/lib/supabase/geo-queries'
 import { readCreatePrefill, clearCreatePrefill } from '@/lib/create-prefill'
 import { queryKeys, stableIdsKey } from '@/lib/query-keys'
+import { sessionQueryEnabled } from '@/lib/query-session-enabled'
+import { QUERY_STALE_TIME_STATIC_MS } from '@/lib/query-defaults'
+import { fetchAlternativeVenuesWithSlotAtTime } from '@/lib/services/create-alternatives.service'
 import { computeVenueAvailableSlots, labelForHm } from '@/lib/venue-slots'
 import { consumeRivalTargetTeamId } from '@/lib/rival-prefill'
 import { TEAM_ROSTER_MAX } from '@/lib/team-roster'
@@ -150,7 +153,8 @@ export function CreateScreen() {
 
   const venueCourtsQuery = useQuery({
     queryKey: queryKeys.create.venueCourts(linkedVenueId),
-    enabled: Boolean(linkedVenueId && isSupabaseConfigured()),
+    staleTime: QUERY_STALE_TIME_STATIC_MS,
+    enabled: Boolean(linkedVenueId && sessionQueryEnabled(currentUser?.id)),
     queryFn: async () => {
       const sb = getBrowserSupabase()
       if (!sb || !linkedVenueId) return []
@@ -164,7 +168,8 @@ export function CreateScreen() {
       currentUser?.regionId,
       currentUser?.cityId
     ),
-    enabled: isSupabaseConfigured() && Boolean(getBrowserSupabase()),
+    staleTime: QUERY_STALE_TIME_STATIC_MS,
+    enabled: sessionQueryEnabled(currentUser?.id),
     queryFn: async () => {
       const sb = getBrowserSupabase()
       if (!sb) return []
@@ -273,10 +278,7 @@ export function CreateScreen() {
       linkedVenueSlotHint
     ),
     enabled: Boolean(
-      linkedVenueId &&
-        formData.date &&
-        isSupabaseConfigured() &&
-        getBrowserSupabase()
+      linkedVenueId && formData.date && sessionQueryEnabled(currentUser?.id)
     ),
     queryFn: async () => {
       const supabase = getBrowserSupabase()
@@ -375,51 +377,20 @@ export function CreateScreen() {
         linkedVenueId &&
           formData.date &&
           formData.time &&
-          isSupabaseConfigured() &&
-          getBrowserSupabase() &&
+          sessionQueryEnabled(currentUser?.id) &&
           sportsVenuesFromDb.length > 0
       ),
     queryFn: async () => {
       const supabase = getBrowserSupabase()
       if (!supabase || !linkedVenueId) return [] as SportsVenue[]
-      const dayStart = new Date(`${formData.date}T00:00:00`)
-      const dayEnd = new Date(dayStart)
-      dayEnd.setDate(dayEnd.getDate() + 1)
-      const dow = dayStart.getDay()
-      const targetTime = formData.time
-
-      const candidates = sportsVenuesFromDb.filter((v) => v.id !== linkedVenueId)
-      const checks = await Promise.all(
-        candidates.map(async (venue) => {
-          const [courts, weeklyHours, reservations] = await Promise.all([
-            fetchVenueCourts(supabase, venue.id),
-            fetchVenueWeeklyHours(supabase, venue.id),
-            fetchVenueReservationsRange(
-              supabase,
-              venue.id,
-              dayStart.toISOString(),
-              dayEnd.toISOString()
-            ),
-          ])
-          if (!courts.length) return null
-          const dayHours = weeklyHours.find((h) => h.dayOfWeek === dow)
-          if (!dayHours) return null
-          const options = computeVenueAvailableSlots({
-            dayStart,
-            openTime: dayHours.openTime,
-            closeTime: dayHours.closeTime,
-            slotDurationMinutes: venue.slotDurationMinutes,
-            courtsCount: courts.length,
-            reservations: reservations.filter((r) => r.status !== 'cancelled'),
-          })
-          return options.some((o) => o.value === targetTime) ? venue : null
-        })
-      )
-
-      const valid = checks.filter((v): v is SportsVenue => !!v)
-      const sameCity = valid.filter((v) => v.city === formData.location)
-      const otherCities = valid.filter((v) => v.city !== formData.location)
-      return [...sameCity, ...otherCities].slice(0, 5)
+      return fetchAlternativeVenuesWithSlotAtTime(supabase, {
+        allVenues: sportsVenuesFromDb,
+        linkedVenueId,
+        dateYmd: formData.date,
+        targetTimeValue: formData.time,
+        locationForSort: formData.location,
+        maxResults: 5,
+      })
     },
   })
 

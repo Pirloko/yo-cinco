@@ -1,20 +1,25 @@
-const inflight = new Map<string, Promise<void>>()
+import type { QueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/lib/query-keys'
+import { QUERY_STALE_TIME_MS } from '@/lib/query-defaults'
+import { isValidTeamInviteId } from '@/lib/team-invite-url'
+import { fetchPublicPlayerProfile } from '@/lib/public-player-profile-fetch'
 
-export function prefetchPublicPlayerProfile(userId: string): Promise<void> {
+/**
+ * Prefetch del perfil público (Fase 6): TanStack deduplica con el sheet y otros
+ * prefetch en vuelo; staleTime alineado con defaults globales.
+ */
+export function prefetchPublicPlayerProfile(
+  queryClient: QueryClient,
+  userId: string
+): Promise<void> {
   const id = userId.trim()
-  if (!id) return Promise.resolve()
+  if (!id || !isValidTeamInviteId(id)) return Promise.resolve()
   if (typeof window === 'undefined') return Promise.resolve()
-  const existing = inflight.get(id)
-  if (existing) return existing
-  const req = fetch(
-    `/api/public-player-profile?userId=${encodeURIComponent(id)}`,
-    { cache: 'force-cache' }
-  )
-    .then(() => {})
-    .catch(() => {})
-    .finally(() => {
-      inflight.delete(id)
+  return queryClient
+    .prefetchQuery({
+      queryKey: queryKeys.publicPlayer.detail(id),
+      queryFn: ({ signal }) => fetchPublicPlayerProfile(id, signal),
+      staleTime: QUERY_STALE_TIME_MS,
     })
-  inflight.set(id, req)
-  return req
+    .then(() => {})
 }

@@ -35,11 +35,7 @@ import {
   TeamPrivateSettings,
   User,
 } from './types'
-import {
-  getBrowserSessionAccessToken,
-  getBrowserSupabase,
-  isSupabaseConfigured,
-} from '@/lib/supabase/client'
+import { getBrowserSupabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import { getPublicSiteOrigin } from '@/lib/site-url'
 import {
   mapMatchOpportunityFromDb,
@@ -112,6 +108,10 @@ import {
 } from '@/lib/services/team.service'
 import { loadOtherPlayersForUser, loadProfileForUser } from '@/lib/services/user.service'
 import { loadVenueForOwner } from '@/lib/services/venue.service'
+import {
+  resetPresenceDebounceState,
+  updateLastSeen,
+} from '@/lib/services/presence.service'
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [authLoading, setAuthLoading] = useState(true)
@@ -449,6 +449,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
 
+    void updateLastSeen(supabase, currentUser.id, { force: true })
+
     const refreshed = await loadProfileForUser(
       supabase,
       currentUser.id,
@@ -537,6 +539,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...currentUser,
       name: data.name.trim(),
     })
+    void updateLastSeen(supabase, currentUser.id, { force: true })
     toast.success('Centro creado')
     setCurrentScreen('venueDashboard')
   })
@@ -631,6 +634,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
     setMatchOpportunities(matchBundle.matchOpportunities)
     setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+    void updateLastSeen(supabase, currentUser.id, { force: true })
     return { ok: true as const }
   })
 
@@ -674,6 +678,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { ok: false as const, error: error.message }
     }
     toast.success('Reserva creada en estado pendiente de pago.')
+    void updateLastSeen(supabase, currentUser.id, { force: true })
     return { ok: true as const }
   })
 
@@ -749,6 +754,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? `¡Te uniste al partido! Coordina en el chat. ${payLine}`
         : '¡Te uniste al partido! Coordina aquí con el grupo.'
     )
+    void updateLastSeen(supabase, currentUser.id, { force: true })
   })
 
   const requestJoinPrivateRevuelta = useStableCallback(async (
@@ -807,6 +813,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { ok: false, error: msg }
     }
     toast.success('Solicitud enviada. El organizador del partido la revisará.')
+    void updateLastSeen(supabase, currentUser.id, { force: true })
     return { ok: true }
   })
 
@@ -842,6 +849,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
     setMatchOpportunities(matchBundle.matchOpportunities)
     setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+    void updateLastSeen(supabase, currentUser.id, { force: true })
     return { ok: true }
   })
 
@@ -1258,6 +1266,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const teamBundle = await loadPlayerTeamsAndInvites(supabase, currentUser.id)
     setTeams(teamBundle.teams)
     setTeamInvites(teamBundle.teamInvites)
+    void updateLastSeen(supabase, currentUser.id, { force: true })
   })
 
   const updateTeam = useStableCallback(async (
@@ -1614,6 +1623,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         else toast.error(msg)
         return
       }
+      void updateLastSeen(supabase, currentUser.id, { force: true })
     } else {
       const { error } = await supabase
         .from('team_invites')
@@ -1655,6 +1665,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const list = await fetchLatestTeamJoinRequestsForUser(supabase, currentUser.id)
     setTeamJoinRequests(list)
     toast.success('Solicitud enviada al equipo')
+    void updateLastSeen(supabase, currentUser.id, { force: true })
   })
 
   const setTeamViceCaptain = useStableCallback(async (
@@ -1817,6 +1828,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTeams(freshTeams)
     setTeamJoinRequests(list)
     toast.success(`${req.requesterName} ya es parte del equipo`)
+    void updateLastSeen(supabase, currentUser.id, { force: true })
   })
 
   const cancelJoinRequest = useStableCallback(async (requestId: string) => {
@@ -1865,6 +1877,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   })
 
   const clearSessionState = useCallback(() => {
+    resetPresenceDebounceState()
     clearSessionNavigationState()
     setCurrentUser(null)
     setProfilePhotoCacheBust(0)
@@ -1894,6 +1907,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const profile = await loadProfileForUser(supabase, authUser.id, email)
       if (!profile) return
       setCurrentUser(profile)
+      void updateLastSeen(supabase, authUser.id)
 
       if (profile.accountType === 'venue' || profile.accountType === 'admin') {
         setMatchOpportunities([])
@@ -1988,38 +2002,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe()
     }
   }, [clearSessionState, loadAppStateForAuthUser])
-
-  /** Heartbeat de presencia para `profiles.last_seen_at` (panel admin / “en línea”). */
-  useEffect(() => {
-    if (authLoading || !currentUser || !isSupabaseConfigured()) return
-    if (typeof window === 'undefined') return
-
-    const ping = () => {
-      void (async () => {
-        try {
-          const token = await getBrowserSessionAccessToken()
-          if (!token) return
-          await fetch('/api/presence', {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
-          })
-        } catch {
-          // red / offline
-        }
-      })()
-    }
-
-    ping()
-    const interval = window.setInterval(ping, 75_000)
-    const onVis = () => {
-      if (document.visibilityState === 'visible') ping()
-    }
-    document.addEventListener('visibilitychange', onVis)
-    return () => {
-      window.clearInterval(interval)
-      document.removeEventListener('visibilitychange', onVis)
-    }
-  }, [authLoading, currentUser])
 
   /** ?joinTeam= & ?register=1 → sessionStorage y URL limpia */
   useEffect(() => {

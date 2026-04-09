@@ -1,4 +1,4 @@
--- Presencia aproximada: el cliente envía heartbeat (API) y se actualiza last_seen_at.
+-- Presencia aproximada: el cliente actualiza last_seen_at (Supabase RLS, sin API heartbeat).
 
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;

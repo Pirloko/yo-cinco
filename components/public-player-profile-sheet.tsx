@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   ShieldAlert,
@@ -22,8 +23,11 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { getOrganizerTierProgress } from '@/lib/organizer-level'
-import { CLIENT_PROFILE_CACHE_TTL_MS } from '@/lib/cache-policy'
-import type { Level, Position, PublicPlayerProfile } from '@/lib/types'
+import { queryKeys } from '@/lib/query-keys'
+import { QUERY_STALE_TIME_MS } from '@/lib/query-defaults'
+import { isValidTeamInviteId } from '@/lib/team-invite-url'
+import { fetchPublicPlayerProfile } from '@/lib/public-player-profile-fetch'
+import type { Level, Position } from '@/lib/types'
 
 const LEVEL_LABELS: Record<Level, string> = {
   principiante: 'Principiante',
@@ -55,59 +59,25 @@ function formatDayLabel(day: string): string {
 export function PublicPlayerProfileSheet() {
   const { publicProfileUserId, closePublicProfile } = useAppUI()
   const { currentUser, avatarDisplayUrl } = useAppAuth()
-  const [loading, setLoading] = useState(false)
-  const [profile, setProfile] = useState<PublicPlayerProfile | null>(null)
-  const profileCacheRef = useRef<Record<string, { at: number; profile: PublicPlayerProfile | null }>>({})
   const [reportOpen, setReportOpen] = useState(false)
   const [reportReason, setReportReason] = useState('conducta')
   const [reportDetails, setReportDetails] = useState('')
 
   const open = !!publicProfileUserId
+  const profileUserId = publicProfileUserId?.trim() ?? ''
+  const profileIdValid = isValidTeamInviteId(profileUserId)
+  const profileQueryKeyUser =
+    open && profileIdValid ? profileUserId : ('__closed__' as const)
 
-  useEffect(() => {
-    if (!open || !publicProfileUserId) {
-      setProfile(null)
-      return
-    }
-    let cancelled = false
-    const controller = new AbortController()
-    const cached = profileCacheRef.current[publicProfileUserId]
-    if (cached && Date.now() - cached.at < CLIENT_PROFILE_CACHE_TTL_MS) {
-      setProfile(cached.profile)
-      setLoading(false)
-      return () => {
-        cancelled = true
-        controller.abort()
-      }
-    }
-    setLoading(true)
-    void (async () => {
-      try {
-        const res = await fetch(
-          `/api/public-player-profile?userId=${encodeURIComponent(publicProfileUserId)}`,
-          { signal: controller.signal, cache: 'force-cache' }
-        )
-        if (!res.ok) {
-          if (!cancelled) setProfile(null)
-          return
-        }
-        const json = (await res.json()) as { profile?: PublicPlayerProfile | null }
-        const p = json.profile ?? null
-        if (!cancelled) {
-          profileCacheRef.current[publicProfileUserId] = { at: Date.now(), profile: p }
-          setProfile(p)
-        }
-      } catch {
-        if (!cancelled) setProfile(null)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-      controller.abort()
-    }
-  }, [open, publicProfileUserId])
+  const profileQuery = useQuery({
+    queryKey: queryKeys.publicPlayer.detail(profileQueryKeyUser),
+    enabled: open && profileIdValid,
+    staleTime: QUERY_STALE_TIME_MS,
+    queryFn: ({ signal }) => fetchPublicPlayerProfile(profileUserId, signal),
+  })
+
+  const profile = profileQuery.data ?? null
+  const loading = profileQuery.isPending && !profileQuery.data
 
   const organizerProgress = useMemo(() => {
     const n = profile?.statsOrganizedCompleted ?? 0
@@ -148,7 +118,9 @@ export function PublicPlayerProfileSheet() {
           <SheetTitle>Perfil del jugador</SheetTitle>
         </SheetHeader>
 
-        {loading && !profile ? (
+        {!profileIdValid && open ? (
+          <div className="p-4 text-sm text-muted-foreground">Perfil no válido.</div>
+        ) : loading && !profile ? (
           <div className="p-4 text-sm text-muted-foreground">Cargando…</div>
         ) : !profile ? (
           <div className="p-4 text-sm text-muted-foreground">

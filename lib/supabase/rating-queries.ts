@@ -131,6 +131,29 @@ export async function fetchRatingSummaryForOpportunity(
   return buildSummary(opportunityId, rows as unknown as MatchOpportunityRatingRow[])
 }
 
+/** Filas parciales para agregar resúmenes (RPC bundle / tests). */
+export type RatingPartialRow = Pick<
+  MatchOpportunityRatingRow,
+  'opportunity_id' | 'organizer_rating' | 'match_rating' | 'level_rating'
+>
+
+export function mapRatingPartialRowsToSummariesMap(
+  opportunityIds: string[],
+  rows: RatingPartialRow[]
+): Map<string, RatingSummary> {
+  const out = new Map<string, RatingSummary>()
+  const grouped = new Map<string, MatchOpportunityRatingRow[]>()
+  for (const id of opportunityIds) grouped.set(id, [])
+  for (const r of rows) {
+    const list = grouped.get(r.opportunity_id)
+    if (list) list.push(r as unknown as MatchOpportunityRatingRow)
+  }
+  for (const [oid, list] of grouped) {
+    out.set(oid, buildSummary(oid, list))
+  }
+  return out
+}
+
 export async function fetchRatingSummariesForOpportunities(
   supabase: SupabaseClient,
   opportunityIds: string[]
@@ -152,18 +175,7 @@ export async function fetchRatingSummariesForOpportunities(
             'opportunity_id' | 'organizer_rating' | 'match_rating' | 'level_rating'
           >
         >)
-  const grouped = new Map<string, MatchOpportunityRatingRow[]>()
-  for (const id of opportunityIds) grouped.set(id, [])
-  for (const r of rows) {
-    const oid = r.opportunity_id
-    const list = grouped.get(oid)
-    if (list) list.push(r as unknown as MatchOpportunityRatingRow)
-  }
-
-  for (const [oid, list] of grouped) {
-    out.set(oid, buildSummary(oid, list))
-  }
-  return out
+  return mapRatingPartialRowsToSummariesMap(opportunityIds, rows)
 }
 
 export async function fetchRecentRatingCommentsForOpportunity(

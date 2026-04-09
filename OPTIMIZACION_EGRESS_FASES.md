@@ -39,19 +39,20 @@ Reducir descargas repetidas de datos y refetch innecesario tras navegación/focu
 #### 1) Defaults globales centralizados
 
 - Archivo nuevo: `lib/query-defaults.ts`
-  - `QUERY_STALE_TIME_MS = 3 min` (rango objetivo 2–5 min)
-  - `QUERY_GC_TIME_MS = 20 min` (rango objetivo 10–30 min)
+  - `QUERY_STALE_TIME_MS = 5 min` (Fase 3; rango objetivo 2–5 min)
+  - `QUERY_STALE_TIME_STATIC_MS = 15 min` (catálogos: geo, centros, contacto, etc.)
+  - `QUERY_GC_TIME_MS = 30 min`
 
 - Ajuste en `lib/query-client-provider.tsx`:
-  - `staleTime`: **30s → 3min**
-  - `gcTime`: **10min → 20min**
+  - `staleTime` / `gcTime` según `query-defaults.ts` (evolución 30s → 3min → **5min**)
   - `refetchOnWindowFocus`: **false** (se mantiene)
   - `refetchOnReconnect`: **true (default) → false**
   - `retry`: **1** (se mantiene)
   - `mutations.retry`: **1** (default)
 
 **Resultado esperado**
-- Al navegar entre pantallas, mientras la data esté fresca (3 min), **no se refetchea** solo por remontar.
+- Al navegar entre pantallas, mientras la data esté fresca (**5 min**, o **15 min** en queries “estáticas”), **no se refetchea** solo por remontar.
+- `refetchOnWindowFocus` y `refetchOnReconnect` siguen desactivados; `refetchOnMount` permanece en default de TanStack para no dejar chat/partidos obsoletos tras mucho tiempo en segundo plano.
 - Al volver a enfocar la ventana o reconectar, no se disparan refetch automáticos.
 
 #### 2) Invalidaciones más específicas (reducción de refetch)
@@ -251,7 +252,6 @@ Agregar hardening productivo en API: logging estructurado, manejo de errores con
 
 - Endpoints endurecidos:
   - `app/api/public-player-profile/route.ts`
-  - `app/api/presence/route.ts`
   - `app/api/admin/geo/route.ts` (GET/POST)
   - `app/api/admin/metrics/route.ts`
   - `app/api/admin/venues/route.ts`
