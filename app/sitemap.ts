@@ -35,6 +35,30 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'daily',
       priority: 0.9,
     },
+    {
+      url: `${base}/rancagua/canchas/santa-helena`,
+      lastModified: now,
+      changeFrequency: 'daily',
+      priority: 0.85,
+    },
+    {
+      url: `${base}/rancagua/canchas/san-lorenzo`,
+      lastModified: now,
+      changeFrequency: 'daily',
+      priority: 0.85,
+    },
+    {
+      url: `${base}/rancagua/canchas/energy`,
+      lastModified: now,
+      changeFrequency: 'daily',
+      priority: 0.85,
+    },
+    {
+      url: `${base}/rancagua/canchas/san-damian`,
+      lastModified: now,
+      changeFrequency: 'daily',
+      priority: 0.85,
+    },
   ]
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL

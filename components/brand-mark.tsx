@@ -7,6 +7,8 @@ export type BrandMarkSize = 'sm' | 'md'
 type BrandMarkProps = {
   size?: BrandMarkSize
   showText?: boolean
+  /** Texto junto al logo; por defecto el wordmark de producto en mayúsculas */
+  label?: string
   textClassName?: string
   className?: string
   /** Miniatura de `/logohome.png` alineada con el wordmark del hero */
@@ -18,6 +20,7 @@ type BrandMarkProps = {
 export function BrandMark({
   size = 'md',
   showText = true,
+  label = 'SPORTMATCH',
   textClassName,
   className,
   showLogo = false,
@@ -54,7 +57,7 @@ export function BrandMark({
           textClassName
         )}
       >
-        SPORTMATCH
+        {label}
       </span>
     </div>
   )
