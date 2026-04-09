@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useApp } from '@/lib/app-context'
+import { useAppAuth } from '@/lib/app-context'
 import type { MatchOpportunity } from '@/lib/types'
 import type { OpportunityParticipantRow } from '@/lib/supabase/message-queries'
 import { JERSEY_COLOR_PRESETS } from '@/lib/jersey-colors'
@@ -54,7 +54,7 @@ export function RevueltaTeamsPanel({
   randomizeRevueltaTeams,
   compact = false,
 }: Props) {
-  const { avatarDisplayUrl } = useApp()
+  const { avatarDisplayUrl } = useAppAuth()
   const [colorA, setColorA] = useState<string>(JERSEY_COLOR_PRESETS[0].hex)
   const [colorB, setColorB] = useState<string>(JERSEY_COLOR_PRESETS[2].hex)
   const [busy, setBusy] = useState(false)

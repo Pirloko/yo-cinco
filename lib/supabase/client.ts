@@ -31,3 +31,22 @@ export function createClient(): SupabaseClient {
     },
   })
 }
+
+/** Cliente de navegador sin lanzar: útil en componentes y APIs de conveniencia. */
+export function getBrowserSupabase(): SupabaseClient | null {
+  if (!isSupabaseConfigured()) return null
+  try {
+    return createClient()
+  } catch {
+    return null
+  }
+}
+
+export async function getBrowserSessionAccessToken(): Promise<string | null> {
+  const sb = getBrowserSupabase()
+  if (!sb) return null
+  const {
+    data: { session },
+  } = await sb.auth.getSession()
+  return session?.access_token ?? null
+}

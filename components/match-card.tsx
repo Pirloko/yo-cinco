@@ -1,6 +1,6 @@
 'use client'
 
-import { useApp } from '@/lib/app-context'
+import { useAppAuth } from '@/lib/app-context'
 import { MatchOpportunity } from '@/lib/types'
 import {
   matchFillUrgencyMessage,
@@ -54,7 +54,7 @@ export function MatchCard({
   showHomeFeedUrgency = false,
   isPrivateRevueltaExternal = false,
 }: MatchCardProps) {
-  const { avatarDisplayUrl } = useApp()
+  const { avatarDisplayUrl } = useAppAuth()
   const getTypeIcon = () => {
     switch (match.type) {
       case 'rival':

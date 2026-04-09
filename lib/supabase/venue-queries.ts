@@ -304,3 +304,48 @@ export async function fetchVenueReservationsRange(
     notes: (r.notes as string | null) ?? null,
   }))
 }
+
+export async function fetchSportsVenueContactById(
+  supabase: SupabaseClient,
+  venueId: string,
+  fallbackName: string
+): Promise<{ name: string; phone: string | null } | null> {
+  const { data } = await supabase
+    .from('sports_venues')
+    .select('name, phone')
+    .eq('id', venueId)
+    .maybeSingle()
+  if (!data) return null
+  return {
+    name: (data.name as string) ?? fallbackName,
+    phone: ((data.phone as string | null) ?? '').trim() || null,
+  }
+}
+
+/** RPC pública: ocupación del día para la ficha `/centro/...`. */
+export async function fetchVenuePublicReservationsAsRowsForDay(
+  supabase: SupabaseClient,
+  venueId: string,
+  day: Date
+): Promise<VenueReservationRow[]> {
+  const start = new Date(day)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(day)
+  end.setHours(23, 59, 59, 999)
+  const { data, error } = await supabase.rpc('venue_public_reservations_in_range', {
+    p_venue_id: venueId,
+    p_from: start.toISOString(),
+    p_to: end.toISOString(),
+  })
+  if (error || !data) return []
+  const rows = data as { court_id: string; starts_at: string; ends_at: string }[]
+  return rows.map((r) => ({
+    id: `${r.court_id}-${r.starts_at}`,
+    courtId: r.court_id,
+    startsAt: new Date(r.starts_at),
+    endsAt: new Date(r.ends_at),
+    bookerUserId: null,
+    matchOpportunityId: null,
+    status: 'confirmed' as const,
+  }))
+}

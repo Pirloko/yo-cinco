@@ -1,7 +1,20 @@
 import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/supabase/require-admin'
+
+/** Cliente con JWT del admin para RPCs `admin_*` (validan con `is_admin()` vía auth.uid()). */
+function createSupabaseWithUserJwt(accessToken: string) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !key) {
+    throw new Error('Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  }
+  return createClient(url, key, {
+    global: { headers: { Authorization: `Bearer ${accessToken}` } },
+  })
+}
 
 export async function GET(req: Request) {
   try {
@@ -100,48 +113,40 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: auth.error }, { status: 403 })
     }
     const body = (await req.json()) as Body
-    const admin = createAdminClient()
-
-    const now = new Date().toISOString()
+    let rpcClient
+    try {
+      rpcClient = createSupabaseWithUserJwt(auth.accessToken)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Configuración Supabase incompleta'
+      return NextResponse.json({ error: msg }, { status: 500 })
+    }
 
     if (body.action === 'markReviewed') {
-      const { error } = await admin
-        .from('player_reports')
-        .update({
-          status: 'reviewed',
-          reviewed_by: auth.userId,
-          reviewed_at: now,
-          resolution: body.resolution ?? null,
-        })
-        .eq('id', body.reportId)
+      const { error } = await rpcClient.rpc('admin_update_player_report_status', {
+        p_report_id: body.reportId,
+        p_status: 'reviewed',
+        p_resolution: body.resolution ?? null,
+      })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
 
     if (body.action === 'dismiss') {
-      const { error } = await admin
-        .from('player_reports')
-        .update({
-          status: 'dismissed',
-          reviewed_by: auth.userId,
-          reviewed_at: now,
-          resolution: body.resolution ?? null,
-        })
-        .eq('id', body.reportId)
+      const { error } = await rpcClient.rpc('admin_update_player_report_status', {
+        p_report_id: body.reportId,
+        p_status: 'dismissed',
+        p_resolution: body.resolution ?? null,
+      })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
 
     if (body.action === 'actionTaken') {
-      const { error } = await admin
-        .from('player_reports')
-        .update({
-          status: 'action_taken',
-          reviewed_by: auth.userId,
-          reviewed_at: now,
-          resolution: body.resolution ?? null,
-        })
-        .eq('id', body.reportId)
+      const { error } = await rpcClient.rpc('admin_update_player_report_status', {
+        p_report_id: body.reportId,
+        p_status: 'action_taken',
+        p_resolution: body.resolution ?? null,
+      })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }

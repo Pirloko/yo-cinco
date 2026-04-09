@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { useApp } from '@/lib/app-context'
+import { useAppAuth } from '@/lib/app-context'
 import type { Level, Team, TeamJoinRequest } from '@/lib/types'
 
 const LEVEL_LABEL: Record<Level, string> = {
@@ -56,7 +56,7 @@ export function DiscoverTeamsCarousel({
   onRequestJoin,
   onChallenge,
 }: DiscoverTeamsCarouselProps) {
-  const { avatarDisplayUrl } = useApp()
+  const { avatarDisplayUrl } = useAppAuth()
   const [index, setIndex] = useState(0)
   const teamIdsKey = teams.map((t) => t.id).join(',')
 

@@ -1,7 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
+import { fetchMatchParticipantGkFieldCounts } from '@/lib/supabase/match-participant-queries'
 import type { MatchOpportunity } from '@/lib/types'
 import { playersJoinRules } from '@/lib/players-seek-profile'
 import {
@@ -45,26 +49,14 @@ export function JoinPlayersSearchDialog({
     setLoading(true)
     void (async () => {
       try {
-        const sb = createClient()
-        const { data, error } = await sb
-          .from('match_opportunity_participants')
-          .select('is_goalkeeper, status')
-          .eq('opportunity_id', opportunity.id)
-        if (error || cancelled) return
-        let gk = 0
-        let field = 0
-        let j = 0
-        for (const p of data ?? []) {
-          const st = p.status as string
-          if (st !== 'pending' && st !== 'confirmed') continue
-          j++
-          if (p.is_goalkeeper === true) gk++
-          else field++
-        }
+        const sb = getBrowserSupabase()
+        if (!sb || cancelled) return
+        const counts = await fetchMatchParticipantGkFieldCounts(sb, opportunity.id)
+        if (!counts || cancelled) return
         if (!cancelled) {
-          setGkCount(gk)
-          setFieldCount(field)
-          setJoined(j)
+          setGkCount(counts.gkCount)
+          setFieldCount(counts.fieldCount)
+          setJoined(counts.joinedCount)
         }
       } finally {
         if (!cancelled) setLoading(false)

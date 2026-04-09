@@ -1,14 +1,23 @@
 'use client'
 
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react'
+import type { AppContextType } from '@/lib/app-context-contract'
+import {
+  type AppScreen,
+  PLAYER_NAV_SCREENS,
+} from '@/lib/app-context-contract'
+import {
+  AppDomainProviders,
+  useComposedAppContext,
+} from '@/lib/contexts/domain-contexts'
+import { useStableCallback } from '@/lib/hooks/use-stable-callback'
 import { toast } from 'sonner'
 import {
   MatchOpportunity,
@@ -26,7 +35,11 @@ import {
   TeamPrivateSettings,
   User,
 } from './types'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  getBrowserSessionAccessToken,
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
 import { getPublicSiteOrigin } from '@/lib/site-url'
 import {
   mapMatchOpportunityFromDb,
@@ -126,31 +139,6 @@ function toastReadOnly(reason?: string) {
   )
 }
 
-type AppScreen =
-  | 'landing'
-  | 'auth'
-  | 'onboarding'
-  | 'home'
-  | 'create'
-  | 'explore'
-  | 'matches'
-  | 'chat'
-  | 'matchDetails'
-  | 'profile'
-  | 'teams'
-  | 'venueOnboarding'
-  | 'venueDashboard'
-  | 'adminDashboard'
-
-const PLAYER_NAV_SCREENS = new Set<AppScreen>([
-  'home',
-  'explore',
-  'matches',
-  'create',
-  'teams',
-  'profile',
-])
-
 function effectivePlayerAge(u: User): number {
   if (u.birthDate) return computeAgeFromBirthDate(u.birthDate)
   return u.age
@@ -164,201 +152,6 @@ function needsOnboardingProfile(u: User): boolean {
   const essentialsMissing = !u.playerEssentialsCompletedAt
   return demoIncomplete || essentialsMissing
 }
-
-interface AppContextType {
-  authLoading: boolean
-  currentScreen: AppScreen
-  setCurrentScreen: (screen: AppScreen) => void
-  currentUser: User | null
-  setCurrentUser: (user: User | null) => void
-  isAuthenticated: boolean
-  login: (
-    email: string,
-    password: string,
-    isSignUp: boolean
-  ) => Promise<{
-    ok: boolean
-    error?: string
-    needsOnboarding?: boolean
-    needsVenueOnboarding?: boolean
-    isVenue?: boolean
-    isAdmin?: boolean
-  }>
-  /** OAuth: redirige al proveedor; al volver a `/` la sesión se detecta en URL. */
-  loginWithGoogle: () => Promise<{ ok: boolean; error?: string }>
-  logout: () => Promise<void>
-  completeOnboarding: (data: OnboardingData) => Promise<void>
-  /** Primera configuración del centro (`sports_venues`) para cuentas venue. */
-  completeVenueOnboarding: (data: VenueOnboardingData) => Promise<void>
-  /** Mismo flujo que el registro, pero precargado y vuelve a Perfil al terminar. */
-  openProfileEditor: () => void
-  onboardingSource: 'registration' | 'profile_edit'
-  setOnboardingSource: (source: 'registration' | 'profile_edit') => void
-  /** Sube imagen a Storage y actualiza `photo_url` del perfil. */
-  updateProfilePhoto: (file: File) => Promise<{ ok: boolean; error?: string }>
-  /** Incrementar al subir foto (misma URL pública → evitar caché del navegador en `<img>`). */
-  profilePhotoCacheBust: number
-  bumpProfilePhotoCache: () => void
-  /** Se incrementa con cada UPDATE Realtime en `profiles` (refetch participantes / mensajes). */
-  profilesRealtimeGeneration: number
-  /** Avatar con bust por usuario (Realtime + subida propia). */
-  avatarDisplayUrl: (
-    url: string | null | undefined,
-    userId?: string | null
-  ) => string
-  matchOpportunities: MatchOpportunity[]
-  addMatchOpportunity: (
-    match: Omit<MatchOpportunity, 'id' | 'createdAt'> & {
-      /** Revuelta (open): el organizador entra como participante con este rol. */
-      creatorIsGoalkeeper?: boolean
-      /** Reservar cancha vía RPC al publicar (centros deportivos). */
-      bookCourtSlot?: boolean
-      courtSlotMinutes?: number
-    }
-  ) => Promise<{ ok: true } | { ok: false; code?: 'no_court'; error: string }>
-  /** Reserva de cancha sin crear partido. */
-  reserveVenueOnly: (payload: {
-    sportsVenueId: string
-    startsAt: Date
-    durationMinutes: number
-  }) => Promise<{ ok: true } | { ok: false; code?: 'no_court'; error: string }>
-  /** Apuntarse a un partido ajeno (participante confirmado + acceso al chat). Revuelta: opción arquero. */
-  joinMatchOpportunity: (
-    opportunityId: string,
-    options?: { isGoalkeeper?: boolean }
-  ) => Promise<void>
-  /** Revuelta privada: jugador externo pide cupo; el organizador del partido acepta en detalle. */
-  requestJoinPrivateRevuelta: (
-    opportunityId: string,
-    isGoalkeeper: boolean
-  ) => Promise<{ ok: boolean; error?: string }>
-  /** Organizador de la revuelta privada: aceptar o rechazar solicitud externa. */
-  respondToRevueltaExternalRequest: (
-    requestId: string,
-    accept: boolean
-  ) => Promise<{ ok: boolean; error?: string }>
-  /** Organizador revuelta (cupos llenos): sorteo aleatorio A/B + colores camiseta. */
-  randomizeRevueltaTeams: (
-    opportunityId: string,
-    colorHexA: string,
-    colorHexB: string
-  ) => Promise<void>
-  /** Organizador: cerrar partido casual, revuelta (A/B/empate) o rival (organizador vs rival / empate). `true` si se guardó. */
-  finalizeMatchOpportunity: (
-    opportunityId: string,
-    outcome:
-      | { kind: 'casual' }
-      | { kind: 'revuelta'; revueltaResult: RevueltaResult }
-      | { kind: 'rival'; rivalResult: RivalResult }
-  ) => Promise<boolean>
-  /** Capitán (rival): votar resultado; si ambos coinciden se cierra el partido. */
-  submitRivalCaptainVote: (
-    opportunityId: string,
-    vote: RivalResult
-  ) => Promise<void>
-  /** Organizador: tras desacuerdo de capitanes y 72 h desde la hora del partido. */
-  finalizeRivalOrganizerOverride: (
-    opportunityId: string,
-    result: RivalResult
-  ) => Promise<void>
-  /** Recarga perfil desde BD (stats tras partidos). */
-  refreshCurrentUserProfile: () => Promise<void>
-  suspendMatchOpportunity: (
-    opportunityId: string,
-    reason: string
-  ) => Promise<void>
-  /** Participante u organizador: una calificación por usuario (ventana 48 h). */
-  submitMatchRating: (
-    opportunityId: string,
-    payload: {
-      organizerRating: number | null
-      matchRating: number
-      levelRating: number
-      comment?: string
-    }
-  ) => Promise<void>
-  users: User[]
-  getFilteredMatches: (gender: Gender) => MatchOpportunity[]
-  getFilteredUsers: (gender: Gender) => User[]
-  teams: Team[]
-  teamInvites: TeamInvite[]
-  /** Solicitudes de ingreso (como capitán o como solicitante). */
-  teamJoinRequests: TeamJoinRequest[]
-  rivalChallenges: RivalChallenge[]
-  createTeam: (team: Omit<Team, 'id' | 'createdAt'>) => Promise<void>
-  /** Capitán: actualizar nombre, descripción y/o logo (logo_url en DB; archivo en Storage `team-logos`). */
-  updateTeam: (
-    teamId: string,
-    updates: {
-      name?: string
-      description?: string | null
-      logo?: string | null
-    }
-  ) => Promise<void>
-  /** Capitán: eliminar equipo completo (cascade). */
-  deleteTeam: (teamId: string) => Promise<void>
-  /** Miembro (no capitán): retirarse del equipo. */
-  leaveTeam: (teamId: string) => Promise<void>
-  /** Capitán: enlace WhatsApp y reglas internas (tabla privada; solo miembros leen). */
-  updateTeamPrivateSettings: (
-    teamId: string,
-    payload: { whatsappInviteUrl?: string | null; rulesText?: string | null }
-  ) => Promise<TeamPrivateSettings | null>
-  createRivalChallenge: (payload: {
-    challengerTeam: Team
-    mode: 'direct' | 'open'
-    challengedTeam?: Team
-    message?: string
-    venue: string
-    location: string
-    dateTime: Date
-    level: Level
-  }) => Promise<void>
-  respondToRivalChallenge: (
-    challengeId: string,
-    accept: boolean,
-    myTeamId?: string
-  ) => Promise<void>
-  acceptRivalOpportunityWithTeam: (
-    opportunityId: string,
-    myTeamId: string
-  ) => Promise<void>
-  inviteToTeam: (teamId: string, userId: string) => Promise<void>
-  respondToInvite: (inviteId: string, accept: boolean) => Promise<void>
-  /** Jugador: pedir unirse a un equipo (mismo género, no miembro). */
-  requestToJoinTeam: (teamId: string) => Promise<void>
-  /** Capitán: aceptar o rechazar solicitud. */
-  respondToJoinRequest: (requestId: string, accept: boolean) => Promise<void>
-  /** Jugador: retirar solicitud pendiente. */
-  cancelJoinRequest: (requestId: string) => Promise<void>
-  /** Solo capitán principal: designar o quitar vicecapitán (debe ser miembro confirmado). */
-  setTeamViceCaptain: (
-    teamId: string,
-    viceUserId: string | null
-  ) => Promise<void>
-  /** Capitán o vice: quitar miembro (no al capitán principal). */
-  removeTeamMember: (teamId: string, memberUserId: string) => Promise<void>
-  getUserTeams: () => Team[]
-  getFilteredTeams: (gender: Gender) => Team[]
-  /** Oportunidades donde el usuario se apuntó como participante (no incluye ser creador). */
-  participatingOpportunityIds: string[]
-  selectedChatOpportunityId: string | null
-  setSelectedChatOpportunityId: (id: string | null) => void
-  selectedMatchOpportunityId: string | null
-  setSelectedMatchOpportunityId: (id: string | null) => void
-  /** Perfil público (sheet) del jugador seleccionado por tap/click. */
-  publicProfileUserId: string | null
-  openPublicProfile: (userId: string) => void
-  closePublicProfile: () => void
-  /** Al navegar a Partidos (ej. campana), abrir esta pestaña una vez. */
-  initialMatchesTab: MatchesHubTab | null
-  setInitialMatchesTab: (tab: MatchesHubTab | null) => void
-  /** Deep link: abrir detalle de equipo en Equipos (se consume al aplicar). */
-  teamsDetailFocusTeamId: string | null
-  setTeamsDetailFocusTeamId: (id: string | null) => void
-}
-
-const AppContext = createContext<AppContextType | undefined>(undefined)
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [authLoading, setAuthLoading] = useState(true)
@@ -402,6 +195,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const isAuthenticated = currentUser !== null
 
+  const currentUserRef = useRef<User | null>(null)
+  currentUserRef.current = currentUser
+
+  const profilePhotoCacheBustRef = useRef(0)
+  profilePhotoCacheBustRef.current = profilePhotoCacheBust
+  const profilePhotoEpochByUserRef = useRef<Record<string, number>>({})
+  profilePhotoEpochByUserRef.current = profilePhotoEpochByUser
+
   const openProfileEditor = useCallback(() => {
     setOnboardingSource('profile_edit')
     setCurrentScreen('onboarding')
@@ -411,54 +212,56 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setProfilePhotoCacheBust((n) => n + 1)
   }, [])
 
-  const avatarDisplayUrl = useCallback(
+  /** Identidad estable; lee bust/epoch/user actuales vía refs (menos invalidación de contextos). */
+  const avatarDisplayUrl = useStableCallback(
     (url: string | null | undefined, userId?: string | null) => {
       const raw = url?.trim()
       if (!raw) return DEFAULT_AVATAR
       if (raw === DEFAULT_AVATAR) return DEFAULT_AVATAR
       let v = 0
-      if (userId && currentUser?.id === userId) {
-        v += profilePhotoCacheBust
+      const selfId = currentUserRef.current?.id
+      if (userId && selfId === userId) {
+        v += profilePhotoCacheBustRef.current
       }
       if (userId) {
-        v += profilePhotoEpochByUser[userId] ?? 0
+        v += profilePhotoEpochByUserRef.current[userId] ?? 0
       }
       return cacheBustPublicUrl(raw, v)
-    },
-    [currentUser?.id, profilePhotoCacheBust, profilePhotoEpochByUser]
+    }
   )
 
-  const updateProfilePhoto = useCallback(
-    async (file: File) => {
-      if (!currentUser || !isSupabaseConfigured()) {
-        return { ok: false, error: 'Sesión no disponible.' }
-      }
-      const supabase = createClient()
-      const up = await uploadProfileAvatarFile(supabase, currentUser.id, file)
-      if ('error' in up) {
-        toast.error(up.error)
-        return { ok: false, error: up.error }
-      }
-      const { error } = await supabase
-        .from('profiles')
-        .update({ photo_url: up.publicUrl })
-        .eq('id', currentUser.id)
-      if (error) {
-        toast.error(error.message)
-        return { ok: false, error: error.message }
-      }
-      setCurrentUser({
-        ...currentUser,
-        photo: up.publicUrl,
-      })
-      bumpProfilePhotoCache()
-      toast.success('Foto de perfil actualizada')
-      return { ok: true }
-    },
-    [currentUser, bumpProfilePhotoCache]
-  )
+  const updateProfilePhoto = useStableCallback(async (file: File) => {
+    const u = currentUserRef.current
+    if (!u || !isSupabaseConfigured()) {
+      return { ok: false, error: 'Sesión no disponible.' }
+    }
+    const supabase = getBrowserSupabase()
+    if (!supabase) {
+      return { ok: false, error: 'Cliente no disponible.' }
+    }
+    const up = await uploadProfileAvatarFile(supabase, u.id, file)
+    if ('error' in up) {
+      toast.error(up.error)
+      return { ok: false, error: up.error }
+    }
+    const { error } = await supabase
+      .from('profiles')
+      .update({ photo_url: up.publicUrl })
+      .eq('id', u.id)
+    if (error) {
+      toast.error(error.message)
+      return { ok: false, error: error.message }
+    }
+    setCurrentUser({
+      ...u,
+      photo: up.publicUrl,
+    })
+    bumpProfilePhotoCache()
+    toast.success('Foto de perfil actualizada')
+    return { ok: true }
+  })
 
-  const login = async (
+  const login = useStableCallback(async (
     email: string,
     password: string,
     isSignUp: boolean
@@ -478,7 +281,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
     try {
-      const supabase = createClient()
+      const supabase = getBrowserSupabase()
+      if (!supabase) {
+        return { ok: false, error: 'Cliente no disponible.' }
+      }
       const emailTrimmed = email.trim()
       if (isSignUp) {
         const { data, error } = await supabase.auth.signUp({
@@ -575,7 +381,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const msg = e instanceof Error ? e.message : 'Error de conexión'
       return { ok: false, error: msg }
     }
-  }
+  })
 
   const loginWithGoogle = useCallback(async (): Promise<{
     ok: boolean
@@ -589,7 +395,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
     try {
-      const supabase = createClient()
+      const supabase = getBrowserSupabase()
+      if (!supabase) {
+        return { ok: false, error: 'Cliente no disponible.' }
+      }
       const origin = getPublicSiteOrigin()
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -605,10 +414,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const logout = async () => {
+  const logout = useStableCallback(async () => {
     try {
       if (isSupabaseConfigured()) {
-        const supabase = createClient()
+        const supabase = getBrowserSupabase()
+        if (!supabase) return
         await supabase.auth.signOut()
       }
     } catch {
@@ -636,9 +446,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSelectedChatOpportunityId(null)
     setTeamsDetailFocusTeamId(null)
     setCurrentScreen('landing')
-  }
+  })
 
-  const completeOnboarding = async (data: OnboardingData) => {
+  const completeOnboarding = useStableCallback(async (data: OnboardingData) => {
     if (!currentUser || !isSupabaseConfigured()) return
     if (currentUser.accountType !== 'player') return
     const photo = data.photo?.trim()
@@ -659,7 +469,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       )
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const birth = parseBirthDateLocal(data.birthDate)
     let nextCityId = data.cityId?.trim()
       ? data.cityId.trim()
@@ -726,12 +537,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setCurrentScreen('home')
       }
     }
-  }
+  })
 
-  const completeVenueOnboarding = async (data: VenueOnboardingData) => {
+  const completeVenueOnboarding = useStableCallback(async (data: VenueOnboardingData) => {
     if (!currentUser || !isSupabaseConfigured()) return
     if (currentUser.accountType !== 'venue') return
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const existing = await fetchVenueForOwner(supabase, currentUser.id)
     if (existing) {
       setCurrentScreen('venueDashboard')
@@ -777,9 +589,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
     toast.success('Centro creado')
     setCurrentScreen('venueDashboard')
-  }
+  })
 
-  const addMatchOpportunity = async (
+  const addMatchOpportunity = useStableCallback(async (
     m: Omit<MatchOpportunity, 'id' | 'createdAt'> & {
       creatorIsGoalkeeper?: boolean
       bookCourtSlot?: boolean
@@ -810,101 +622,60 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
     }
-    const supabase = createClient()
-
-    let reservationId: string | null = null
-    if (
-      m.sportsVenueId &&
-      m.bookCourtSlot === true &&
-      m.type !== 'rival'
-    ) {
-      const dur = m.courtSlotMinutes ?? 60
-      const end = new Date(m.dateTime.getTime() + dur * 60 * 1000)
-      const { data: resRpc, error: rpcErr } = await supabase.rpc(
-        'book_venue_slot',
-        {
-          p_venue_id: m.sportsVenueId,
-          p_starts_at: m.dateTime.toISOString(),
-          p_ends_at: end.toISOString(),
-        }
-      )
-      if (rpcErr) {
-        if (rpcErr.message.includes('no_court')) {
-          toast.error('No hay cancha libre en ese horario en este centro.')
-          return {
-            ok: false as const,
-            code: 'no_court',
-            error: 'No hay cancha libre en ese horario en este centro.',
-          }
-        }
-        toast.error(rpcErr.message)
-        return { ok: false as const, error: rpcErr.message }
-      }
-      reservationId = resRpc as string
+    const supabase = getBrowserSupabase()
+    if (!supabase) {
+      return { ok: false as const, error: 'Cliente no disponible.' }
     }
-
     const cityId = m.cityId || currentUser.cityId
-    const insert: Record<string, unknown> = {
-      type: m.type,
-      title: m.title,
-      description: m.description ?? null,
-      location: m.location,
-      venue: m.venue,
-      city_id: cityId,
-      date_time: m.dateTime.toISOString(),
-      level: m.level,
-      creator_id: m.creatorId,
-      team_name: m.teamName ?? null,
-      players_needed: m.playersNeeded ?? null,
-      players_joined: m.playersJoined ?? 0,
-      players_seek_profile:
-        m.type === 'players' && m.playersSeekProfile
-          ? m.playersSeekProfile
-          : null,
-      gender: m.gender,
-      status: m.status,
-      sports_venue_id: m.sportsVenueId ?? null,
-      venue_reservation_id: reservationId,
-      private_revuelta_team_id: m.privateRevueltaTeamId ?? null,
-    }
-    const { data, error } = await supabase
-      .from('match_opportunities')
-      .insert(insert)
-      .select(MATCH_OPPORTUNITY_SELECT_WITH_GEO)
-      .single()
-
+    const { data, error } = await supabase.rpc(
+      'create_match_opportunity_with_optional_reservation',
+      {
+        p_type: m.type,
+        p_title: m.title,
+        p_description: m.description ?? null,
+        p_location: m.location,
+        p_venue: m.venue,
+        p_city_id: cityId,
+        p_date_time: m.dateTime.toISOString(),
+        p_level: m.level,
+        p_team_name: m.teamName ?? null,
+        p_players_needed: m.playersNeeded ?? null,
+        p_players_joined: m.playersJoined ?? 0,
+        p_players_seek_profile:
+          m.type === 'players' && m.playersSeekProfile ? m.playersSeekProfile : null,
+        p_gender: m.gender,
+        p_status: m.status,
+        p_sports_venue_id: m.sportsVenueId ?? null,
+        p_book_court_slot: m.bookCourtSlot === true,
+        p_court_slot_minutes: m.courtSlotMinutes ?? 60,
+        p_private_revuelta_team_id: m.privateRevueltaTeamId ?? null,
+        p_creator_is_goalkeeper: m.creatorIsGoalkeeper === true,
+      }
+    )
     if (error) {
       toast.error(error.message)
       return { ok: false as const, error: error.message }
     }
-
-    const row = data as MatchOpportunityRow
-    const oppId = row.id
-
-    if (reservationId) {
-      const { error: linkErr } = await supabase
-        .from('venue_reservations')
-        .update({ match_opportunity_id: oppId })
-        .eq('id', reservationId)
-      if (linkErr) {
-        toast.error(linkErr.message)
+    const payload = data as
+      | { ok?: boolean; error?: string; message?: string }
+      | null
+      | undefined
+    if (!payload?.ok) {
+      const code = payload?.error ?? 'unknown'
+      if (code === 'no_court') {
+        toast.error('No hay cancha libre en ese horario en este centro.')
+        return {
+          ok: false as const,
+          code: 'no_court',
+          error: 'No hay cancha libre en ese horario en este centro.',
+        }
       }
-    }
-
-    if (m.type === 'open') {
-      const { error: partErr } = await supabase
-        .from('match_opportunity_participants')
-        .insert({
-          opportunity_id: oppId,
-          user_id: currentUser.id,
-          status: 'confirmed',
-          is_goalkeeper: m.creatorIsGoalkeeper === true,
-        })
-      if (partErr) {
-        toast.error(partErr.message)
-        await supabase.from('match_opportunities').delete().eq('id', oppId)
-        return { ok: false as const, error: partErr.message }
-      }
+      const msg =
+        typeof payload?.message === 'string' && payload.message.trim()
+          ? payload.message
+          : 'No se pudo crear el partido.'
+      toast.error(msg)
+      return { ok: false as const, error: msg }
     }
 
     const [matches, partIds] = await Promise.all([
@@ -914,9 +685,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setMatchOpportunities(matches)
     setParticipatingOpportunityIds(partIds)
     return { ok: true as const }
-  }
+  })
 
-  const reserveVenueOnly = async ({
+  const reserveVenueOnly = useStableCallback(async ({
     sportsVenueId,
     startsAt,
     durationMinutes,
@@ -933,7 +704,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toastReadOnly(ro.reason)
       return { ok: false as const, error: ro.reason || 'Cuenta restringida.' }
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) {
+      return { ok: false as const, error: 'Cliente no disponible.' }
+    }
     const end = new Date(startsAt.getTime() + durationMinutes * 60 * 1000)
     const { error } = await supabase.rpc('book_venue_slot', {
       p_venue_id: sportsVenueId,
@@ -954,9 +728,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     toast.success('Reserva creada en estado pendiente de pago.')
     return { ok: true as const }
-  }
+  })
 
-  const joinMatchOpportunity = async (
+  const joinMatchOpportunity = useStableCallback(async (
     opportunityId: string,
     options?: { isGoalkeeper?: boolean }
   ) => {
@@ -966,7 +740,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toastReadOnly(ro.reason)
       return
     }
-    const supabase = createClient()
     const opp = matchOpportunities.find((m) => m.id === opportunityId)
     if (opp?.creatorId === currentUser.id) {
       toast.info('Eres el organizador de este partido.')
@@ -981,152 +754,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const midnight = new Date()
-    midnight.setHours(0, 0, 0, 0)
-    if (opp.dateTime.getTime() < midnight.getTime()) {
-      toast.error('Este partido ya pasó. Ya no se puede unir.')
-      return
-    }
-    const cap = opp.playersNeeded ?? 0
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const isGkRequest = options?.isGoalkeeper === true
-
-    let insertAsGk = false
-
-    if (opp.type === 'open') {
-      if (opp.privateRevueltaTeamId) {
-        const privTeam = teams.find((t) => t.id === opp.privateRevueltaTeamId)
-        if (!userIsConfirmedMemberOfTeam(privTeam, currentUser.id)) {
-          toast.error(
-            'Revuelta privada de equipo: pedí ingreso con «Solicitar» y el organizador del partido te aceptará.'
-          )
-          return
-        }
-      }
-      const { data: partRows, error: partQErr } = await supabase
-        .from('match_opportunity_participants')
-        .select('is_goalkeeper, status')
-        .eq('opportunity_id', opportunityId)
-      if (partQErr) {
-        toast.error(partQErr.message)
-        return
-      }
-      let gkCount = 0
-      let fieldCount = 0
-      let joinedDb = 0
-      for (const p of partRows ?? []) {
-        const st = p.status as string
-        if (st !== 'pending' && st !== 'confirmed') continue
-        joinedDb++
-        if (p.is_goalkeeper === true) gkCount++
-        else fieldCount++
-      }
-
-      if (cap > 0 && joinedDb >= cap) {
-        toast.error('No quedan cupos en este partido.')
-        return
-      }
-
-      const gkLeft = Math.max(0, 2 - gkCount)
-      const fieldCap = Math.max(0, cap - 2)
-      const fieldLeft = Math.max(0, fieldCap - fieldCount)
-
-      insertAsGk = isGkRequest
-      if (insertAsGk) {
-        if (gkLeft <= 0) {
-          toast.error('Solo quedan cupos de jugadores.')
-          return
-        }
-      } else {
-        if (fieldLeft <= 0 && gkLeft > 0) {
-          toast.error('Solo quedan cupos de arquero.')
-          return
-        }
-        if (fieldLeft <= 0) {
-          toast.error('No quedan cupos en este partido.')
-          return
-        }
-      }
-    } else if (opp.type === 'players') {
-      const { data: partRows, error: partQErr } = await supabase
-        .from('match_opportunity_participants')
-        .select('is_goalkeeper, status')
-        .eq('opportunity_id', opportunityId)
-      if (partQErr) {
-        toast.error(partQErr.message)
-        return
-      }
-      let gkCount = 0
-      let fieldCount = 0
-      let joinedDb = 0
-      for (const p of partRows ?? []) {
-        const st = p.status as string
-        if (st !== 'pending' && st !== 'confirmed') continue
-        joinedDb++
-        if (p.is_goalkeeper === true) gkCount++
-        else fieldCount++
-      }
-      if (cap > 0 && joinedDb >= cap) {
-        toast.error('No quedan cupos en este partido.')
-        return
-      }
-      const rules = playersJoinRules(opp)
-      if (rules.kind === 'legacy') {
-        insertAsGk = false
-      } else if (rules.kind === 'gk_only') {
-        if (!isGkRequest) {
-          toast.error('Esta búsqueda solo admite arqueros.')
-          return
-        }
-        if (gkCount >= rules.max) {
-          toast.error('Ya no quedan cupos de arquero.')
-          return
-        }
-        insertAsGk = true
-      } else if (rules.kind === 'field_only') {
-        if (isGkRequest) {
-          toast.error('Solo buscan jugadores de campo.')
-          return
-        }
-        if (fieldCount >= rules.max) {
-          toast.error('No quedan cupos de jugador de campo.')
-          return
-        }
-        insertAsGk = false
-      } else {
-        const maxField = rules.maxField
-        if (isGkRequest) {
-          if (gkCount >= 1) {
-            toast.error('Ya hay un arquero; en esta búsqueda solo cabe uno.')
-            return
-          }
-          insertAsGk = true
-        } else {
-          if (fieldCount >= maxField) {
-            toast.error('No quedan cupos de jugador de campo.')
-            return
-          }
-          insertAsGk = false
-        }
-      }
-    } else {
-      if (cap > 0 && (opp.playersJoined ?? 0) >= cap) {
-        toast.error('No quedan cupos en este partido.')
-        return
-      }
-    }
-
-    const { error } = await supabase.from('match_opportunity_participants').insert({
-      opportunity_id: opportunityId,
-      user_id: currentUser.id,
-      status: 'confirmed',
-      is_goalkeeper: insertAsGk,
+    const { data, error } = await supabase.rpc('join_match_opportunity', {
+      p_opportunity_id: opportunityId,
+      p_is_goalkeeper: isGkRequest,
     })
     if (error) {
-      if (error.code === '23505') {
-        toast.info('Ya estás registrado en este partido.')
-      } else {
-        toast.error(error.message)
+      toast.error(error.message)
+      return
+    }
+    const payload = data as
+      | { ok?: boolean; error?: string; message?: string }
+      | null
+      | undefined
+    if (!payload?.ok) {
+      const code = payload?.error ?? 'unknown'
+      if (code === 'private_revuelta_requires_request') {
+        toast.error(
+          'Revuelta privada de equipo: pedí ingreso con «Solicitar» y el organizador del partido te aceptará.'
+        )
+        return
       }
+      if (code === 'past') {
+        toast.error('Este partido ya pasó. Ya no se puede unir.')
+        return
+      }
+      const msg =
+        typeof payload?.message === 'string' && payload.message.trim()
+          ? payload.message
+          : 'No se pudo unir al partido.'
+      toast.error(msg)
       return
     }
     const [partIds, matches] = await Promise.all([
@@ -1146,9 +805,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? `¡Te uniste al partido! Coordina en el chat. ${payLine}`
         : '¡Te uniste al partido! Coordina aquí con el grupo.'
     )
-  }
+  })
 
-  const requestJoinPrivateRevuelta = async (
+  const requestJoinPrivateRevuelta = useStableCallback(async (
     opportunityId: string,
     isGoalkeeper: boolean
   ): Promise<{ ok: boolean; error?: string }> => {
@@ -1170,33 +829,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.info('Sos del equipo: unite con el flujo normal.')
       return { ok: false, error: 'Miembro del equipo.' }
     }
-    const supabase = createClient()
-    const { error } = await supabase.from('revuelta_external_join_requests').insert({
-      opportunity_id: opportunityId,
-      requester_id: currentUser.id,
-      is_goalkeeper: isGoalkeeper,
-      status: 'pending',
+    const supabase = getBrowserSupabase()
+    if (!supabase) {
+      return { ok: false, error: 'Cliente no disponible.' }
+    }
+    const { data, error } = await supabase.rpc('request_revuelta_external_join', {
+      p_opportunity_id: opportunityId,
+      p_is_goalkeeper: isGoalkeeper,
     })
     if (error) {
-      if (error.code === '23505') {
-        toast.info('Ya tenés una solicitud pendiente para este partido.')
-        return { ok: false, error: error.message }
-      }
       toast.error(error.message)
       return { ok: false, error: error.message }
     }
+    const payload = data as
+      | { ok?: boolean; error?: string; message?: string }
+      | null
+      | undefined
+    if (!payload?.ok) {
+      const code = payload?.error ?? 'unknown'
+      if (code === 'duplicate') {
+        toast.info('Ya tenés una solicitud pendiente para este partido.')
+        return { ok: false, error: 'duplicate' }
+      }
+      if (code === 'past') {
+        toast.error('Este partido ya pasó. Ya no se puede solicitar.')
+        return { ok: false, error: 'past' }
+      }
+      const msg =
+        typeof payload?.message === 'string' && payload.message.trim()
+          ? payload.message
+          : 'No se pudo enviar la solicitud.'
+      toast.error(msg)
+      return { ok: false, error: msg }
+    }
     toast.success('Solicitud enviada. El organizador del partido la revisará.')
     return { ok: true }
-  }
+  })
 
-  const respondToRevueltaExternalRequest = async (
+  const respondToRevueltaExternalRequest = useStableCallback(async (
     requestId: string,
     accept: boolean
   ): Promise<{ ok: boolean; error?: string }> => {
     if (!currentUser || !isSupabaseConfigured()) {
       return { ok: false, error: 'Sesión no disponible.' }
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) {
+      return { ok: false, error: 'Cliente no disponible.' }
+    }
     const fn = accept
       ? 'accept_revuelta_external_request'
       : 'decline_revuelta_external_request'
@@ -1222,9 +902,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setMatchOpportunities(matches)
     setParticipatingOpportunityIds(partIds)
     return { ok: true }
-  }
+  })
 
-  const randomizeRevueltaTeams = async (
+  const randomizeRevueltaTeams = useStableCallback(async (
     opportunityId: string,
     colorHexA: string,
     colorHexB: string
@@ -1255,7 +935,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.error('Completa todos los cupos antes de sortear equipos.')
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const { data: parts, error: pErr } = await supabase
       .from('match_opportunity_participants')
       .select('user_id, is_goalkeeper, status')
@@ -1314,20 +995,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const matches = await fetchMatchOpportunities(supabase)
     setMatchOpportunities(matches)
     toast.success('¡Equipos sorteados! Equipo A y Equipo B listos.')
-  }
+  })
 
-  const refreshCurrentUserProfile = useCallback(async () => {
+  const refreshCurrentUserProfile = useStableCallback(async () => {
     if (!isSupabaseConfigured()) return
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const {
       data: { user },
     } = await supabase.auth.getUser()
     if (!user?.email) return
     const profile = await fetchProfileForUser(supabase, user.id, user.email)
     if (profile) setCurrentUser(profile)
-  }, [])
+  })
 
-  const submitRivalCaptainVote = async (
+  const submitRivalCaptainVote = useStableCallback(async (
     opportunityId: string,
     vote: RivalResult
   ) => {
@@ -1337,7 +1019,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toastReadOnly(ro.reason)
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const { error } = await supabase.rpc('submit_rival_captain_vote', {
       p_opportunity_id: opportunityId,
       p_vote: vote,
@@ -1357,14 +1040,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setMatchOpportunities(matches)
     await refreshCurrentUserProfile()
     toast.success('Voto registrado.')
-  }
+  })
 
-  const finalizeRivalOrganizerOverride = async (
+  const finalizeRivalOrganizerOverride = useStableCallback(async (
     opportunityId: string,
     result: RivalResult
   ) => {
     if (!currentUser || !isSupabaseConfigured()) return
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const { error } = await supabase.rpc('finalize_rival_organizer_override', {
       p_opportunity_id: opportunityId,
       p_result: result,
@@ -1386,9 +1070,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setMatchOpportunities(matches)
     await refreshCurrentUserProfile()
     toast.success('Resultado confirmado. Ventana de calificaciones 48 h.')
-  }
+  })
 
-  const finalizeMatchOpportunity = async (
+  const finalizeMatchOpportunity = useStableCallback(async (
     opportunityId: string,
     outcome:
       | { kind: 'casual' }
@@ -1425,8 +1109,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return false
     }
 
-    const supabase = createClient()
-
+    const supabase = getBrowserSupabase()
+    if (!supabase) return false
     if (opp.type === 'rival' && outcome.kind === 'rival') {
       const { error } = await supabase.rpc('finalize_rival_match', {
         p_opportunity_id: opportunityId,
@@ -1492,9 +1176,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await refreshCurrentUserProfile()
     toast.success('Partido finalizado. Los jugadores pueden calificar en las próximas 48 h.')
     return true
-  }
+  })
 
-  const suspendMatchOpportunity = async (
+  const suspendMatchOpportunity = useStableCallback(async (
     opportunityId: string,
     reason: string
   ) => {
@@ -1519,7 +1203,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const now = new Date().toISOString()
     const { error } = await supabase
       .from('match_opportunities')
@@ -1540,9 +1225,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const matches = await fetchMatchOpportunities(supabase)
     setMatchOpportunities(matches)
     toast.success('Partido suspendido.')
-  }
+  })
 
-  const submitMatchRating = async (
+  const submitMatchRating = useStableCallback(async (
     opportunityId: string,
     payload: {
       organizerRating: number | null
@@ -1557,7 +1242,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toastReadOnly(ro.reason)
       return
     }
-    const { error } = await createClient()
+    const sbRating = getBrowserSupabase()
+    if (!sbRating) return
+    const { error } = await sbRating
       .from('match_opportunity_ratings')
       .insert({
         opportunity_id: opportunityId,
@@ -1573,9 +1260,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
     toast.success('¡Gracias por tu calificación!')
-  }
+  })
 
-  const getFilteredMatches = (gender: Gender) => {
+  const getFilteredMatches = useStableCallback((gender: Gender) => {
     const userRegion = currentUser?.regionId
     return matchOpportunities.filter((m) => {
       if (m.gender !== gender) return false
@@ -1583,67 +1270,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!m.cityRegionId) return true
       return m.cityRegionId === userRegion
     })
-  }
+  })
 
-  const getFilteredUsers = (gender: Gender) => {
+  const getFilteredUsers = useStableCallback((gender: Gender) => {
     return users.filter(
       (u) => u.gender === gender && u.id !== currentUser?.id
     )
-  }
+  })
 
-  const createTeam = async (team: Omit<Team, 'id' | 'createdAt'>) => {
+  const createTeam = useStableCallback(async (team: Omit<Team, 'id' | 'createdAt'>) => {
     if (!currentUser || !isSupabaseConfigured()) return
     const ro = isUserReadOnly(currentUser)
     if (ro.readonly) {
       toastReadOnly(ro.reason)
       return
     }
-    const supabase = createClient()
-    const { data: teamRow, error } = await supabase
-      .from('teams')
-      .insert({
-        name: team.name,
-        logo_url: team.logo ?? null,
-        level: team.level,
-        captain_id: team.captainId,
-        city: team.city,
-        city_id: team.cityId,
-        gender: team.gender,
-        description: team.description ?? null,
-      })
-      .select(TEAM_SELECT_WITH_GEO)
-      .single()
-
-    if (error) {
-      if (isTeamLimitReached(error)) {
-        toastTeamLimitReached()
-      } else {
-        toast.error(error.message)
-      }
-      return
-    }
-
-    const captain =
-      team.members.find((m) => m.id === currentUser.id) ?? team.members[0]
-    if (!captain) {
-      toast.error('No se pudo determinar el capitán del equipo.')
-      return
-    }
-
-    const { error: memErr } = await supabase.from('team_members').insert({
-      team_id: teamRow.id,
-      user_id: captain.id,
-      position: captain.position,
-      photo_url: captain.photo,
-      status: 'confirmed',
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
+    const { data, error } = await supabase.rpc('create_team_with_captain', {
+      p_name: team.name,
+      p_logo_url: team.logo ?? null,
+      p_level: team.level,
+      p_city: team.city,
+      p_city_id: team.cityId,
+      p_gender: team.gender,
+      p_description: team.description ?? null,
     })
-
-    if (memErr) {
-      if (isTeamLimitReached(memErr)) {
-        toastTeamLimitReached()
-      } else {
-      toast.error(memErr.message)
-      }
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    const payload = data as
+      | { ok?: boolean; error?: string; message?: string; teamId?: string }
+      | null
+      | undefined
+    if (!payload?.ok) {
+      const msg =
+        typeof payload?.message === 'string' && payload.message.trim()
+          ? payload.message
+          : 'No se pudo crear el equipo.'
+      if (msg.includes('team_limit_reached')) toastTeamLimitReached()
+      else toast.error(msg)
       return
     }
 
@@ -1653,9 +1320,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ])
     setTeams(freshTeams)
     setTeamInvites(freshInvites)
-  }
+  })
 
-  const updateTeam = async (
+  const updateTeam = useStableCallback(async (
     teamId: string,
     updates: {
       name?: string
@@ -1669,7 +1336,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toastReadOnly(ro.reason)
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const row: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     }
@@ -1706,16 +1374,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const freshTeams = await fetchTeamsWithMembers(supabase)
     setTeams(freshTeams)
     toast.success('Equipo actualizado')
-  }
+  })
 
-  const deleteTeam = async (teamId: string) => {
+  const deleteTeam = useStableCallback(async (teamId: string) => {
     if (!currentUser || !isSupabaseConfigured()) return
     const ro = isUserReadOnly(currentUser)
     if (ro.readonly) {
       toastReadOnly(ro.reason)
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const team = teams.find((t) => t.id === teamId)
     if (!team || team.captainId !== currentUser.id) {
       toast.error('Solo el capitán puede eliminar el equipo.')
@@ -1729,16 +1398,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast.success('Equipo eliminado')
     const freshTeams = await fetchTeamsWithMembers(supabase)
     setTeams(freshTeams)
-  }
+  })
 
-  const leaveTeam = async (teamId: string) => {
+  const leaveTeam = useStableCallback(async (teamId: string) => {
     if (!currentUser || !isSupabaseConfigured()) return
     const ro = isUserReadOnly(currentUser)
     if (ro.readonly) {
       toastReadOnly(ro.reason)
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const team = teams.find((t) => t.id === teamId)
     if (team?.captainId === currentUser.id) {
       toast.error('El capitán no puede retirarse; debe eliminar el equipo.')
@@ -1762,9 +1432,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTeams(freshTeams)
     setTeamInvites(freshInvites)
     setTeamJoinRequests(joinReqs)
-  }
+  })
 
-  const updateTeamPrivateSettings = async (
+  const updateTeamPrivateSettings = useStableCallback(async (
     teamId: string,
     payload: { whatsappInviteUrl?: string | null; rulesText?: string | null }
   ): Promise<TeamPrivateSettings | null> => {
@@ -1774,7 +1444,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toastReadOnly(ro.reason)
       return null
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return null
     const team = teams.find((t) => t.id === teamId)
     if (!team || team.captainId !== currentUser.id) return null
 
@@ -1814,9 +1485,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       whatsappInviteUrl: nextWhatsapp,
       rulesText: nextRules,
     }
-  }
+  })
 
-  const createRivalChallenge = async (payload: {
+  const createRivalChallenge = useStableCallback(async (payload: {
     challengerTeam: Team
     mode: 'direct' | 'open'
     challengedTeam?: Team
@@ -1832,7 +1503,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toastReadOnly(ro.reason)
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     if (!userIsTeamStaffCaptain(payload.challengerTeam, currentUser.id)) {
       toast.error(
         'Solo el capitán o el vicecapitán del equipo pueden crear un desafío.'
@@ -1854,70 +1526,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
       (await resolveCityIdFromLabel(supabase, payload.location)) ??
       currentUser.cityId
 
-    const { data: oppData, error: oppErr } = await supabase
-      .from('match_opportunities')
-      .insert({
-        type: 'rival',
-        title,
-        description,
-        location: payload.location,
-        venue: payload.venue,
-        city_id: rivalCityId,
-        date_time: payload.dateTime.toISOString(),
-        level: payload.level,
-        creator_id: currentUser.id,
-        team_name: payload.challengerTeam.name,
-        gender: currentUser.gender,
-        status: 'pending',
-      })
-      .select(MATCH_OPPORTUNITY_SELECT_WITH_GEO)
-      .single()
-
-    if (oppErr || !oppData) {
-      toast.error(oppErr?.message ?? 'No se pudo crear el desafío')
-      return
-    }
-
-    const challengeInsert = {
-      opportunity_id: oppData.id,
-      challenger_team_id: payload.challengerTeam.id,
-      challenger_captain_id: currentUser.id,
-      challenged_team_id:
+    const { data, error } = await supabase.rpc('create_rival_challenge', {
+      p_mode: payload.mode,
+      p_challenger_team_id: payload.challengerTeam.id,
+      p_challenged_team_id:
         payload.mode === 'direct' ? payload.challengedTeam?.id ?? null : null,
-      challenged_captain_id:
-        payload.mode === 'direct'
-          ? payload.challengedTeam?.captainId ?? null
-          : null,
-      mode: payload.mode,
-      status: 'pending',
+      p_venue: payload.venue,
+      p_location: payload.location,
+      p_city_id: rivalCityId,
+      p_date_time: payload.dateTime.toISOString(),
+      p_level: payload.level,
+      p_title: title,
+      p_description: description,
+    })
+    if (error) {
+      toast.error(error.message)
+      return
     }
-    const { error: chErr } = await supabase
-      .from('rival_challenges')
-      .insert(challengeInsert)
-
-    if (chErr) {
-      toast.error(chErr.message)
+    const rpcPayload = data as
+      | { ok?: boolean; error?: string; message?: string; opportunityId?: string }
+      | null
+      | undefined
+    if (!rpcPayload?.ok) {
+      toast.error(
+        (typeof rpcPayload?.message === 'string' && rpcPayload.message) ||
+          'No se pudo crear el desafío'
+      )
       return
     }
 
-    const row = oppData as MatchOpportunityRow
-    const mapped = mapMatchOpportunityFromDb(row, {
-      id: currentUser.id,
-      name: currentUser.name,
-      photo_url: currentUser.photo,
-    })
-    setMatchOpportunities((prev) => [mapped, ...prev])
-
+    // Estado fuente: refrescar desde DB para mantener consistencia (evita duplicar lógica de mapeo).
     const freshChallenges = await fetchRivalChallengesForUser(supabase, currentUser.id)
     setRivalChallenges(freshChallenges)
+    const matches = await fetchMatchOpportunities(supabase)
+    setMatchOpportunities(matches)
     toast.success(
       payload.mode === 'direct'
         ? `Desafío enviado a ${payload.challengedTeam?.name ?? 'equipo rival'}`
         : 'Búsqueda de rival publicada'
     )
-  }
+  })
 
-  const respondToRivalChallenge = async (
+  const respondToRivalChallenge = useStableCallback(async (
     challengeId: string,
     accept: boolean,
     myTeamId?: string
@@ -1928,78 +1578,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toastReadOnly(ro.reason)
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const challenge = rivalChallenges.find((c) => c.id === challengeId)
     if (!challenge || challenge.status !== 'pending') {
       toast.error('Desafío no disponible.')
       return
     }
 
-    if (!accept) {
-      const { error } = await supabase
-        .from('rival_challenges')
-        .update({
-          status: 'declined',
-          responded_at: new Date().toISOString(),
-          accepted_team_id: null,
-          accepted_captain_id: currentUser.id,
-        })
-        .eq('id', challengeId)
-      if (error) toast.error(error.message)
-      else toast.success('Desafío rechazado.')
-    } else {
-      let acceptedTeamId = challenge.challengedTeamId
-      if (challenge.mode === 'open') {
-        if (!myTeamId) {
-          toast.error('Selecciona tu equipo para aceptar este desafío.')
-          return
-        }
-        acceptedTeamId = myTeamId
-      }
-
-      const acceptedTeam = teams.find((t) => t.id === acceptedTeamId)
-      const challengerTeam = teams.find((t) => t.id === challenge.challengerTeamId)
-      const updatePayload: Record<string, unknown> = {
-        status: 'accepted',
-        responded_at: new Date().toISOString(),
-        accepted_team_id: acceptedTeamId,
-        accepted_captain_id: currentUser.id,
-      }
-      if (challenge.mode === 'open') {
-        updatePayload.challenged_team_id = acceptedTeamId
-        updatePayload.challenged_captain_id = currentUser.id
-      }
-
-      const { error: updErr } = await supabase
-        .from('rival_challenges')
-        .update(updatePayload)
-        .eq('id', challengeId)
-      if (updErr) {
-        toast.error(updErr.message)
-        return
-      }
-
-      await supabase
-        .from('match_opportunities')
-        .update({
-          status: 'confirmed',
-          title:
-            challengerTeam && acceptedTeam
-              ? `${challengerTeam.name} vs ${acceptedTeam.name}`
-              : challenge.opportunityTitle,
-        })
-        .eq('id', challenge.opportunityId)
-
-      await supabase.from('match_opportunity_participants').upsert({
-        opportunity_id: challenge.opportunityId,
-        user_id: currentUser.id,
-        status: 'confirmed',
-        is_goalkeeper: false,
-      })
-
+    const { data, error } = await supabase.rpc('respond_rival_challenge', {
+      p_challenge_id: challengeId,
+      p_accept: accept,
+      p_my_team_id: myTeamId ?? null,
+    })
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    const payload = data as
+      | { ok?: boolean; error?: string; message?: string }
+      | null
+      | undefined
+    if (!payload?.ok) {
+      toast.error(
+        (typeof payload?.message === 'string' && payload.message.trim()) ||
+          'No se pudo procesar el desafío.'
+      )
+      return
+    }
+    if (accept) {
       setSelectedChatOpportunityId(challenge.opportunityId)
       setCurrentScreen('chat')
       toast.success('¡Desafío aceptado! Ya pueden coordinar en el chat.')
+    } else {
+      toast.success('Desafío rechazado.')
     }
 
     const [freshChallenges, matches, partIds] = await Promise.all([
@@ -2010,9 +1622,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRivalChallenges(freshChallenges)
     setMatchOpportunities(matches)
     setParticipatingOpportunityIds(partIds)
-  }
+  })
 
-  const acceptRivalOpportunityWithTeam = async (
+  const acceptRivalOpportunityWithTeam = useStableCallback(async (
     opportunityId: string,
     myTeamId: string
   ) => {
@@ -2035,16 +1647,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
     await respondToRivalChallenge(challenge.id, true, myTeamId)
-  }
+  })
 
-  const inviteToTeam = async (teamId: string, userId: string) => {
+  const inviteToTeam = useStableCallback(async (teamId: string, userId: string) => {
     if (!currentUser || !isSupabaseConfigured()) return
     const ro = isUserReadOnly(currentUser)
     if (ro.readonly) {
       toastReadOnly(ro.reason)
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const { error } = await supabase.from('team_invites').insert({
       team_id: teamId,
       inviter_id: currentUser.id,
@@ -2061,41 +1674,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     const invites = await fetchTeamInvitesForUser(supabase, currentUser.id)
     setTeamInvites(invites)
-  }
+  })
 
-  const respondToInvite = async (inviteId: string, accept: boolean) => {
+  const respondToInvite = useStableCallback(async (inviteId: string, accept: boolean) => {
     if (!currentUser || !isSupabaseConfigured()) return
     const ro = isUserReadOnly(currentUser)
     if (ro.readonly) {
       toastReadOnly(ro.reason)
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const invite = teamInvites.find((i) => i.id === inviteId)
     if (!invite) return
 
     if (accept) {
-      const { error: memErr } = await supabase.from('team_members').insert({
-        team_id: invite.teamId,
-        user_id: currentUser.id,
-        position: currentUser.position,
-        photo_url: currentUser.photo,
-        status: 'confirmed',
+      const { data, error } = await supabase.rpc('accept_team_invite', {
+        p_invite_id: inviteId,
       })
-      if (memErr) {
-        if (isTeamLimitReached(memErr)) {
-          toastTeamLimitReached()
-        } else {
-        toast.error(memErr.message)
-        }
+      if (error) {
+        toast.error(error.message)
         return
       }
-      const { error: updErr } = await supabase
-        .from('team_invites')
-        .update({ status: 'accepted' })
-        .eq('id', inviteId)
-      if (updErr) {
-        toast.error(updErr.message)
+      const payload = data as
+        | { ok?: boolean; error?: string; message?: string }
+        | null
+        | undefined
+      if (!payload?.ok) {
+        const msg =
+          typeof payload?.message === 'string' && payload.message.trim()
+            ? payload.message
+            : 'No se pudo aceptar la invitación.'
+        if (msg.includes('team_limit_reached')) toastTeamLimitReached()
+        else toast.error(msg)
         return
       }
     } else {
@@ -2115,16 +1726,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ])
     setTeams(freshTeams)
     setTeamInvites(freshInvites)
-  }
+  })
 
-  const requestToJoinTeam = async (teamId: string) => {
+  const requestToJoinTeam = useStableCallback(async (teamId: string) => {
     if (!currentUser || !isSupabaseConfigured()) return
     const ro = isUserReadOnly(currentUser)
     if (ro.readonly) {
       toastReadOnly(ro.reason)
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const { error } = await supabase.from('team_join_requests').insert({
       team_id: teamId,
       requester_id: currentUser.id,
@@ -2141,9 +1753,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const list = await fetchTeamJoinRequestsForUser(supabase, currentUser.id)
     setTeamJoinRequests(list)
     toast.success('Solicitud enviada al equipo')
-  }
+  })
 
-  const setTeamViceCaptain = async (
+  const setTeamViceCaptain = useStableCallback(async (
     teamId: string,
     viceUserId: string | null
   ) => {
@@ -2168,7 +1780,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return
       }
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const { error } = await supabase
       .from('teams')
       .update({
@@ -2186,9 +1799,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast.success(
       viceUserId ? 'Vicecapitán designado.' : 'Vicecapitán removido.'
     )
-  }
+  })
 
-  const removeTeamMember = async (teamId: string, memberUserId: string) => {
+  const removeTeamMember = useStableCallback(async (teamId: string, memberUserId: string) => {
     if (!currentUser || !isSupabaseConfigured()) return
     const ro = isUserReadOnly(currentUser)
     if (ro.readonly) {
@@ -2210,7 +1823,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     const ok = confirm('¿Retirar a este jugador del plantel?')
     if (!ok) return
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const { error } = await supabase
       .from('team_members')
       .delete()
@@ -2229,28 +1843,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTeamInvites(invites)
     setTeamJoinRequests(joinReqs)
     toast.success('Jugador retirado del equipo')
-  }
+  })
 
-  const respondToJoinRequest = async (requestId: string, accept: boolean) => {
+  const respondToJoinRequest = useStableCallback(async (requestId: string, accept: boolean) => {
     if (!currentUser || !isSupabaseConfigured()) return
     const ro = isUserReadOnly(currentUser)
     if (ro.readonly) {
       toastReadOnly(ro.reason)
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const req = teamJoinRequests.find((r) => r.id === requestId)
     if (!req || req.status !== 'pending') return
     const team = teams.find((t) => t.id === req.teamId)
     if (!team || !userIsTeamStaffCaptain(team, currentUser.id)) return
 
     if (!accept) {
-      const { error } = await supabase
-        .from('team_join_requests')
-        .update({ status: 'declined', updated_at: new Date().toISOString() })
-        .eq('id', requestId)
+      const { data, error } = await supabase.rpc('respond_team_join_request', {
+        p_request_id: requestId,
+        p_accept: false,
+      })
       if (error) {
         toast.error(error.message)
+        return
+      }
+      const payload = data as
+        | { ok?: boolean; error?: string; message?: string }
+        | null
+        | undefined
+      if (!payload?.ok) {
+        const msg =
+          typeof payload?.message === 'string' && payload.message.trim()
+            ? payload.message
+            : 'No se pudo rechazar la solicitud.'
+        toast.error(msg)
         return
       }
       const list = await fetchTeamJoinRequestsForUser(supabase, currentUser.id)
@@ -2259,46 +1886,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    if (team.members.length >= TEAM_ROSTER_MAX) {
-      toast.error(
-        `La plantilla ya está completa (${TEAM_ROSTER_MAX} jugadores).`
-      )
-      return
-    }
-
-    const { data: prof, error: profErr } = await supabase
-      .from('profiles')
-      .select('position, photo_url')
-      .eq('id', req.requesterId)
-      .single()
-
-    if (profErr || !prof) {
-      toast.error('No se pudo cargar el perfil del jugador.')
-      return
-    }
-
-    const { error: memErr } = await supabase.from('team_members').insert({
-      team_id: req.teamId,
-      user_id: req.requesterId,
-      position: prof.position,
-      photo_url: (prof.photo_url as string) || DEFAULT_AVATAR,
-      status: 'confirmed',
+    const { data, error } = await supabase.rpc('respond_team_join_request', {
+      p_request_id: requestId,
+      p_accept: true,
     })
-    if (memErr) {
-      if (isTeamLimitReached(memErr)) {
-        toastTeamLimitReached()
-      } else {
-      toast.error(memErr.message)
-      }
+    if (error) {
+      toast.error(error.message)
       return
     }
-
-    const { error: updErr } = await supabase
-      .from('team_join_requests')
-      .update({ status: 'accepted', updated_at: new Date().toISOString() })
-      .eq('id', requestId)
-    if (updErr) {
-      toast.error(updErr.message)
+    const payload = data as
+      | { ok?: boolean; error?: string; message?: string }
+      | null
+      | undefined
+    if (!payload?.ok) {
+      const msg =
+        typeof payload?.message === 'string' && payload.message.trim()
+          ? payload.message
+          : 'No se pudo aceptar la solicitud.'
+      if (msg.includes('team_limit_reached')) toastTeamLimitReached()
+      else toast.error(msg)
       return
     }
 
@@ -2309,16 +1915,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTeams(freshTeams)
     setTeamJoinRequests(list)
     toast.success(`${req.requesterName} ya es parte del equipo`)
-  }
+  })
 
-  const cancelJoinRequest = async (requestId: string) => {
+  const cancelJoinRequest = useStableCallback(async (requestId: string) => {
     if (!currentUser || !isSupabaseConfigured()) return
     const ro = isUserReadOnly(currentUser)
     if (ro.readonly) {
       toastReadOnly(ro.reason)
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const req = teamJoinRequests.find((r) => r.id === requestId)
     if (!req || req.requesterId !== currentUser.id || req.status !== 'pending')
       return
@@ -2333,18 +1940,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const list = await fetchTeamJoinRequestsForUser(supabase, currentUser.id)
     setTeamJoinRequests(list)
     toast.success('Solicitud cancelada')
-  }
+  })
 
-  const getUserTeams = () => {
+  const getUserTeams = useStableCallback(() => {
     if (!currentUser) return []
     return teams.filter(
       (t) =>
         t.captainId === currentUser.id ||
         t.members.some((m) => m.id === currentUser.id)
     )
-  }
+  })
 
-  const getFilteredTeams = (gender: Gender) => {
+  const getFilteredTeams = useStableCallback((gender: Gender) => {
     if (!currentUser) return []
     return teams.filter((t) => {
       if (t.gender !== gender) return false
@@ -2353,33 +1960,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         cityId: currentUser.cityId,
       })
     })
-  }
-
-  const refreshAppData = useCallback(async () => {
-    if (!currentUser || !isSupabaseConfigured()) return
-    try {
-      const supabase = createClient()
-      const [matches, others, teamList, invites, joinReqs, partIds, challenges] =
-        await Promise.all([
-          fetchMatchOpportunities(supabase),
-          fetchOtherProfiles(supabase, currentUser.id, currentUser.gender),
-          fetchTeamsWithMembers(supabase),
-          fetchTeamInvitesForUser(supabase, currentUser.id),
-          fetchTeamJoinRequestsForUser(supabase, currentUser.id),
-          fetchParticipatingOpportunityIds(supabase, currentUser.id),
-          fetchRivalChallengesForUser(supabase, currentUser.id),
-        ])
-      setMatchOpportunities(matches)
-      setUsers(others)
-      setTeams(teamList)
-      setTeamInvites(invites)
-      setTeamJoinRequests(joinReqs)
-      setParticipatingOpportunityIds(partIds)
-      setRivalChallenges(challenges)
-    } catch {
-      // red/offline
-    }
-  }, [currentUser])
+  })
 
   const clearSessionState = useCallback(() => {
     try {
@@ -2413,7 +1994,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const email = getAuthUserEmail(authUser)
     if (!email) return
     try {
-      const supabase = createClient()
+      const supabase = getBrowserSupabase()
+      if (!supabase) return
       const profile = await fetchProfileForUser(supabase, authUser.id, email)
       if (!profile) return
       setCurrentUser(profile)
@@ -2464,10 +2046,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    let supabase: ReturnType<typeof createClient>
-    try {
-      supabase = createClient()
-    } catch {
+    const supabase = getBrowserSupabase()
+    if (!supabase) {
       finishAuthLoading()
       return () => {
         mounted = false
@@ -2527,14 +2107,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const ping = () => {
       void (async () => {
         try {
-          const supabase = createClient()
-          const {
-            data: { session },
-          } = await supabase.auth.getSession()
-          if (!session?.access_token) return
+          const token = await getBrowserSessionAccessToken()
+          if (!token) return
           await fetch('/api/presence', {
             method: 'POST',
-            headers: { Authorization: `Bearer ${session.access_token}` },
+            headers: { Authorization: `Bearer ${token}` },
           })
         } catch {
           // red / offline
@@ -2640,7 +2217,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void (async () => {
       try {
         if (!isSupabaseConfigured()) return
-        const supabase = createClient()
+        const supabase = getBrowserSupabase()
+        if (!supabase) return
         const v = await fetchVenueForOwner(supabase, currentUser.id)
         if (cancelled) return
 
@@ -2762,132 +2340,267 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [authLoading, currentUser])
 
-  const refreshTimerRef = useRef<number | null>(null)
+  /**
+   * Realtime (jugadores): tres canales por dominio (match / team / users) para aislar
+   * suscripciones; el debounce incremental sigue siendo el mismo (scheduleFlush).
+   */
   useEffect(() => {
     if (!currentUser || !isSupabaseConfigured()) return
-    let supabase: ReturnType<typeof createClient>
-    try {
-      supabase = createClient()
-    } catch {
-      return
-    }
+    if (currentUser.accountType !== 'player') return
 
-    const scheduleRefresh = () => {
-      if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current)
-      refreshTimerRef.current = window.setTimeout(() => {
-        void refreshAppData()
-      }, 250)
-    }
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
 
-    const channel = supabase
-      .channel(`app-realtime:${currentUser.id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'match_opportunities' },
-        scheduleRefresh
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'match_opportunity_participants' },
-        scheduleRefresh
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'rival_challenges' },
-        scheduleRefresh
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'team_invites' },
-        scheduleRefresh
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'team_join_requests' },
-        scheduleRefresh
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'team_members' },
-        scheduleRefresh
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'teams' },
-        scheduleRefresh
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'team_private_settings' },
-        scheduleRefresh
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'profiles' },
-        (payload) => {
-          scheduleRefresh()
-          const row = payload.new as Record<string, unknown> | null
-          const id = typeof row?.id === 'string' ? row.id : null
-          if (id) {
-            setProfilePhotoEpochByUser((prev) => ({
-              ...prev,
-              [id]: (prev[id] ?? 0) + 1,
-            }))
-            setProfilesRealtimeGeneration((g) => g + 1)
+    const flushState = {
+      debounceTimer: null as number | null,
+      maxWaitTimer: null as number | null,
+      match: false,
+      team: false,
+      users: false,
+    }
+    const DEBOUNCE_MS = 250
+    const MAX_WAIT_MS = 2000
+
+    const scheduleFlush = (kind: 'match' | 'team' | 'users') => {
+      flushState[kind] = true
+      if (flushState.maxWaitTimer == null) {
+        flushState.maxWaitTimer = window.setTimeout(() => {
+          flushState.maxWaitTimer = null
+          if (flushState.debounceTimer != null) {
+            window.clearTimeout(flushState.debounceTimer)
+            flushState.debounceTimer = null
           }
-          setCurrentUser((u) => {
-            if (!u || !id || u.id !== id || !row) return u
-            const photo = row.photo_url
-            const name = row.name
-            const next: typeof u = {
-              ...u,
-              photo:
-                typeof photo === 'string' && photo.trim()
-                  ? photo
-                  : u.photo,
-              name:
-                typeof name === 'string' && name.trim() ? name : u.name,
-            }
-            if ('mod_banned_at' in row) {
-              const v = row.mod_banned_at
-              next.modBannedAt =
-                v != null && String(v).trim() !== '' ? new Date(String(v)) : undefined
-            }
-            if ('mod_ban_reason' in row && typeof row.mod_ban_reason === 'string') {
-              next.modBanReason = row.mod_ban_reason
-            }
-            if ('mod_yellow_cards' in row && typeof row.mod_yellow_cards === 'number') {
-              next.modYellowCards = row.mod_yellow_cards
-            }
-            if ('mod_red_cards' in row && typeof row.mod_red_cards === 'number') {
-              next.modRedCards = row.mod_red_cards
-            }
-            if ('mod_last_yellow_at' in row) {
-              const v = row.mod_last_yellow_at
-              next.modLastYellowAt =
-                v != null && String(v).trim() !== '' ? new Date(String(v)) : null
-            }
-            if ('mod_last_red_at' in row) {
-              const v = row.mod_last_red_at
-              next.modLastRedAt =
-                v != null && String(v).trim() !== '' ? new Date(String(v)) : null
-            }
-            return next
-          })
+          void runIncrementalFlush()
+        }, MAX_WAIT_MS)
+      }
+      if (flushState.debounceTimer != null) {
+        window.clearTimeout(flushState.debounceTimer)
+      }
+      flushState.debounceTimer = window.setTimeout(() => {
+        flushState.debounceTimer = null
+        if (flushState.maxWaitTimer != null) {
+          window.clearTimeout(flushState.maxWaitTimer)
+          flushState.maxWaitTimer = null
+        }
+        void runIncrementalFlush()
+      }, DEBOUNCE_MS)
+    }
+
+    const runIncrementalFlush = async () => {
+      const u = currentUserRef.current
+      if (!u || u.accountType !== 'player' || !isSupabaseConfigured()) return
+
+      const needMatch = flushState.match
+      const needTeam = flushState.team
+      const needUsers = flushState.users
+      flushState.match = false
+      flushState.team = false
+      flushState.users = false
+
+      if (!needMatch && !needTeam && !needUsers) return
+
+      try {
+        const tasks: Promise<void>[] = []
+
+        if (needMatch) {
+          tasks.push(
+            (async () => {
+              const [matches, partIds, challenges] = await Promise.all([
+                fetchMatchOpportunities(supabase),
+                fetchParticipatingOpportunityIds(supabase, u.id),
+                fetchRivalChallengesForUser(supabase, u.id),
+              ])
+              setMatchOpportunities(matches)
+              setParticipatingOpportunityIds(partIds)
+              setRivalChallenges(challenges)
+            })()
+          )
+        }
+
+        if (needTeam) {
+          tasks.push(
+            (async () => {
+              const [teamList, invites, joinReqs] = await Promise.all([
+                fetchTeamsWithMembers(supabase),
+                fetchTeamInvitesForUser(supabase, u.id),
+                fetchTeamJoinRequestsForUser(supabase, u.id),
+              ])
+              setTeams(teamList)
+              setTeamInvites(invites)
+              setTeamJoinRequests(joinReqs)
+            })()
+          )
+        }
+
+        if (needUsers) {
+          tasks.push(
+            (async () => {
+              const others = await fetchOtherProfiles(supabase, u.id, u.gender)
+              setUsers(others)
+            })()
+          )
+        }
+
+        await Promise.all(tasks)
+      } catch {
+        // red / offline
+      }
+    }
+
+    const uid = currentUser.id
+    const channelMatch = supabase.channel(`app-rt:${uid}:match`)
+    const channelTeam = supabase.channel(`app-rt:${uid}:team`)
+    const channelUsers = supabase.channel(`app-rt:${uid}:users`)
+
+    const rowEvents = ['INSERT', 'UPDATE', 'DELETE'] as const
+    for (const event of rowEvents) {
+      channelMatch.on(
+        'postgres_changes',
+        { event, schema: 'public', table: 'match_opportunities' },
+        () => {
+          scheduleFlush('match')
         }
       )
-      .subscribe()
+      channelMatch.on(
+        'postgres_changes',
+        { event, schema: 'public', table: 'match_opportunity_participants' },
+        () => {
+          scheduleFlush('match')
+        }
+      )
+      channelMatch.on(
+        'postgres_changes',
+        { event, schema: 'public', table: 'rival_challenges' },
+        () => {
+          scheduleFlush('match')
+        }
+      )
+      channelTeam.on(
+        'postgres_changes',
+        { event, schema: 'public', table: 'team_invites' },
+        () => {
+          scheduleFlush('team')
+        }
+      )
+      channelTeam.on(
+        'postgres_changes',
+        { event, schema: 'public', table: 'team_join_requests' },
+        () => {
+          scheduleFlush('team')
+        }
+      )
+      channelTeam.on(
+        'postgres_changes',
+        { event, schema: 'public', table: 'team_members' },
+        () => {
+          scheduleFlush('team')
+        }
+      )
+      channelTeam.on(
+        'postgres_changes',
+        { event, schema: 'public', table: 'teams' },
+        () => {
+          scheduleFlush('team')
+        }
+      )
+      channelTeam.on(
+        'postgres_changes',
+        { event, schema: 'public', table: 'team_private_settings' },
+        () => {
+          scheduleFlush('team')
+        }
+      )
+    }
+
+    for (const event of ['INSERT', 'DELETE'] as const) {
+      channelUsers.on(
+        'postgres_changes',
+        { event, schema: 'public', table: 'profiles' },
+        () => {
+          scheduleFlush('users')
+        }
+      )
+    }
+
+    channelUsers.on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'profiles' },
+      (payload) => {
+        scheduleFlush('users')
+        const row = payload.new as Record<string, unknown> | null
+        const id = typeof row?.id === 'string' ? row.id : null
+        if (id) {
+          setProfilePhotoEpochByUser((prev) => ({
+            ...prev,
+            [id]: (prev[id] ?? 0) + 1,
+          }))
+          setProfilesRealtimeGeneration((g) => g + 1)
+        }
+        setCurrentUser((u) => {
+          if (!u || !id || u.id !== id || !row) return u
+          const photo = row.photo_url
+          const name = row.name
+          const next: typeof u = {
+            ...u,
+            photo:
+              typeof photo === 'string' && photo.trim()
+                ? photo
+                : u.photo,
+            name:
+              typeof name === 'string' && name.trim() ? name : u.name,
+          }
+          if ('mod_banned_at' in row) {
+            const v = row.mod_banned_at
+            next.modBannedAt =
+              v != null && String(v).trim() !== '' ? new Date(String(v)) : undefined
+          }
+          if ('mod_ban_reason' in row && typeof row.mod_ban_reason === 'string') {
+            next.modBanReason = row.mod_ban_reason
+          }
+          if ('mod_yellow_cards' in row && typeof row.mod_yellow_cards === 'number') {
+            next.modYellowCards = row.mod_yellow_cards
+          }
+          if ('mod_red_cards' in row && typeof row.mod_red_cards === 'number') {
+            next.modRedCards = row.mod_red_cards
+          }
+          if ('mod_last_yellow_at' in row) {
+            const v = row.mod_last_yellow_at
+            next.modLastYellowAt =
+              v != null && String(v).trim() !== '' ? new Date(String(v)) : null
+          }
+          if ('mod_last_red_at' in row) {
+            const v = row.mod_last_red_at
+            next.modLastRedAt =
+              v != null && String(v).trim() !== '' ? new Date(String(v)) : null
+          }
+          return next
+        })
+      }
+    )
+
+    channelMatch.subscribe()
+    channelTeam.subscribe()
+    channelUsers.subscribe()
 
     return () => {
-      if (refreshTimerRef.current) {
-        window.clearTimeout(refreshTimerRef.current)
-        refreshTimerRef.current = null
+      if (flushState.debounceTimer != null) {
+        window.clearTimeout(flushState.debounceTimer)
+        flushState.debounceTimer = null
       }
-      supabase.removeChannel(channel)
+      if (flushState.maxWaitTimer != null) {
+        window.clearTimeout(flushState.maxWaitTimer)
+        flushState.maxWaitTimer = null
+      }
+      flushState.match = false
+      flushState.team = false
+      flushState.users = false
+      void supabase.removeChannel(channelMatch)
+      void supabase.removeChannel(channelTeam)
+      void supabase.removeChannel(channelUsers)
     }
-  }, [currentUser, refreshAppData])
+  }, [currentUser?.id, currentUser?.accountType])
 
-  const openPublicProfile = (userId: string) => {
+  const openPublicProfile = useStableCallback((userId: string) => {
     const id = userId?.trim()
     if (!id) return
     if (currentUser?.id && id === currentUser.id) {
@@ -2895,92 +2608,140 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
     setPublicProfileUserId(id)
-  }
+  })
 
-  const closePublicProfile = () => setPublicProfileUserId(null)
+  const closePublicProfile = useStableCallback(() => {
+    setPublicProfileUserId(null)
+  })
+
+  const uiContextValue = useMemo(
+    () => ({
+      currentScreen,
+      setCurrentScreen,
+      selectedChatOpportunityId,
+      setSelectedChatOpportunityId,
+      selectedMatchOpportunityId,
+      setSelectedMatchOpportunityId,
+      publicProfileUserId,
+      openPublicProfile,
+      closePublicProfile,
+      initialMatchesTab,
+      setInitialMatchesTab,
+      teamsDetailFocusTeamId,
+      setTeamsDetailFocusTeamId,
+      onboardingSource,
+      setOnboardingSource,
+      openProfileEditor,
+    }),
+    [
+      currentScreen,
+      selectedChatOpportunityId,
+      selectedMatchOpportunityId,
+      publicProfileUserId,
+      initialMatchesTab,
+      teamsDetailFocusTeamId,
+      onboardingSource,
+    ]
+  )
+
+  const authContextValue = useMemo(
+    () => ({
+      authLoading,
+      currentUser,
+      setCurrentUser,
+      isAuthenticated,
+      login,
+      loginWithGoogle,
+      logout,
+      completeOnboarding,
+      completeVenueOnboarding,
+      updateProfilePhoto,
+      profilePhotoCacheBust,
+      bumpProfilePhotoCache,
+      profilesRealtimeGeneration,
+      avatarDisplayUrl,
+      refreshCurrentUserProfile,
+    }),
+    [
+      authLoading,
+      currentUser,
+      isAuthenticated,
+      profilePhotoCacheBust,
+      profilesRealtimeGeneration,
+    ]
+  )
+
+  const matchContextValue = useMemo(
+    () => ({
+      matchOpportunities,
+      addMatchOpportunity,
+      reserveVenueOnly,
+      joinMatchOpportunity,
+      requestJoinPrivateRevuelta,
+      respondToRevueltaExternalRequest,
+      randomizeRevueltaTeams,
+      finalizeMatchOpportunity,
+      submitRivalCaptainVote,
+      finalizeRivalOrganizerOverride,
+      suspendMatchOpportunity,
+      submitMatchRating,
+      users,
+      getFilteredMatches,
+      getFilteredUsers,
+      participatingOpportunityIds,
+      rivalChallenges,
+    }),
+    [matchOpportunities, users, participatingOpportunityIds, rivalChallenges]
+  )
+
+  const teamContextValue = useMemo(
+    () => ({
+      teams,
+      teamInvites,
+      teamJoinRequests,
+      createTeam,
+      updateTeam,
+      deleteTeam,
+      leaveTeam,
+      updateTeamPrivateSettings,
+      createRivalChallenge,
+      respondToRivalChallenge,
+      acceptRivalOpportunityWithTeam,
+      inviteToTeam,
+      respondToInvite,
+      requestToJoinTeam,
+      respondToJoinRequest,
+      cancelJoinRequest,
+      setTeamViceCaptain,
+      removeTeamMember,
+      getUserTeams,
+      getFilteredTeams,
+    }),
+    [teams, teamInvites, teamJoinRequests]
+  )
 
   return (
-    <AppContext.Provider
-      value={{
-        authLoading,
-        currentScreen,
-        setCurrentScreen,
-        currentUser,
-        setCurrentUser,
-        isAuthenticated,
-        login,
-        loginWithGoogle,
-        logout,
-        completeOnboarding,
-        completeVenueOnboarding,
-        openProfileEditor,
-        onboardingSource,
-        setOnboardingSource,
-        updateProfilePhoto,
-        profilePhotoCacheBust,
-        bumpProfilePhotoCache,
-        profilesRealtimeGeneration,
-        avatarDisplayUrl,
-        matchOpportunities,
-        addMatchOpportunity,
-        reserveVenueOnly,
-        joinMatchOpportunity,
-        requestJoinPrivateRevuelta,
-        respondToRevueltaExternalRequest,
-        randomizeRevueltaTeams,
-        finalizeMatchOpportunity,
-        submitRivalCaptainVote,
-        finalizeRivalOrganizerOverride,
-        refreshCurrentUserProfile,
-        suspendMatchOpportunity,
-        submitMatchRating,
-        users,
-        getFilteredMatches,
-        getFilteredUsers,
-        teams,
-        teamInvites,
-        teamJoinRequests,
-        rivalChallenges,
-        createTeam,
-        updateTeam,
-        deleteTeam,
-        leaveTeam,
-        updateTeamPrivateSettings,
-        createRivalChallenge,
-        respondToRivalChallenge,
-        acceptRivalOpportunityWithTeam,
-        inviteToTeam,
-        respondToInvite,
-        requestToJoinTeam,
-        respondToJoinRequest,
-        cancelJoinRequest,
-        setTeamViceCaptain,
-        removeTeamMember,
-        getUserTeams,
-        getFilteredTeams,
-        participatingOpportunityIds,
-        selectedChatOpportunityId,
-        setSelectedChatOpportunityId,
-        selectedMatchOpportunityId,
-        setSelectedMatchOpportunityId,
-        publicProfileUserId,
-        openPublicProfile,
-        closePublicProfile,
-        initialMatchesTab,
-        setInitialMatchesTab,
-        teamsDetailFocusTeamId,
-        setTeamsDetailFocusTeamId,
-      }}
+    <AppDomainProviders
+      ui={uiContextValue}
+      auth={authContextValue}
+      match={matchContextValue}
+      team={teamContextValue}
     >
       {children}
-    </AppContext.Provider>
+    </AppDomainProviders>
   )
 }
 
-export function useApp() {
-  const context = useContext(AppContext)
-  if (context === undefined) {
-    throw new Error('useApp must be used within an AppProvider')
-  }
-  return context
+export function useApp(): AppContextType {
+  return useComposedAppContext()
 }
+
+export type { AppContextType, AppScreen } from '@/lib/app-context-contract'
+
+export {
+  useAppAuth,
+  useAppMatch,
+  useAppTeam,
+  useAppUI,
+  useComposedAppContext,
+} from '@/lib/contexts/domain-contexts'

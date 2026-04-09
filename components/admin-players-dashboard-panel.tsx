@@ -24,7 +24,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  getBrowserSessionAccessToken,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 
 type PlayerRange = 'today' | '7d' | '15d' | '30d'
@@ -96,13 +99,8 @@ async function adminBearerFetch(path: string, init?: RequestInit): Promise<Respo
     ...(init?.headers as Record<string, string>),
   }
   if (isSupabaseConfigured()) {
-    const supabase = createClient()
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    if (session?.access_token) {
-      headers.Authorization = `Bearer ${session.access_token}`
-    }
+    const token = await getBrowserSessionAccessToken()
+    if (token) headers.Authorization = `Bearer ${token}`
   }
   return fetch(path, { ...init, headers })
 }

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { useApp } from '@/lib/app-context'
+import { useAppAuth, useAppUI } from '@/lib/app-context'
 import { ArrowLeft, Mail, Lock } from 'lucide-react'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import { BrandMark } from '@/components/brand-mark'
@@ -38,7 +38,8 @@ function GoogleGlyph({ className }: { className?: string }) {
 }
 
 export function AuthScreen() {
-  const { setCurrentScreen, login, loginWithGoogle, setOnboardingSource } = useApp()
+  const { setCurrentScreen, setOnboardingSource } = useAppUI()
+  const { login, loginWithGoogle } = useAppAuth()
   const [isLogin, setIsLogin] = useState(true)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

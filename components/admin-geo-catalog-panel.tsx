@@ -45,7 +45,10 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { Checkbox } from '@/components/ui/checkbox'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  getBrowserSessionAccessToken,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 
 /** Misma lógica que `slugify` en `/api/admin/geo` (vista previa al crear ciudad). */
@@ -141,13 +144,8 @@ async function adminJsonFetch(
     headers['Content-Type'] = 'application/json'
   }
   if (isSupabaseConfigured()) {
-    const supabase = createClient()
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    if (session?.access_token) {
-      headers.Authorization = `Bearer ${session.access_token}`
-    }
+    const token = await getBrowserSessionAccessToken()
+    if (token) headers.Authorization = `Bearer ${token}`
   }
   return fetch(path, {
     ...init,

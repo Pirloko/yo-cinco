@@ -1,9 +1,18 @@
 'use client'
 
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { useApp } from '@/lib/app-context'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  useAppAuth,
+  useAppMatch,
+  useAppTeam,
+  useAppUI,
+} from '@/lib/app-context'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
 import {
   deleteTeamLogoFile,
   uploadTeamLogoFile,
@@ -48,6 +57,7 @@ import {
   type TeamJoinRequest,
   type TeamPrivateSettings,
 } from '@/lib/types'
+import { queryKeys } from '@/lib/query-keys'
 import { fetchTeamPrivateSettings } from '@/lib/supabase/team-queries'
 import { teamInviteAbsoluteUrl } from '@/lib/team-invite-url'
 import { saveRivalTargetTeamId } from '@/lib/rival-prefill'
@@ -141,8 +151,9 @@ function rosterMembersOrdered(team: Team): Team['members'] {
 }
 
 export function TeamsScreen() {
+  const queryClient = useQueryClient()
+  const { currentUser, avatarDisplayUrl } = useAppAuth()
   const {
-    currentUser,
     teams,
     getUserTeams,
     getFilteredTeams,
@@ -153,7 +164,6 @@ export function TeamsScreen() {
     updateTeamPrivateSettings,
     inviteToTeam,
     teamInvites,
-    rivalChallenges,
     respondToRivalChallenge,
     respondToInvite,
     teamJoinRequests,
@@ -162,13 +172,14 @@ export function TeamsScreen() {
     cancelJoinRequest,
     setTeamViceCaptain,
     removeTeamMember,
-    getFilteredUsers,
+  } = useAppTeam()
+  const { rivalChallenges, getFilteredUsers } = useAppMatch()
+  const {
     teamsDetailFocusTeamId,
     setTeamsDetailFocusTeamId,
     setCurrentScreen,
     openPublicProfile,
-    avatarDisplayUrl,
-  } = useApp()
+  } = useAppUI()
   
   const [view, setView] = useState<TeamsView>('list')
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null)
@@ -185,9 +196,6 @@ export function TeamsScreen() {
   const [teamDetailEditing, setTeamDetailEditing] = useState(false)
   const [logoCacheBust, setLogoCacheBust] = useState(0)
   const [savingTeam, setSavingTeam] = useState(false)
-  const [memberPrivateSettings, setMemberPrivateSettings] =
-    useState<TeamPrivateSettings | null>(null)
-  const [loadingPrivateSettings, setLoadingPrivateSettings] = useState(false)
   const [editingCoordinacion, setEditingCoordinacion] = useState(false)
   const [draftWhatsapp, setDraftWhatsapp] = useState('')
   const [draftRules, setDraftRules] = useState('')
@@ -284,32 +292,29 @@ export function TeamsScreen() {
     }
   }, [view])
 
-  useEffect(() => {
-    if (
-      view !== 'detail' ||
-      !detailTeam ||
-      !currentUser ||
-      !isMemberOfTeam(detailTeam) ||
-      !isSupabaseConfigured()
-    ) {
-      setMemberPrivateSettings(null)
-      setLoadingPrivateSettings(false)
-      return
-    }
-    let cancelled = false
-    setLoadingPrivateSettings(true)
-    ;(async () => {
-      const supabase = createClient()
-      const s = await fetchTeamPrivateSettings(supabase, detailTeam.id)
-      if (!cancelled) {
-        setMemberPrivateSettings(s)
-        setLoadingPrivateSettings(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [view, detailTeam?.id, currentUser?.id, teams])
+  const privateSettingsEnabled =
+    view === 'detail' &&
+    Boolean(
+      detailTeam &&
+        currentUser &&
+        isMemberOfTeam(detailTeam) &&
+        isSupabaseConfigured()
+    )
+
+  const privateSettingsQuery = useQuery({
+    queryKey: queryKeys.teams.privateSettings(detailTeam?.id, currentUser?.id),
+    enabled: privateSettingsEnabled,
+    queryFn: async () => {
+      const supabase = getBrowserSupabase()
+      if (!supabase || !detailTeam) return null
+      return fetchTeamPrivateSettings(supabase, detailTeam.id)
+    },
+  })
+
+  const memberPrivateSettings: TeamPrivateSettings | null = privateSettingsEnabled
+    ? (privateSettingsQuery.data ?? null)
+    : null
+  const loadingPrivateSettings = privateSettingsEnabled && privateSettingsQuery.isPending
 
   const openCoordinacionEditor = () => {
     setDraftWhatsapp(memberPrivateSettings?.whatsappInviteUrl ?? '')
@@ -393,7 +398,8 @@ export function TeamsScreen() {
     }
     setSavingTeam(true)
     try {
-      const supabase = createClient()
+      const supabase = getBrowserSupabase()
+      if (!supabase) return
       const result = await uploadTeamLogoFile(supabase, detailTeam.id, file)
       if ('error' in result) {
         toast.error(result.error)
@@ -416,8 +422,8 @@ export function TeamsScreen() {
     setSavingTeam(true)
     try {
       if (isSupabaseConfigured()) {
-        const supabase = createClient()
-        await deleteTeamLogoFile(supabase, detailTeam.id)
+        const supabase = getBrowserSupabase()
+        if (supabase) await deleteTeamLogoFile(supabase, detailTeam.id)
       }
       await updateTeam(detailTeam.id, { logo: null })
       setLogoCacheBust((n) => n + 1)
@@ -434,8 +440,8 @@ export function TeamsScreen() {
     if (!ok) return
     try {
       if (detailTeam.logo && isSupabaseConfigured()) {
-        const supabase = createClient()
-        await deleteTeamLogoFile(supabase, detailTeam.id)
+        const supabase = getBrowserSupabase()
+        if (supabase) await deleteTeamLogoFile(supabase, detailTeam.id)
       }
     } catch {
       // ignore
@@ -1401,7 +1407,15 @@ export function TeamsScreen() {
                               whatsappInviteUrl: draftWhatsapp,
                               rulesText: draftRules,
                             })
-                            if (res) setMemberPrivateSettings(res)
+                            if (res && currentUser) {
+                              queryClient.setQueryData(
+                                queryKeys.teams.privateSettings(
+                                  team.id,
+                                  currentUser.id
+                                ),
+                                res
+                              )
+                            }
                             setEditingCoordinacion(false)
                           } finally {
                             setSavingCoordinacion(false)

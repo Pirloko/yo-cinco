@@ -4,13 +4,13 @@ import { useId, type ReactNode } from 'react'
 import Image from 'next/image'
 
 import { Button } from '@/components/ui/button'
-import { useApp } from '@/lib/app-context'
+import { useAppUI } from '@/lib/app-context'
 import { Target, Users, Shuffle, ChevronRight } from 'lucide-react'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import { BrandMark } from '@/components/brand-mark'
 
 export function LandingPage() {
-  const { setCurrentScreen } = useApp()
+  const { setCurrentScreen } = useAppUI()
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">

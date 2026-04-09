@@ -1,12 +1,18 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { useApp } from '@/lib/app-context'
+import { queryKeys, stableIdsKey } from '@/lib/query-keys'
+import { useAppAuth, useAppMatch, useAppUI } from '@/lib/app-context'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { BottomNav } from '@/components/bottom-nav'
 import { Badge } from '@/components/ui/badge'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
+import { confirmSoloVenueReservationFromMatchesHub } from '@/lib/supabase/venue-reservation-mutations'
 import {
   fetchPlayerVenueReservationsSoloForHub,
   type PlayerVenueReservationListItem,
@@ -299,48 +305,86 @@ function formatCompletedOutcome(m: MatchOpportunity): string {
 export function MatchesScreen() {
   const {
     currentScreen,
-    currentUser,
-    matchOpportunities,
-    participatingOpportunityIds,
+    setCurrentScreen,
     setSelectedChatOpportunityId,
     setSelectedMatchOpportunityId,
-    setCurrentScreen,
     initialMatchesTab,
     setInitialMatchesTab,
-    avatarDisplayUrl,
-  } = useApp()
+  } = useAppUI()
+  const { currentUser, avatarDisplayUrl } = useAppAuth()
+  const { matchOpportunities, participatingOpportunityIds } = useAppMatch()
 
+  const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<MatchesHubTab>('upcoming')
-  const [lastByOpp, setLastByOpp] = useState<
-    Awaited<ReturnType<typeof fetchLastMessagesForOpportunities>>
-  >(new Map())
-  const [ratingByOpp, setRatingByOpp] = useState<Map<string, RatingSummary>>(
-    new Map()
-  )
-  const [venueReserveAll, setVenueReserveAll] = useState<
-    PlayerVenueReservationListItem[]
-  >([])
-  const [soloConfirmingId, setSoloConfirmingId] = useState<string | null>(null)
-  const [venueReviewByReservationId, setVenueReviewByReservationId] = useState<
-    Map<string, SoloVenueReviewSummary>
-  >(() => new Map())
 
-  const reloadSoloReserves = useCallback(async () => {
-    if (
-      !currentUser?.id ||
-      (currentUser.accountType !== 'player' &&
-        currentUser.accountType !== 'admin')
-    ) {
-      return
-    }
-    if (!isSupabaseConfigured()) return
-    const supabase = createClient()
-    const rows = await fetchPlayerVenueReservationsSoloForHub(
-      supabase,
-      currentUser.id
-    )
-    setVenueReserveAll(rows)
-  }, [currentUser?.id, currentUser?.accountType])
+  const soloHubEnabled = Boolean(
+    currentScreen === 'matches' &&
+      currentUser?.id &&
+      (currentUser.accountType === 'player' ||
+        currentUser.accountType === 'admin') &&
+      isSupabaseConfigured()
+  )
+
+  const soloReservesQuery = useQuery({
+    queryKey: queryKeys.matchesHub.soloVenueReservations(currentUser?.id),
+    enabled: soloHubEnabled,
+    queryFn: async () => {
+      if (!currentUser?.id) return []
+      const supabase = getBrowserSupabase()
+      if (!supabase) return []
+      return fetchPlayerVenueReservationsSoloForHub(supabase, currentUser.id)
+    },
+  })
+  const venueReserveAll = soloReservesQuery.data ?? []
+
+  const confirmSoloMutation = useMutation({
+    mutationFn: async (id: string) => {
+      if (!currentUser) throw new Error('Sesión no disponible')
+      const supabase = getBrowserSupabase()
+      if (!supabase) throw new Error('Cliente no disponible')
+      const { error } = await confirmSoloVenueReservationFromMatchesHub(
+        supabase,
+        id,
+        currentUser.id
+      )
+      if (error) throw error
+    },
+    onSuccess: (_void, _id) => {
+      toast.success('Reserva marcada como confirmada.')
+      if (currentUser?.id) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.matchesHub.soloVenueReservations(currentUser.id),
+        })
+      }
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'No se pudo confirmar')
+    },
+  })
+
+  const soloConfirmingId =
+    confirmSoloMutation.isPending &&
+    typeof confirmSoloMutation.variables === 'string'
+      ? confirmSoloMutation.variables
+      : null
+
+  const confirmSoloVenueReservation = useCallback(
+    async (id: string) => {
+      if (
+        !window.confirm(
+          '¿Confirmas que la cancha quedó reservada o pagada según acordaste con el centro?'
+        )
+      ) {
+        return
+      }
+      try {
+        await confirmSoloMutation.mutateAsync(id)
+      } catch {
+        // toast en onError
+      }
+    },
+    [confirmSoloMutation]
+  )
 
   useEffect(() => {
     if (currentScreen !== 'matches' || !initialMatchesTab) return
@@ -401,31 +445,26 @@ export function MatchesScreen() {
     [venueReservePast]
   )
 
-  const reloadVenueReviewsForPast = useCallback(async () => {
-    if (!isSupabaseConfigured() || !currentUser?.id) {
-      setVenueReviewByReservationId(new Map())
-      return
-    }
-    if (
-      currentUser.accountType !== 'player' &&
-      currentUser.accountType !== 'admin'
-    ) {
-      setVenueReviewByReservationId(new Map())
-      return
-    }
-    const ids = venueReservePast.map((r) => r.id)
-    if (ids.length === 0) {
-      setVenueReviewByReservationId(new Map())
-      return
-    }
-    const supabase = createClient()
-    const m = await fetchVenueReviewsByReservationIds(supabase, ids)
-    setVenueReviewByReservationId(m)
-  }, [currentUser?.id, currentUser?.accountType, venueReservePast])
-
-  useEffect(() => {
-    void reloadVenueReviewsForPast()
-  }, [venuePastReservationIdsKey, reloadVenueReviewsForPast])
+  const venueReviewsQuery = useQuery({
+    queryKey: queryKeys.matchesHub.venueReviewsByReservations(
+      venuePastReservationIdsKey
+    ),
+    enabled: Boolean(
+      venuePastReservationIdsKey &&
+        isSupabaseConfigured() &&
+        currentUser?.id &&
+        (currentUser.accountType === 'player' ||
+          currentUser.accountType === 'admin')
+    ),
+    queryFn: async () => {
+      const ids = venueReservePast.map((r) => r.id)
+      if (ids.length === 0) return new Map<string, SoloVenueReviewSummary>()
+      const supabase = getBrowserSupabase()
+      if (!supabase) return new Map<string, SoloVenueReviewSummary>()
+      return fetchVenueReviewsByReservationIds(supabase, ids)
+    },
+  })
+  const venueReviewByReservationId = venueReviewsQuery.data ?? new Map()
 
   const upcomingMerged = useMemo(() => {
     const items: Array<
@@ -449,57 +488,6 @@ export function MatchesScreen() {
     return items
   }, [upcomingList, venueReserveUpcoming])
 
-  useEffect(() => {
-    if (currentScreen !== 'matches') return
-    if (
-      !currentUser ||
-      (currentUser.accountType !== 'player' &&
-        currentUser.accountType !== 'admin')
-    ) {
-      setVenueReserveAll([])
-      return
-    }
-    void reloadSoloReserves()
-  }, [currentScreen, currentUser, reloadSoloReserves])
-
-  const confirmSoloVenueReservation = useCallback(
-    async (id: string) => {
-      if (!currentUser) return
-      if (
-        !window.confirm(
-          '¿Confirmas que la cancha quedó reservada o pagada según acordaste con el centro?'
-        )
-      ) {
-        return
-      }
-      setSoloConfirmingId(id)
-      try {
-        const supabase = createClient()
-        const { error } = await supabase
-          .from('venue_reservations')
-          .update({
-            status: 'confirmed',
-            payment_status: 'paid',
-            confirmation_source: 'booker_self',
-            confirmed_by_user_id: currentUser.id,
-            confirmation_note: 'Confirmado por el jugador (Partidos)',
-            confirmed_at: new Date().toISOString(),
-          })
-          .eq('id', id)
-          .eq('booker_user_id', currentUser.id)
-        if (error) {
-          toast.error(error.message)
-          return
-        }
-        toast.success('Reserva marcada como confirmada.')
-        await reloadSoloReserves()
-      } finally {
-        setSoloConfirmingId(null)
-      }
-    },
-    [currentUser, reloadSoloReserves]
-  )
-
   const finishedList = useMemo(
     () =>
       myInvolved
@@ -511,6 +499,25 @@ export function MatchesScreen() {
         }),
     [myInvolved]
   )
+
+  const finishedIdsKey = useMemo(
+    () => stableIdsKey(finishedList.map((f) => f.id)),
+    [finishedList]
+  )
+
+  const ratingSummariesQuery = useQuery({
+    queryKey: queryKeys.matchesHub.ratingSummaries(finishedIdsKey),
+    enabled: Boolean(finishedIdsKey) && isSupabaseConfigured(),
+    queryFn: async () => {
+      const supabase = getBrowserSupabase()
+      if (!supabase) return new Map<string, RatingSummary>()
+      return fetchRatingSummariesForOpportunities(
+        supabase,
+        finishedList.map((f) => f.id)
+      )
+    },
+  })
+  const ratingByOpp = ratingSummariesQuery.data ?? new Map<string, RatingSummary>()
 
   const finishedMerged = useMemo(() => {
     const items: Array<
@@ -549,27 +556,41 @@ export function MatchesScreen() {
     [chatOpportunities]
   )
 
-  useEffect(() => {
-    if (!isSupabaseConfigured() || activeChatOpportunities.length === 0) {
-      setLastByOpp(new Map())
-      return
-    }
-    const supabase = createClient()
-    const ids = activeChatOpportunities.map((c) => c.id)
-    fetchLastMessagesForOpportunities(supabase, ids).then(setLastByOpp)
-  }, [activeChatOpportunities])
+  const activeChatIdsKey = useMemo(
+    () => stableIdsKey(activeChatOpportunities.map((c) => c.id)),
+    [activeChatOpportunities]
+  )
 
-  useEffect(() => {
-    if (!isSupabaseConfigured() || finishedList.length === 0) {
-      setRatingByOpp(new Map())
-      return
-    }
-    const supabase = createClient()
-    void fetchRatingSummariesForOpportunities(
-      supabase,
-      finishedList.map((f) => f.id)
-    ).then(setRatingByOpp)
-  }, [finishedList])
+  const lastMessagesQuery = useQuery({
+    queryKey: queryKeys.matchesHub.lastMessages(activeChatIdsKey),
+    enabled:
+      Boolean(activeChatIdsKey) &&
+      isSupabaseConfigured() &&
+      activeChatOpportunities.length > 0,
+    queryFn: async () => {
+      const supabase = getBrowserSupabase()
+      if (!supabase) {
+        return new Map() as Awaited<
+          ReturnType<typeof fetchLastMessagesForOpportunities>
+        >
+      }
+      return fetchLastMessagesForOpportunities(
+        supabase,
+        activeChatOpportunities.map((c) => c.id)
+      )
+    },
+  })
+  const lastByOpp =
+    lastMessagesQuery.data ??
+    (new Map() as Awaited<ReturnType<typeof fetchLastMessagesForOpportunities>>)
+
+  const invalidatePastVenueReviews = useCallback(() => {
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.matchesHub.venueReviewsByReservations(
+        venuePastReservationIdsKey
+      ),
+    })
+  }, [queryClient, venuePastReservationIdsKey])
 
   const getTypeIcon = (type: 'rival' | 'players' | 'open') => {
     switch (type) {
@@ -727,7 +748,7 @@ export function MatchesScreen() {
                       confirmingId={soloConfirmingId}
                       onConfirm={confirmSoloVenueReservation}
                       venueReview={venueReviewByReservationId.get(r.id)}
-                      onVenueReviewSaved={() => void reloadVenueReviewsForPast()}
+                      onVenueReviewSaved={invalidatePastVenueReviews}
                     />
                   )
                 }
@@ -1002,7 +1023,7 @@ export function MatchesScreen() {
                       confirmingId={soloConfirmingId}
                       onConfirm={confirmSoloVenueReservation}
                       venueReview={venueReviewByReservationId.get(r.id)}
-                      onVenueReviewSaved={() => void reloadVenueReviewsForPast()}
+                      onVenueReviewSaved={invalidatePastVenueReviews}
                     />
                   )
                 }

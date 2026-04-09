@@ -1,8 +1,14 @@
 'use client'
 
 import { useEffect, useState, useMemo, useRef, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { useApp } from '@/lib/app-context'
+import {
+  useAppAuth,
+  useAppMatch,
+  useAppTeam,
+  useAppUI,
+} from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { Button } from '@/components/ui/button'
@@ -29,7 +35,10 @@ import {
 } from '@/lib/types'
 import { venueCourtPricingHint } from '@/lib/court-pricing'
 import { TIME_SLOT_OPTIONS } from '@/lib/time-slot-options'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
 import {
   fetchSportsVenuesForPlayerGeo,
   fetchVenueById,
@@ -39,6 +48,7 @@ import {
 } from '@/lib/supabase/venue-queries'
 import { resolveCityIdFromLabel } from '@/lib/supabase/geo-queries'
 import { readCreatePrefill, clearCreatePrefill } from '@/lib/create-prefill'
+import { queryKeys, stableIdsKey } from '@/lib/query-keys'
 import { computeVenueAvailableSlots, labelForHm } from '@/lib/venue-slots'
 import { consumeRivalTargetTeamId } from '@/lib/rival-prefill'
 import { TEAM_ROSTER_MAX } from '@/lib/team-roster'
@@ -92,15 +102,10 @@ const levelLabels: Record<Level, string> = {
 }
 
 export function CreateScreen() {
-  const {
-    setCurrentScreen,
-    currentUser,
-    addMatchOpportunity,
-    reserveVenueOnly,
-    createRivalChallenge,
-    getUserTeams,
-    getFilteredTeams,
-  } = useApp()
+  const { setCurrentScreen } = useAppUI()
+  const { currentUser } = useAppAuth()
+  const { addMatchOpportunity, reserveVenueOnly } = useAppMatch()
+  const { createRivalChallenge, getUserTeams, getFilteredTeams } = useAppTeam()
   const [step, setStep] = useState(1)
   const [matchType, setMatchType] = useState<MatchType | 'reserve' | null>(null)
   /** Revuelta (open): si se define, solo el plantel entra directo; externos solicitan al organizador. */
@@ -131,33 +136,96 @@ export function CreateScreen() {
   /** Buscar jugadores: qué cupos ofrece (paso 3). */
   const [playersSeekProfile, setPlayersSeekProfile] =
     useState<PlayersSeekProfile | null>(null)
-  const [sportsVenuesFromDb, setSportsVenuesFromDb] = useState<SportsVenue[]>(
-    []
+  const [prefillExtraVenue, setPrefillExtraVenue] = useState<SportsVenue | null>(
+    null
   )
   const [linkedVenueId, setLinkedVenueId] = useState<string | null>(null)
   const [bookCourtSlot, setBookCourtSlot] = useState(false)
-  const [venueTimeOptions, setVenueTimeOptions] = useState<
-    Array<{ value: string; label: string }> | null
-  >(null)
-  const [loadingVenueTimes, setLoadingVenueTimes] = useState(false)
-  const [venueTimeHelp, setVenueTimeHelp] = useState<string | null>(null)
-  const [alternativeVenues, setAlternativeVenues] = useState<SportsVenue[]>([])
-  const [loadingAlternativeVenues, setLoadingAlternativeVenues] = useState(false)
   const [bookingNoCourt, setBookingNoCourt] = useState(false)
   const [venueTimesRefreshKey, setVenueTimesRefreshKey] = useState(0)
-  const [venueCourtsHint, setVenueCourtsHint] = useState<VenueCourt[]>([])
 
   useEffect(() => {
     if (matchType !== 'open') setPrivateRevueltaTeamId(null)
   }, [matchType])
 
+  const venueCourtsQuery = useQuery({
+    queryKey: queryKeys.create.venueCourts(linkedVenueId),
+    enabled: Boolean(linkedVenueId && isSupabaseConfigured()),
+    queryFn: async () => {
+      const sb = getBrowserSupabase()
+      if (!sb || !linkedVenueId) return []
+      return fetchVenueCourts(sb, linkedVenueId)
+    },
+  })
+  const venueCourtsHint = venueCourtsQuery.data ?? []
+
+  const sportsVenuesQuery = useQuery({
+    queryKey: queryKeys.create.sportsVenuesForPlayer(
+      currentUser?.regionId,
+      currentUser?.cityId
+    ),
+    enabled: isSupabaseConfigured() && Boolean(getBrowserSupabase()),
+    queryFn: async () => {
+      const sb = getBrowserSupabase()
+      if (!sb) return []
+      return fetchSportsVenuesForPlayerGeo(
+        sb,
+        currentUser?.regionId,
+        currentUser?.cityId
+      )
+    },
+  })
+
   useEffect(() => {
-    if (!linkedVenueId || !isSupabaseConfigured()) {
-      setVenueCourtsHint([])
+    const pre = readCreatePrefill()
+    if (!pre) return
+    setLinkedVenueId(pre.sportsVenueId)
+    setBookCourtSlot(pre.bookCourtSlot)
+    setFormData((f) => ({
+      ...f,
+      venue: pre.venueLabel,
+      location: pre.city,
+      date: pre.date,
+      time: pre.time,
+    }))
+    clearCreatePrefill()
+  }, [currentUser?.regionId, currentUser?.cityId])
+
+  useEffect(() => {
+    const id = linkedVenueId
+    const data = sportsVenuesQuery.data
+    if (!id || !data) {
+      if (!id) setPrefillExtraVenue(null)
       return
     }
-    void fetchVenueCourts(createClient(), linkedVenueId).then(setVenueCourtsHint)
-  }, [linkedVenueId])
+    if (data.some((v) => v.id === id)) {
+      setPrefillExtraVenue(null)
+      return
+    }
+    let cancelled = false
+    const sb = getBrowserSupabase()
+    if (!sb || !isSupabaseConfigured()) return
+    void fetchVenueById(sb, id).then((v) => {
+      if (cancelled) return
+      setPrefillExtraVenue(v ?? null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [linkedVenueId, sportsVenuesQuery.data])
+
+  const sportsVenuesFromDb = useMemo(() => {
+    const base = sportsVenuesQuery.data ?? []
+    if (
+      prefillExtraVenue &&
+      !base.some((v) => v.id === prefillExtraVenue.id)
+    ) {
+      return [...base, prefillExtraVenue].sort((a, b) =>
+        a.name.localeCompare(b.name)
+      )
+    }
+    return base
+  }, [sportsVenuesQuery.data, prefillExtraVenue])
 
   const venuePricingHintText = useMemo(() => {
     if (!linkedVenueId || venueCourtsHint.length === 0) return null
@@ -167,40 +235,6 @@ export function CreateScreen() {
       v?.slotDurationMinutes ?? 60
     )
   }, [linkedVenueId, venueCourtsHint, sportsVenuesFromDb])
-
-  useEffect(() => {
-    let prefillVenueId: string | null = null
-    const pre = readCreatePrefill()
-    if (pre) {
-      setLinkedVenueId(pre.sportsVenueId)
-      setBookCourtSlot(pre.bookCourtSlot)
-      setFormData((f) => ({
-        ...f,
-        venue: pre.venueLabel,
-        location: pre.city,
-        date: pre.date,
-        time: pre.time,
-      }))
-      prefillVenueId = pre.sportsVenueId ?? null
-      clearCreatePrefill()
-    }
-    if (!isSupabaseConfigured()) return
-    const supabase = createClient()
-    void (async () => {
-      let list = await fetchSportsVenuesForPlayerGeo(
-        supabase,
-        currentUser?.regionId,
-        currentUser?.cityId
-      )
-      if (prefillVenueId && !list.some((v) => v.id === prefillVenueId)) {
-        const extra = await fetchVenueById(supabase, prefillVenueId)
-        if (extra) {
-          list = [...list, extra].sort((a, b) => a.name.localeCompare(b.name))
-        }
-      }
-      setSportsVenuesFromDb(list)
-    })()
-  }, [currentUser?.regionId, currentUser?.cityId])
 
   useEffect(() => {
     if (!currentUser) return
@@ -228,26 +262,27 @@ export function CreateScreen() {
     )
   }, [currentUser, getFilteredTeams, getUserTeams])
 
-  useEffect(() => {
-    if (!linkedVenueId || !formData.date) {
-      setVenueTimeOptions(null)
-      setLoadingVenueTimes(false)
-      setVenueTimeHelp(null)
-      return
-    }
-    if (!isSupabaseConfigured()) {
-      setVenueTimeOptions(null)
-      setLoadingVenueTimes(false)
-      setVenueTimeHelp(null)
-      return
-    }
+  const linkedVenueSlotHint =
+    sportsVenuesFromDb.find((v) => v.id === linkedVenueId)?.slotDurationMinutes ?? 0
 
-    let cancelled = false
-    setLoadingVenueTimes(true)
-    setVenueTimeHelp('Buscando horarios disponibles…')
-
-    void (async () => {
-      const supabase = createClient()
+  const venueDaySlotsQuery = useQuery({
+    queryKey: queryKeys.create.venueDaySlots(
+      linkedVenueId,
+      formData.date,
+      venueTimesRefreshKey,
+      linkedVenueSlotHint
+    ),
+    enabled: Boolean(
+      linkedVenueId &&
+        formData.date &&
+        isSupabaseConfigured() &&
+        getBrowserSupabase()
+    ),
+    queryFn: async () => {
+      const supabase = getBrowserSupabase()
+      if (!supabase || !linkedVenueId || !formData.date) {
+        return { options: [] as Array<{ value: string; label: string }>, help: null as string | null }
+      }
       const venue = sportsVenuesFromDb.find((v) => v.id === linkedVenueId)
       const slotDuration = venue?.slotDurationMinutes ?? 60
       const dayStart = new Date(`${formData.date}T00:00:00`)
@@ -265,21 +300,20 @@ export function CreateScreen() {
           dayEnd.toISOString()
         ),
       ])
-      if (cancelled) return
 
       if (courts.length === 0) {
-        setVenueTimeOptions([])
-        setVenueTimeHelp('Este centro no tiene canchas registradas.')
-        setLoadingVenueTimes(false)
-        return
+        return {
+          options: [],
+          help: 'Este centro no tiene canchas registradas.',
+        }
       }
 
       const dayHours = weeklyHours.find((h) => h.dayOfWeek === dow)
       if (!dayHours) {
-        setVenueTimeOptions([])
-        setVenueTimeHelp('Este centro no atiende en la fecha seleccionada.')
-        setLoadingVenueTimes(false)
-        return
+        return {
+          options: [],
+          help: 'Este centro no atiende en la fecha seleccionada.',
+        }
       }
 
       const options = computeVenueAvailableSlots({
@@ -291,24 +325,29 @@ export function CreateScreen() {
         reservations: reservations.filter((r) => r.status !== 'cancelled'),
       })
 
-      setVenueTimeOptions(options)
-      setVenueTimeHelp(
-        options.length === 0
-          ? 'No hay horarios disponibles para esta fecha.'
-          : `Horarios disponibles considerando ${courts.length} cancha(s).`
-      )
-      setLoadingVenueTimes(false)
-    })()
+      return {
+        options,
+        help:
+          options.length === 0
+            ? 'No hay horarios disponibles para esta fecha.'
+            : `Horarios disponibles considerando ${courts.length} cancha(s).`,
+      }
+    },
+  })
 
-    return () => {
-      cancelled = true
-    }
-  }, [linkedVenueId, formData.date, sportsVenuesFromDb, venueTimesRefreshKey])
-
-  useEffect(() => {
-    // Mantiene la hora elegida por el usuario para poder sugerir
-    // otros centros cuando ese horario no esté disponible aquí.
-  }, [linkedVenueId, formData.date, formData.time, venueTimeOptions])
+  const venueTimeOptions =
+    linkedVenueId && formData.date
+      ? venueDaySlotsQuery.data?.options ?? null
+      : null
+  const venueTimeHelp =
+    linkedVenueId && formData.date
+      ? venueDaySlotsQuery.isFetching
+        ? 'Buscando horarios disponibles…'
+        : (venueDaySlotsQuery.data?.help ?? null)
+      : null
+  const loadingVenueTimes = Boolean(
+    linkedVenueId && formData.date && venueDaySlotsQuery.isFetching
+  )
 
   const selectedVenueHasChosenTime = (() => {
     if (!linkedVenueId || !formData.date || !formData.time) return true
@@ -318,24 +357,31 @@ export function CreateScreen() {
   const shouldSuggestAlternatives =
     bookingNoCourt || !selectedVenueHasChosenTime
 
-  useEffect(() => {
-    if (!linkedVenueId || !formData.date || !formData.time) {
-      setAlternativeVenues([])
-      setLoadingAlternativeVenues(false)
-      setBookingNoCourt(false)
-      return
-    }
-    if (!shouldSuggestAlternatives || !isSupabaseConfigured()) {
-      setAlternativeVenues([])
-      setLoadingAlternativeVenues(false)
-      return
-    }
+  const candidateVenueIdsKey = useMemo(
+    () => stableIdsKey(sportsVenuesFromDb.map((v) => v.id)),
+    [sportsVenuesFromDb]
+  )
 
-    let cancelled = false
-    setLoadingAlternativeVenues(true)
-
-    void (async () => {
-      const supabase = createClient()
+  const alternativesQuery = useQuery({
+    queryKey: queryKeys.create.alternativeVenuesAtTime(
+      candidateVenueIdsKey,
+      linkedVenueId ?? '',
+      formData.date,
+      formData.time
+    ),
+    enabled:
+      shouldSuggestAlternatives &&
+      Boolean(
+        linkedVenueId &&
+          formData.date &&
+          formData.time &&
+          isSupabaseConfigured() &&
+          getBrowserSupabase() &&
+          sportsVenuesFromDb.length > 0
+      ),
+    queryFn: async () => {
+      const supabase = getBrowserSupabase()
+      if (!supabase || !linkedVenueId) return [] as SportsVenue[]
       const dayStart = new Date(`${formData.date}T00:00:00`)
       const dayEnd = new Date(dayStart)
       dayEnd.setDate(dayEnd.getDate() + 1)
@@ -370,26 +416,24 @@ export function CreateScreen() {
         })
       )
 
-      if (cancelled) return
       const valid = checks.filter((v): v is SportsVenue => !!v)
       const sameCity = valid.filter((v) => v.city === formData.location)
       const otherCities = valid.filter((v) => v.city !== formData.location)
-      setAlternativeVenues([...sameCity, ...otherCities].slice(0, 5))
-      setLoadingAlternativeVenues(false)
-    })()
+      return [...sameCity, ...otherCities].slice(0, 5)
+    },
+  })
 
-    return () => {
-      cancelled = true
+  const alternativeVenues = shouldSuggestAlternatives
+    ? alternativesQuery.data ?? []
+    : []
+  const loadingAlternativeVenues =
+    shouldSuggestAlternatives && alternativesQuery.isFetching
+
+  useEffect(() => {
+    if (!linkedVenueId || !formData.date || !formData.time) {
+      setBookingNoCourt(false)
     }
-  }, [
-    linkedVenueId,
-    formData.date,
-    formData.time,
-    formData.location,
-    shouldSuggestAlternatives,
-    sportsVenuesFromDb,
-  ])
-
+  }, [linkedVenueId, formData.date, formData.time])
 
   const userTeams = getUserTeams()
   const rivalChallengerTeams = currentUser
@@ -485,10 +529,10 @@ export function CreateScreen() {
           if (linked.cityId?.trim()) {
             matchCityId = linked.cityId
           } else if (linked.city?.trim() && isSupabaseConfigured()) {
-            const resolved = await resolveCityIdFromLabel(
-              createClient(),
-              linked.city
-            )
+            const sb = getBrowserSupabase()
+            const resolved = sb
+              ? await resolveCityIdFromLabel(sb, linked.city)
+              : null
             if (resolved) matchCityId = resolved
           }
         }

@@ -3,11 +3,25 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import { toast } from 'sonner'
-import { useApp } from '@/lib/app-context'
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
+import {
+  useAppAuth,
+  useAppMatch,
+  useAppTeam,
+  useAppUI,
+} from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
 import {
   fetchParticipantsForOpportunity,
   type OpportunityParticipantRow,
@@ -44,15 +58,25 @@ import {
   fetchMyPendingRevueltaExternalRequest,
   type PendingRevueltaExternalRequest,
 } from '@/lib/supabase/revuelta-external-requests'
+import {
+  fetchVenueReservationForMatchDetail,
+  type MatchDetailReservationState,
+} from '@/lib/supabase/venue-reservation-queries'
+import { confirmVenueReservationBookerSelfMatchDetail } from '@/lib/supabase/venue-reservation-mutations'
+import { fetchSportsVenueContactById } from '@/lib/supabase/venue-queries'
+import { queryKeys } from '@/lib/query-keys'
 
 export function MatchDetailsScreen() {
   const {
-    currentUser,
     setCurrentScreen,
-    matchOpportunities,
     selectedMatchOpportunityId,
     setSelectedMatchOpportunityId,
     setSelectedChatOpportunityId,
+    openPublicProfile,
+  } = useAppUI()
+  const { currentUser, avatarDisplayUrl } = useAppAuth()
+  const {
+    matchOpportunities,
     participatingOpportunityIds,
     joinMatchOpportunity,
     randomizeRevueltaTeams,
@@ -62,12 +86,12 @@ export function MatchDetailsScreen() {
     rivalChallenges,
     submitRivalCaptainVote,
     finalizeRivalOrganizerOverride,
-    openPublicProfile,
-    teams,
     requestJoinPrivateRevuelta,
     respondToRevueltaExternalRequest,
-    avatarDisplayUrl,
-  } = useApp()
+  } = useAppMatch()
+  const { teams } = useAppTeam()
+
+  const queryClient = useQueryClient()
 
   const opportunity = selectedMatchOpportunityId
     ? matchOpportunities.find((m) => m.id === selectedMatchOpportunityId)
@@ -81,106 +105,157 @@ export function MatchDetailsScreen() {
     [rivalChallenges, opportunity?.id]
   )
 
-  const [participants, setParticipants] = useState<OpportunityParticipantRow[]>([])
-  const [loadingParticipants, setLoadingParticipants] = useState(false)
-  const [myRating, setMyRating] = useState<MatchOpportunityRatingRow | null>(null)
-  const [loadingRating, setLoadingRating] = useState(false)
-  const [ratingSummary, setRatingSummary] = useState<RatingSummary | null>(null)
-  const [recentComments, setRecentComments] = useState<
-    Array<{ comment: string; createdAt: Date }>
-  >([])
+  const participantsQuery = useQuery({
+    queryKey: queryKeys.matchOpportunity.participants(selectedMatchOpportunityId),
+    enabled: Boolean(selectedMatchOpportunityId && currentUser?.id && isSupabaseConfigured()),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      if (!selectedMatchOpportunityId) return []
+      const sb = getBrowserSupabase()
+      if (!sb) return []
+      return await fetchParticipantsForOpportunity(sb, selectedMatchOpportunityId)
+    },
+  })
+  const participants: OpportunityParticipantRow[] = participantsQuery.data ?? []
+  const loadingParticipants = participantsQuery.isFetching
+
+  const ratingsOverviewQuery = useQuery({
+    queryKey: queryKeys.matchOpportunity.ratingsOverview(selectedMatchOpportunityId),
+    enabled: Boolean(selectedMatchOpportunityId && isSupabaseConfigured()),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      if (!selectedMatchOpportunityId) {
+        return { summary: null as RatingSummary | null, comments: [] as Array<{ comment: string; createdAt: Date }> }
+      }
+      const sb = getBrowserSupabase()
+      if (!sb) {
+        return { summary: null as RatingSummary | null, comments: [] as Array<{ comment: string; createdAt: Date }> }
+      }
+      const [summary, comments] = await Promise.all([
+        fetchRatingSummaryForOpportunity(sb, selectedMatchOpportunityId),
+        fetchRecentRatingCommentsForOpportunity(sb, selectedMatchOpportunityId),
+      ])
+      return { summary, comments }
+    },
+  })
+  const ratingSummary: RatingSummary | null = ratingsOverviewQuery.data?.summary ?? null
+  const recentComments = ratingsOverviewQuery.data?.comments ?? []
+
+  const myRatingQuery = useQuery({
+    queryKey: queryKeys.matchOpportunity.myRating(
+      selectedMatchOpportunityId,
+      currentUser?.id
+    ),
+    enabled: Boolean(selectedMatchOpportunityId && currentUser?.id && isSupabaseConfigured()),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      if (!selectedMatchOpportunityId || !currentUser?.id) return null
+      const sb = getBrowserSupabase()
+      if (!sb) return null
+      return await fetchMyRatingForOpportunity(sb, selectedMatchOpportunityId, currentUser.id)
+    },
+  })
+  const myRating: MatchOpportunityRatingRow | null = myRatingQuery.data ?? null
+  const loadingRating = myRatingQuery.isFetching
+
   const [joinRevueltaOpen, setJoinRevueltaOpen] = useState(false)
-  const [extJoinRequests, setExtJoinRequests] = useState<
-    PendingRevueltaExternalRequest[]
-  >([])
-  const [loadingExtRequests, setLoadingExtRequests] = useState(false)
-  const [myExtPendingId, setMyExtPendingId] = useState<string | null>(null)
   const [respondingId, setRespondingId] = useState<string | null>(null)
   const [joinPlayersOpen, setJoinPlayersOpen] = useState(false)
-  const [reservationState, setReservationState] = useState<{
-    id: string
-    status: 'pending' | 'confirmed' | 'cancelled'
-    paymentStatus: 'unpaid' | 'deposit_paid' | 'paid' | null
-    confirmationSource: 'venue_owner' | 'booker_self' | 'admin' | null
-    confirmedAt: Date | null
-    bookerUserId: string | null
-  } | null>(null)
-  const [confirmingReservation, setConfirmingReservation] = useState(false)
-  const [venueContact, setVenueContact] = useState<{
-    name: string
-    phone: string | null
-  } | null>(null)
-  const [organizerOrganizedCount, setOrganizerOrganizedCount] = useState<number | null>(
-    null
-  )
-
-  const loadParticipants = useCallback(
-    async (opts?: { silent?: boolean }) => {
-      const silent = opts?.silent ?? false
-      if (!selectedMatchOpportunityId || !currentUser?.id || !isSupabaseConfigured()) {
-        setParticipants([])
-        if (!silent) setLoadingParticipants(false)
-        return
-      }
-      if (!silent) setLoadingParticipants(true)
-      try {
-        const rows = await fetchParticipantsForOpportunity(
-          createClient(),
-          selectedMatchOpportunityId
-        )
-        setParticipants(rows)
-      } finally {
-        if (!silent) setLoadingParticipants(false)
-      }
+  const organizerId = opportunity?.creatorId ?? null
+  const organizerOrganizedCountQuery = useQuery({
+    queryKey: queryKeys.profile.organizerCompletedCount(organizerId),
+    enabled: Boolean(
+      organizerId &&
+        isSupabaseConfigured() &&
+        currentUser?.id &&
+        organizerId !== currentUser.id
+    ),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      if (!organizerId) return 0
+      const sb = getBrowserSupabase()
+      if (!sb) return 0
+      return await fetchOrganizerCompletedCount(sb, organizerId)
     },
-    [selectedMatchOpportunityId, currentUser?.id]
-  )
+  })
+  const organizerOrganizedCount =
+    !opportunity || !currentUser
+      ? null
+      : organizerId === currentUser.id
+        ? (currentUser.statsOrganizedCompleted ?? 0)
+        : (organizerOrganizedCountQuery.data ?? 0)
 
-  const loadRatingsOverview = useCallback(async () => {
-    if (!selectedMatchOpportunityId || !isSupabaseConfigured()) {
-      setRatingSummary(null)
-      setRecentComments([])
-      return
-    }
-    const supabase = createClient()
-    const [summary, comments] = await Promise.all([
-      fetchRatingSummaryForOpportunity(supabase, selectedMatchOpportunityId),
-      fetchRecentRatingCommentsForOpportunity(supabase, selectedMatchOpportunityId),
-    ])
-    setRatingSummary(summary)
-    setRecentComments(comments)
-  }, [selectedMatchOpportunityId])
+  const sportsVenueId = opportunity?.sportsVenueId ?? null
+  const venueFallbackName = opportunity?.venue ?? ''
+  const venueContactQuery = useQuery({
+    queryKey: queryKeys.sportsVenue.contact(sportsVenueId ?? ''),
+    enabled: Boolean(sportsVenueId && isSupabaseConfigured()),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      if (!sportsVenueId) return null
+      const sb = getBrowserSupabase()
+      if (!sb) return null
+      return await fetchSportsVenueContactById(sb, sportsVenueId, venueFallbackName)
+    },
+  })
+  const venueContact = venueContactQuery.data ?? null
 
-  const loadMyRating = useCallback(async () => {
-    if (!selectedMatchOpportunityId || !currentUser?.id || !isSupabaseConfigured()) {
-      setMyRating(null)
-      return
-    }
-    setLoadingRating(true)
-    try {
-      const row = await fetchMyRatingForOpportunity(
-        createClient(),
-        selectedMatchOpportunityId,
-        currentUser.id
+  const selfConfirmReservationMutation = useMutation({
+    mutationFn: async (args: { reservationId: string; userId: string }) => {
+      if (!isSupabaseConfigured()) {
+        throw new Error('Supabase no configurado')
+      }
+      const supabase = getBrowserSupabase()
+      if (!supabase) {
+        throw new Error('Cliente no disponible')
+      }
+      const { error } = await confirmVenueReservationBookerSelfMatchDetail(
+        supabase,
+        args.reservationId,
+        args.userId
       )
-      setMyRating(row)
-    } finally {
-      setLoadingRating(false)
-    }
-  }, [selectedMatchOpportunityId, currentUser?.id])
-
-  useEffect(() => {
-    void loadParticipants()
-    void loadMyRating()
-    void loadRatingsOverview()
-  }, [loadParticipants, loadMyRating, loadRatingsOverview])
+      if (error) throw error
+      return true
+    },
+    onMutate: async (args) => {
+      const key = queryKeys.matchOpportunity.venueReservation(args.reservationId)
+      await queryClient.cancelQueries({ queryKey: key })
+      const previous = queryClient.getQueryData<MatchDetailReservationState | null>(key)
+      queryClient.setQueryData<MatchDetailReservationState | null>(key, (prev) => {
+        if (!prev) return prev ?? null
+        return {
+          ...prev,
+          status: 'confirmed',
+          confirmationSource: 'booker_self',
+          confirmedAt: new Date(),
+        }
+      })
+      return { previous, key }
+    },
+    onError: (err, _args, ctx) => {
+      if (ctx?.key) {
+        queryClient.setQueryData(ctx.key, ctx.previous ?? null)
+      }
+      const msg = err instanceof Error ? err.message : 'No se pudo confirmar la reserva'
+      toast.error(msg)
+    },
+    onSuccess: () => {
+      toast.success('Reserva confirmada. Quedó registrada como autoconfirmada.')
+    },
+    onSettled: async (_data, _error, args, ctx) => {
+      const key =
+        ctx?.key ?? queryKeys.matchOpportunity.venueReservation(args.reservationId)
+      await queryClient.invalidateQueries({ queryKey: key })
+    },
+  })
 
   /** Tiempo real: cambios en participantes sin depender de `profiles` (evita bucle con heartbeat / last_seen). */
   useEffect(() => {
     if (!selectedMatchOpportunityId || !currentUser?.id || !isSupabaseConfigured()) {
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const oppId = selectedMatchOpportunityId
     const channel = supabase
       .channel(`match-detail-participants:${oppId}`)
@@ -193,7 +268,9 @@ export function MatchDetailsScreen() {
           filter: `opportunity_id=eq.${oppId}`,
         },
         () => {
-          void loadParticipants({ silent: true })
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.matchOpportunity.participants(oppId),
+          })
         }
       )
       .subscribe()
@@ -201,98 +278,23 @@ export function MatchDetailsScreen() {
     return () => {
       void supabase.removeChannel(channel)
     }
-  }, [selectedMatchOpportunityId, currentUser?.id, loadParticipants])
+  }, [selectedMatchOpportunityId, currentUser?.id, queryClient])
 
-  useEffect(() => {
-    if (!opportunity || !isSupabaseConfigured()) {
-      setOrganizerOrganizedCount(null)
-      return
-    }
-    if (currentUser?.id === opportunity.creatorId) {
-      setOrganizerOrganizedCount(currentUser.statsOrganizedCompleted ?? 0)
-      return
-    }
-    let cancelled = false
-    void (async () => {
-      const n = await fetchOrganizerCompletedCount(
-        createClient(),
-        opportunity.creatorId
-      )
-      if (!cancelled) setOrganizerOrganizedCount(n)
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [
-    opportunity?.id,
-    opportunity?.creatorId,
-    currentUser?.id,
-    currentUser?.statsOrganizedCompleted,
-  ])
+  const venueReservationId = opportunity?.venueReservationId ?? null
+  const reservationQuery = useQuery({
+    queryKey: queryKeys.matchOpportunity.venueReservation(venueReservationId),
+    enabled: Boolean(venueReservationId && currentUser?.id && isSupabaseConfigured()),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      if (!venueReservationId) return null
+      const sb = getBrowserSupabase()
+      if (!sb) return null
+      return await fetchVenueReservationForMatchDetail(sb, venueReservationId)
+    },
+  })
+  const reservationState: MatchDetailReservationState | null =
+    reservationQuery.data ?? null
 
-  useEffect(() => {
-    if (!opportunity?.venueReservationId || !currentUser || !isSupabaseConfigured()) {
-      setReservationState(null)
-      return
-    }
-    let cancelled = false
-    void (async () => {
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('venue_reservations')
-        .select(
-          'id, status, payment_status, confirmation_source, confirmed_at, booker_user_id'
-        )
-        .eq('id', opportunity.venueReservationId)
-        .maybeSingle()
-      if (cancelled) return
-      if (error || !data) {
-        setReservationState(null)
-        return
-      }
-      setReservationState({
-        id: data.id as string,
-        status: data.status as 'pending' | 'confirmed' | 'cancelled',
-        paymentStatus: (data.payment_status as 'unpaid' | 'deposit_paid' | 'paid' | null) ?? null,
-        confirmationSource:
-          (data.confirmation_source as 'venue_owner' | 'booker_self' | 'admin' | null) ??
-          null,
-        confirmedAt: data.confirmed_at ? new Date(data.confirmed_at as string) : null,
-        bookerUserId: (data.booker_user_id as string | null) ?? null,
-      })
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [opportunity?.venueReservationId, currentUser])
-
-  useEffect(() => {
-    if (!opportunity?.sportsVenueId || !isSupabaseConfigured()) {
-      setVenueContact(null)
-      return
-    }
-    let cancelled = false
-    void (async () => {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('sports_venues')
-        .select('name, phone')
-        .eq('id', opportunity.sportsVenueId)
-        .maybeSingle()
-      if (cancelled) return
-      if (!data) {
-        setVenueContact(null)
-        return
-      }
-      setVenueContact({
-        name: (data.name as string) ?? opportunity.venue,
-        phone: ((data.phone as string | null) ?? '').trim() || null,
-      })
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [opportunity?.sportsVenueId, opportunity?.venue])
 
   const goBack = () => {
     setSelectedMatchOpportunityId(null)
@@ -309,48 +311,59 @@ export function MatchDetailsScreen() {
     setCurrentScreen('chat')
   }
 
-  const loadExtJoinData = useCallback(async () => {
-    if (!selectedMatchOpportunityId || !currentUser?.id || !isSupabaseConfigured()) {
-      setExtJoinRequests([])
-      setMyExtPendingId(null)
-      return
-    }
-    const uid = currentUser.id
-    const opp = matchOpportunities.find((m) => m.id === selectedMatchOpportunityId)
-    if (!opp || opp.type !== 'open' || !opp.privateRevueltaTeamId) {
-      setExtJoinRequests([])
-      setMyExtPendingId(null)
-      return
-    }
-    const supabase = createClient()
-    const team = teams.find((t) => t.id === opp.privateRevueltaTeamId)
-    const organizer = opp.creatorId === uid
-    const member = userIsConfirmedMemberOfTeam(team, uid)
-    setLoadingExtRequests(true)
-    try {
-      if (organizer) {
-        const list = await fetchPendingRevueltaExternalRequests(
-          supabase,
-          selectedMatchOpportunityId
-        )
-        setExtJoinRequests(list)
-      } else {
-        setExtJoinRequests([])
+  const extJoinDataQuery = useQuery({
+    queryKey: queryKeys.matchOpportunity.revueltaExternalJoin(
+      selectedMatchOpportunityId,
+      currentUser?.id
+    ),
+    enabled: Boolean(selectedMatchOpportunityId && currentUser?.id && isSupabaseConfigured()),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      if (!selectedMatchOpportunityId || !currentUser?.id) {
+        return {
+          extJoinRequests: [] as PendingRevueltaExternalRequest[],
+          myExtPendingId: null as string | null,
+          eligible: false,
+        }
       }
-      if (!member) {
-        const mine = await fetchMyPendingRevueltaExternalRequest(
-          supabase,
-          selectedMatchOpportunityId,
-          uid
-        )
-        setMyExtPendingId(mine?.id ?? null)
-      } else {
-        setMyExtPendingId(null)
+      const uid = currentUser.id
+      const opp = matchOpportunities.find((m) => m.id === selectedMatchOpportunityId)
+      if (!opp || opp.type !== 'open' || !opp.privateRevueltaTeamId) {
+        return {
+          extJoinRequests: [] as PendingRevueltaExternalRequest[],
+          myExtPendingId: null as string | null,
+          eligible: false,
+        }
       }
-    } finally {
-      setLoadingExtRequests(false)
-    }
-  }, [selectedMatchOpportunityId, currentUser?.id, matchOpportunities, teams])
+      const supabase = getBrowserSupabase()
+      if (!supabase) {
+        return {
+          extJoinRequests: [] as PendingRevueltaExternalRequest[],
+          myExtPendingId: null as string | null,
+          eligible: false,
+        }
+      }
+      const team = teams.find((t) => t.id === opp.privateRevueltaTeamId)
+      const organizer = opp.creatorId === uid
+      const member = userIsConfirmedMemberOfTeam(team, uid)
+      const [extJoinRequests, mine] = await Promise.all([
+        organizer
+          ? fetchPendingRevueltaExternalRequests(supabase, selectedMatchOpportunityId)
+          : Promise.resolve([]),
+        !member
+          ? fetchMyPendingRevueltaExternalRequest(supabase, selectedMatchOpportunityId, uid)
+          : Promise.resolve(null),
+      ])
+      return {
+        extJoinRequests,
+        myExtPendingId: member ? null : mine?.id ?? null,
+        eligible: true,
+      }
+    },
+  })
+  const extJoinRequests = extJoinDataQuery.data?.extJoinRequests ?? []
+  const loadingExtRequests = extJoinDataQuery.isFetching
+  const myExtPendingId = extJoinDataQuery.data?.myExtPendingId ?? null
 
   const handleRespondExtRequest = useCallback(
     async (requestId: string, accept: boolean) => {
@@ -358,8 +371,15 @@ export function MatchDetailsScreen() {
       try {
         const res = await respondToRevueltaExternalRequest(requestId, accept)
         if (res.ok) {
-          await loadParticipants({ silent: true })
-          await loadExtJoinData()
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.matchOpportunity.participants(selectedMatchOpportunityId),
+          })
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.matchOpportunity.revueltaExternalJoin(
+              selectedMatchOpportunityId,
+              currentUser?.id
+            ),
+          })
         }
       } finally {
         setRespondingId(null)
@@ -367,14 +387,11 @@ export function MatchDetailsScreen() {
     },
     [
       respondToRevueltaExternalRequest,
-      loadParticipants,
-      loadExtJoinData,
+      queryClient,
+      selectedMatchOpportunityId,
+      currentUser?.id,
     ]
   )
-
-  useEffect(() => {
-    void loadExtJoinData()
-  }, [loadExtJoinData])
 
   if (!currentUser || !opportunity) {
     return (
@@ -456,36 +473,12 @@ export function MatchDetailsScreen() {
     ) {
       return
     }
-    setConfirmingReservation(true)
     try {
-      const supabase = createClient()
-      const { error } = await supabase
-        .from('venue_reservations')
-        .update({
-          status: 'confirmed',
-          confirmation_source: 'booker_self',
-          confirmed_by_user_id: currentUser.id,
-          confirmation_note: 'Confirmada por organizador en flujo guiado',
-        })
-        .eq('id', reservationState.id)
-        .eq('booker_user_id', currentUser.id)
-      if (error) {
-        toast.error(error.message)
-        return
-      }
-      toast.success('Reserva confirmada. Quedó registrada como autoconfirmada.')
-      setReservationState((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: 'confirmed',
-              confirmationSource: 'booker_self',
-              confirmedAt: new Date(),
-            }
-          : prev
-      )
+      await selfConfirmReservationMutation.mutateAsync({
+        reservationId: reservationState.id,
+        userId: currentUser.id,
+      })
     } finally {
-      setConfirmingReservation(false)
     }
   }
 
@@ -641,10 +634,10 @@ export function MatchDetailsScreen() {
                   <Button
                     size="sm"
                     onClick={() => void handleSelfConfirmReservation()}
-                    disabled={confirmingReservation}
+                    disabled={selfConfirmReservationMutation.isPending}
                     className="bg-primary text-primary-foreground hover:bg-primary/90"
                   >
-                    {confirmingReservation
+                    {selfConfirmReservationMutation.isPending
                       ? 'Confirmando...'
                       : 'Ya coordiné con el centro, confirmar reserva'}
                   </Button>
@@ -966,7 +959,14 @@ export function MatchDetailsScreen() {
         onJoin={async (isGk) => {
           if (isPrivateRevueltaNonMember) {
             const r = await requestJoinPrivateRevuelta(opportunity.id, isGk)
-            if (r.ok) await loadExtJoinData()
+            if (r.ok) {
+              await queryClient.invalidateQueries({
+                queryKey: queryKeys.matchOpportunity.revueltaExternalJoin(
+                  opportunity.id,
+                  currentUser.id
+                ),
+              })
+            }
             return
           }
           await joinMatchOpportunity(opportunity.id, { isGoalkeeper: isGk })
@@ -990,8 +990,12 @@ export function MatchDetailsScreen() {
         myRating={myRating}
         loadingRating={loadingRating}
         onReloadMyRating={() => {
-          void loadMyRating()
-          void loadRatingsOverview()
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.matchOpportunity.myRating(opportunity.id, currentUser.id),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.matchOpportunity.ratingsOverview(opportunity.id),
+          })
         }}
         finalizeMatchOpportunity={finalizeMatchOpportunity}
         submitRivalCaptainVote={submitRivalCaptainVote}

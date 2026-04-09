@@ -6,11 +6,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { GeoLocationSelect } from '@/components/geo-location-select'
-import { useApp } from '@/lib/app-context'
+import { useAppAuth } from '@/lib/app-context'
 import { ArrowLeft, MapPin } from 'lucide-react'
 
 export function VenueOnboardingScreen() {
-  const { logout, completeVenueOnboarding } = useApp()
+  const { logout, completeVenueOnboarding } = useAppAuth()
   const [form, setForm] = useState({
     name: '',
     address: '',

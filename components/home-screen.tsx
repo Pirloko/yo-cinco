@@ -4,7 +4,12 @@ import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 
-import { useApp } from '@/lib/app-context'
+import {
+  useAppAuth,
+  useAppMatch,
+  useAppTeam,
+  useAppUI,
+} from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
 import { MatchCard } from '@/components/match-card'
 import { Button } from '@/components/ui/button'
@@ -21,8 +26,7 @@ import { MatchOpportunity, MatchType } from '@/lib/types'
 import { JoinRevueltaDialog } from '@/components/join-revuelta-dialog'
 import { JoinPlayersSearchDialog } from '@/components/join-players-search-dialog'
 import { RegionCityFilterSelect } from '@/components/region-city-filter'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
-import { fetchGeoCitiesWithVenuesInRegion } from '@/lib/supabase/venue-queries'
+import { useGeoCitiesWithVenuesInRegion } from '@/lib/hooks/use-geo-cities-with-venues'
 import { compareMatchOpportunitiesByFillUrgency } from '@/lib/match-spots'
 import { TEAM_ROSTER_MAX } from '@/lib/team-roster'
 import {
@@ -34,18 +38,18 @@ type FilterType = 'all' | MatchType
 
 export function HomeScreen() {
   const {
-    currentUser,
-    getFilteredMatches,
-    getUserTeams,
     setCurrentScreen,
     setSelectedMatchOpportunityId,
-    joinMatchOpportunity,
-    requestJoinPrivateRevuelta,
-    acceptRivalOpportunityWithTeam,
-    participatingOpportunityIds,
     setInitialMatchesTab,
-    avatarDisplayUrl,
-  } = useApp()
+  } = useAppUI()
+  const { currentUser, avatarDisplayUrl } = useAppAuth()
+  const {
+    getFilteredMatches,
+    joinMatchOpportunity,
+    participatingOpportunityIds,
+    requestJoinPrivateRevuelta,
+  } = useAppMatch()
+  const { getUserTeams, acceptRivalOpportunityWithTeam } = useAppTeam()
   const [joiningId, setJoiningId] = useState<string | null>(null)
   const [revueltaJoinOpp, setRevueltaJoinOpp] = useState<MatchOpportunity | null>(
     null
@@ -56,22 +60,12 @@ export function HomeScreen() {
   const [rivalPickOppId, setRivalPickOppId] = useState<string | null>(null)
   const [activeFilter, setActiveFilter] = useState<FilterType>('all')
   const [cityFilter, setCityFilter] = useState('')
-  const [cityFilterOptions, setCityFilterOptions] = useState<
-    Array<{ id: string; name: string }>
-  >([])
+  const citiesQuery = useGeoCitiesWithVenuesInRegion(currentUser?.regionId)
+  const cityFilterOptions = citiesQuery.data ?? []
 
   useEffect(() => {
-    if (!currentUser?.regionId || !isSupabaseConfigured()) {
-      setCityFilterOptions([])
-      setCityFilter('')
-      return
-    }
     setCityFilter('')
-    void fetchGeoCitiesWithVenuesInRegion(
-      createClient(),
-      currentUser.regionId
-    ).then(setCityFilterOptions)
-  }, [currentUser?.regionId, currentUser?.cityId])
+  }, [currentUser?.regionId])
 
   const matches = currentUser
     ? getFilteredMatches(currentUser.gender).filter(

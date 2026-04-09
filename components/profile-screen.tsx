@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useRef } from 'react'
 import { toast } from 'sonner'
-import { useApp } from '@/lib/app-context'
+import { useAppAuth, useAppTeam, useAppUI } from '@/lib/app-context'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
@@ -87,15 +87,17 @@ function formatDayLabel(day: string): string {
 
 export function ProfileScreen() {
   const {
-    currentUser,
-    logout,
     setCurrentScreen,
     openProfileEditor,
-    getUserTeams,
     setInitialMatchesTab,
+  } = useAppUI()
+  const {
+    currentUser,
+    logout,
     updateProfilePhoto,
     avatarDisplayUrl,
-  } = useApp()
+  } = useAppAuth()
+  const { getUserTeams } = useAppTeam()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)

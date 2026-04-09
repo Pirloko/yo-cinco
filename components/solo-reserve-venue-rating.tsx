@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { Star, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { createClient } from '@/lib/supabase/client'
+import { getBrowserSupabase } from '@/lib/supabase/client'
 import {
   insertSportsVenueReview,
   type SoloVenueReviewSummary,
@@ -143,7 +143,8 @@ function SoloReserveVenueRatingForm({
     const trimmed = comment.trim().slice(0, COMMENT_MAX)
     setSaving(true)
     try {
-      const supabase = createClient()
+      const supabase = getBrowserSupabase()
+      if (!supabase) return
       const { error } = await insertSportsVenueReview(supabase, {
         venueId: r.venueId,
         venueReservationId: r.id,

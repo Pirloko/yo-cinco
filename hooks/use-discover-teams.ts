@@ -2,8 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 
-import { useApp } from '@/lib/app-context'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import { useAppAuth, useAppTeam } from '@/lib/app-context'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
 import { fetchTeamMatchCounts } from '@/lib/supabase/team-stats-queries'
 import { teamIsInPlayerGeo } from '@/lib/team-geo-filter'
 import type { Team } from '@/lib/types'
@@ -22,7 +25,8 @@ export function useDiscoverTeams({
   discoverMatchCounts: Record<string, number>
   loadingDiscoverCounts: boolean
 } {
-  const { currentUser, teams } = useApp()
+  const { currentUser } = useAppAuth()
+  const { teams } = useAppTeam()
 
   const discoverTeams = useMemo(() => {
     if (!currentUser) return []
@@ -71,7 +75,13 @@ export function useDiscoverTeams({
     const ids = discoverTeams.map((t) => t.id)
     let cancelled = false
     setLoadingDiscoverCounts(true)
-    void fetchTeamMatchCounts(createClient(), ids)
+    const sb = getBrowserSupabase()
+    if (!sb) {
+      setDiscoverMatchCounts({})
+      setLoadingDiscoverCounts(false)
+      return
+    }
+    void fetchTeamMatchCounts(sb, ids)
       .then((map) => {
         if (!cancelled) setDiscoverMatchCounts(map)
       })

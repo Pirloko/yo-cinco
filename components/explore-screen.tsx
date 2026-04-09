@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useApp } from '@/lib/app-context'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useAppAuth, useAppUI } from '@/lib/app-context'
+import { useGeoCitiesWithVenuesInRegion } from '@/lib/hooks/use-geo-cities-with-venues'
+import { queryKeys, stableIdsKey } from '@/lib/query-keys'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,9 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
 import {
-  fetchGeoCitiesWithVenuesInRegion,
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
+import {
   fetchSportsVenuesInRegion,
   fetchSportsVenuesList,
   fetchVenueCourts,
@@ -50,41 +55,33 @@ type AvailabilityRow = {
 }
 
 export function ExploreScreen() {
-  const { currentUser, setCurrentScreen } = useApp()
+  const { setCurrentScreen } = useAppUI()
+  const { currentUser } = useAppAuth()
   const [searchQuery, setSearchQuery] = useState('')
-  const [publicVenues, setPublicVenues] = useState<SportsVenue[]>([])
   const [cityFilter, setCityFilter] = useState('')
-  const [cityFilterOptions, setCityFilterOptions] = useState<
-    Array<{ id: string; name: string }>
-  >([])
   const [horizonDays, setHorizonDays] = useState(7)
-  const [availabilityRows, setAvailabilityRows] = useState<AvailabilityRow[]>([])
-  const [loadingAvailability, setLoadingAvailability] = useState(false)
+
+  const citiesQuery = useGeoCitiesWithVenuesInRegion(currentUser?.regionId)
+  const cityFilterOptions = citiesQuery.data ?? []
 
   useEffect(() => {
-    if (!currentUser?.regionId || !isSupabaseConfigured()) {
-      setCityFilterOptions([])
-      setCityFilter('')
-      return
-    }
     setCityFilter('')
-    void fetchGeoCitiesWithVenuesInRegion(
-      createClient(),
-      currentUser.regionId
-    ).then(setCityFilterOptions)
-  }, [currentUser?.regionId, currentUser?.cityId])
-
-  useEffect(() => {
-    if (!isSupabaseConfigured()) return
-    const supabase = createClient()
-    void (async () => {
-      if (currentUser?.regionId) {
-        setPublicVenues(await fetchSportsVenuesInRegion(supabase, currentUser.regionId))
-      } else {
-        setPublicVenues(await fetchSportsVenuesList(supabase))
-      }
-    })()
   }, [currentUser?.regionId])
+
+  const publicVenuesQuery = useQuery({
+    queryKey: queryKeys.explore.publicVenues(currentUser?.regionId ?? null),
+    enabled: isSupabaseConfigured(),
+    queryFn: async (): Promise<SportsVenue[]> => {
+      const supabase = getBrowserSupabase()
+      if (!supabase) return []
+      if (currentUser?.regionId) {
+        return fetchSportsVenuesInRegion(supabase, currentUser.regionId)
+      }
+      return fetchSportsVenuesList(supabase)
+    },
+  })
+
+  const publicVenues = publicVenuesQuery.data ?? []
 
   const displayedVenues = useMemo(() => {
     let v = publicVenues
@@ -99,20 +96,24 @@ export function ExploreScreen() {
     return v
   }, [publicVenues, cityFilter, searchQuery])
 
-  useEffect(() => {
-    if (!isSupabaseConfigured() || displayedVenues.length === 0) {
-      setAvailabilityRows([])
-      setLoadingAvailability(false)
-      return
-    }
-    let cancelled = false
-    setLoadingAvailability(true)
-    const now = new Date()
-    const to = new Date(now)
-    to.setDate(to.getDate() + horizonDays)
-    const supabase = createClient()
+  const venueIdsKey = useMemo(
+    () => stableIdsKey(displayedVenues.map((v) => v.id)),
+    [displayedVenues]
+  )
 
-    void (async () => {
+  const availabilityQuery = useQuery({
+    queryKey: queryKeys.explore.venueAvailabilityGrid(venueIdsKey, horizonDays),
+    enabled:
+      displayedVenues.length > 0 &&
+      isSupabaseConfigured() &&
+      Boolean(getBrowserSupabase()),
+    placeholderData: keepPreviousData,
+    queryFn: async (): Promise<AvailabilityRow[]> => {
+      const supabase = getBrowserSupabase()
+      if (!supabase) return []
+      const now = new Date()
+      const to = new Date(now)
+      to.setDate(to.getDate() + horizonDays)
       const results = await Promise.all(
         displayedVenues.map(async (venue) => {
           const [courts, weeklyHours, reservations] = await Promise.all([
@@ -143,7 +144,6 @@ export function ExploreScreen() {
           } satisfies AvailabilityRow
         })
       )
-      if (cancelled) return
       const withSlot = results.filter((r) => r.nextSlotAt != null) as Array<
         AvailabilityRow & { nextSlotAt: Date }
       >
@@ -151,14 +151,13 @@ export function ExploreScreen() {
       withSlot.sort(
         (a, b) => a.nextSlotAt.getTime() - b.nextSlotAt.getTime()
       )
-      setAvailabilityRows([...withSlot, ...withoutSlot])
-      setLoadingAvailability(false)
-    })()
+      return [...withSlot, ...withoutSlot]
+    },
+  })
 
-    return () => {
-      cancelled = true
-    }
-  }, [displayedVenues, horizonDays])
+  const availabilityRows = availabilityQuery.data ?? []
+  const loadingAvailability =
+    displayedVenues.length > 0 && availabilityQuery.isFetching
 
   const goToQuickCreate = (row: AvailabilityRow) => {
     if (!row.nextSlotAt) return

@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useApp } from '@/lib/app-context'
+import { useAppAuth, useAppUI } from '@/lib/app-context'
 import { Position, Level, OnboardingData } from '@/lib/types'
 import {
   ArrowLeft,
@@ -21,7 +21,10 @@ import {
   Phone,
   Sparkles,
 } from 'lucide-react'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
 import { uploadProfileAvatarFile } from '@/lib/supabase/profile-photo'
 import { GeoLocationSelect } from '@/components/geo-location-select'
 import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
@@ -115,13 +118,15 @@ function hasRealProfilePhoto(url: string): boolean {
 export function OnboardingScreen() {
   const {
     setCurrentScreen,
-    completeOnboarding,
-    currentUser,
     onboardingSource,
     setOnboardingSource,
+  } = useAppUI()
+  const {
+    completeOnboarding,
+    currentUser,
     bumpProfilePhotoCache,
     avatarDisplayUrl,
-  } = useApp()
+  } = useAppAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [step, setStep] = useState(1)
@@ -202,7 +207,8 @@ export function OnboardingScreen() {
     }
     setPhotoUploading(true)
     try {
-      const supabase = createClient()
+      const supabase = getBrowserSupabase()
+      if (!supabase) return
       const result = await uploadProfileAvatarFile(supabase, currentUser.id, file)
       if ('error' in result) {
         toast.error(result.error)

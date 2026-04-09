@@ -72,19 +72,31 @@ export async function POST(req: Request) {
     }
 
     if (body.action === 'clearSuspension') {
-      const { error } = await admin
-        .from('profiles')
-        .update({ mod_suspended_until: null })
-        .eq('id', body.userId)
+      let rpcClient
+      try {
+        rpcClient = createSupabaseWithUserJwt(auth.accessToken)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Configuración Supabase incompleta'
+        return NextResponse.json({ error: msg }, { status: 500 })
+      }
+      const { error } = await rpcClient.rpc('admin_clear_suspension', {
+        p_user_id: body.userId,
+      })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
 
     if (body.action === 'clearBan') {
-      const { error } = await admin
-        .from('profiles')
-        .update({ mod_banned_at: null, mod_ban_reason: null })
-        .eq('id', body.userId)
+      let rpcClient
+      try {
+        rpcClient = createSupabaseWithUserJwt(auth.accessToken)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Configuración Supabase incompleta'
+        return NextResponse.json({ error: msg }, { status: 500 })
+      }
+      const { error } = await rpcClient.rpc('admin_clear_ban', {
+        p_user_id: body.userId,
+      })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }

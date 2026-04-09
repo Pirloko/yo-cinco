@@ -15,8 +15,12 @@ import {
   Ban,
 } from 'lucide-react'
 
-import { useApp } from '@/lib/app-context'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import { useAppAuth, useAppUI } from '@/lib/app-context'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
+import { insertPublicProfilePlayerReport } from '@/lib/supabase/player-report-queries'
 import { fetchPublicPlayerProfile } from '@/lib/supabase/queries'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
@@ -52,13 +56,9 @@ function formatDayLabel(day: string): string {
 }
 
 export function PublicPlayerProfileSheet() {
-  const {
-    publicProfileUserId,
-    closePublicProfile,
-    currentUser,
-    profilesRealtimeGeneration,
-    avatarDisplayUrl,
-  } = useApp()
+  const { publicProfileUserId, closePublicProfile } = useAppUI()
+  const { currentUser, profilesRealtimeGeneration, avatarDisplayUrl } =
+    useAppAuth()
   const [loading, setLoading] = useState(false)
   const [profile, setProfile] = useState<PublicPlayerProfile | null>(null)
   const [reportOpen, setReportOpen] = useState(false)
@@ -76,7 +76,9 @@ export function PublicPlayerProfileSheet() {
     setLoading(true)
     void (async () => {
       try {
-        const p = await fetchPublicPlayerProfile(createClient(), publicProfileUserId)
+        const sb = getBrowserSupabase()
+        if (!sb) return
+        const p = await fetchPublicPlayerProfile(sb, publicProfileUserId)
         if (!cancelled) setProfile(p)
       } finally {
         if (!cancelled) setLoading(false)
@@ -101,13 +103,12 @@ export function PublicPlayerProfileSheet() {
 
   const submitReport = async () => {
     if (!canReport || !profile || !isSupabaseConfigured()) return
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const details = reportDetails.trim()
-    const { error } = await supabase.from('player_reports').insert({
-      reporter_id: currentUser!.id,
-      reported_user_id: profile.id,
-      context_type: 'public_profile',
-      context_id: null,
+    const { error } = await insertPublicProfilePlayerReport(supabase, {
+      reporterId: currentUser!.id,
+      reportedUserId: profile.id,
       reason: reportReason,
       details: details.length > 0 ? details : null,
     })

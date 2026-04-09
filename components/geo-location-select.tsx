@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, MapPin } from 'lucide-react'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
 import {
   fetchGeoCatalogActive,
   type GeoCatalogActive,
@@ -86,7 +89,11 @@ export function GeoLocationSelect({
         if (mounted) setLoading(false)
         return
       }
-      const supabase = createClient()
+      const supabase = getBrowserSupabase()
+      if (!supabase) {
+        if (mounted) setLoading(false)
+        return
+      }
       const { countries } = await fetchGeoCatalogActive(supabase)
       if (!mounted) return
       setCatalog(countries)

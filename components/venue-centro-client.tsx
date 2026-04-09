@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,7 +12,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
+import { fetchVenuePublicReservationsAsRowsForDay } from '@/lib/supabase/venue-queries'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { queryKeys } from '@/lib/query-keys'
 import {
   OPEN_CREATE_AFTER_AUTH_KEY,
   writeCreatePrefill,
@@ -99,59 +105,35 @@ export function VenueCentroClient({
   recentReviews,
 }: Props) {
   const [dayStr, setDayStr] = useState(() => toDateInputValue(new Date()))
-  const [reservations, setReservations] = useState<VenueReservationRow[]>([])
-  const [loading, setLoading] = useState(false)
   const [selectedSlotStartIso, setSelectedSlotStartIso] = useState<string | null>(null)
   const [hasSession, setHasSession] = useState(false)
   const [authGateReason, setAuthGateReason] = useState<AuthGateReason | null>(null)
 
   const day = useMemo(() => fromDateInputValue(dayStr), [dayStr])
 
-  const loadRes = useCallback(async () => {
-    if (!isSupabaseConfigured()) return
-    const supabase = createClient()
-    const start = new Date(day)
-    start.setHours(0, 0, 0, 0)
-    const end = new Date(day)
-    end.setHours(23, 59, 59, 999)
-    setLoading(true)
-    try {
-      const { data, error } = await supabase.rpc('venue_public_reservations_in_range', {
-        p_venue_id: venue.id,
-        p_from: start.toISOString(),
-        p_to: end.toISOString(),
-      })
-      if (error || !data) {
-        setReservations([])
-        return
-      }
-      const rows = data as { court_id: string; starts_at: string; ends_at: string }[]
-      setReservations(
-        rows.map((r) => ({
-          id: `${r.court_id}-${r.starts_at}`,
-          courtId: r.court_id,
-          startsAt: new Date(r.starts_at),
-          endsAt: new Date(r.ends_at),
-          bookerUserId: null,
-          matchOpportunityId: null,
-          status: 'confirmed' as const,
-        }))
-      )
-    } finally {
-      setLoading(false)
-    }
-  }, [day, venue.id])
-
-  useEffect(() => {
-    void loadRes()
-  }, [loadRes])
+  const reservationsQuery = useQuery({
+    queryKey: queryKeys.venueCentro.publicReservationsForDay(venue.id, dayStr),
+    enabled: isSupabaseConfigured(),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const supabase = getBrowserSupabase()
+      if (!supabase) return []
+      return await fetchVenuePublicReservationsAsRowsForDay(supabase, venue.id, day)
+    },
+  })
+  const reservations = reservationsQuery.data ?? []
+  const loading = reservationsQuery.isFetching
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
       setHasSession(false)
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) {
+      setHasSession(false)
+      return
+    }
     let cancelled = false
     void supabase.auth.getSession().then(({ data: { session } }) => {
       if (!cancelled) setHasSession(Boolean(session?.user))

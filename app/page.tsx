@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 
-import { useApp } from '@/lib/app-context'
+import { useAppAuth, useAppUI } from '@/lib/app-context'
 import { LandingPage } from '@/components/landing-page'
 import { AuthScreen } from '@/components/auth-screen'
 import { OnboardingScreen } from '@/components/onboarding-screen'
@@ -20,7 +20,8 @@ import { AdminDashboardScreen } from '@/components/admin-dashboard-screen'
 import { PublicPlayerProfileSheet } from '@/components/public-player-profile-sheet'
 
 function AppContent() {
-  const { authLoading, currentScreen } = useApp()
+  const { authLoading } = useAppAuth()
+  const { currentScreen } = useAppUI()
 
   useEffect(() => {
     if (typeof window === 'undefined') return

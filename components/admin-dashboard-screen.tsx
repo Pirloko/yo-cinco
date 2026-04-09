@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
-import { useApp } from '@/lib/app-context'
+import { useAppAuth, useAppUI } from '@/lib/app-context'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
@@ -36,7 +36,11 @@ import { GeoLocationSelect } from '@/components/geo-location-select'
 import { AdminGeoCatalogPanel } from '@/components/admin-geo-catalog-panel'
 import { AdminPlayersDashboardPanel } from '@/components/admin-players-dashboard-panel'
 import { ThemeMenuButton } from '@/components/theme-controls'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  getBrowserSupabase,
+  getBrowserSessionAccessToken,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
 import { formatAuthError } from '@/lib/supabase/auth-errors'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -207,7 +211,8 @@ const RANGE_OPTIONS: Array<{ id: RangeKey; label: string }> = [
 ]
 
 export function AdminDashboardScreen() {
-  const { currentUser, logout, openPublicProfile } = useApp()
+  const { currentUser, logout } = useAppAuth()
+  const { openPublicProfile } = useAppUI()
   const [loading, setLoading] = useState(true)
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null)
   const [range, setRange] = useState<RangeKey>('month')
@@ -437,13 +442,8 @@ export function AdminDashboardScreen() {
   const buildAdminAuthHeaders = useCallback(async () => {
     const h: Record<string, string> = { 'Content-Type': 'application/json' }
     if (isSupabaseConfigured()) {
-      const supabase = createClient()
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
-      if (session?.access_token) {
-        h.Authorization = `Bearer ${session.access_token}`
-      }
+      const token = await getBrowserSessionAccessToken()
+      if (token) h.Authorization = `Bearer ${token}`
     }
     return h
   }, [])
@@ -629,13 +629,8 @@ export function AdminDashboardScreen() {
     try {
       const authHeaders: Record<string, string> = {}
       if (isSupabaseConfigured()) {
-        const supabase = createClient()
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        if (session?.access_token) {
-          authHeaders.Authorization = `Bearer ${session.access_token}`
-        }
+        const token = await getBrowserSessionAccessToken()
+        if (token) authHeaders.Authorization = `Bearer ${token}`
       }
       const r = await fetch(`/api/admin/metrics?range=${nextRange}`, {
         method: 'GET',
@@ -683,13 +678,8 @@ export function AdminDashboardScreen() {
         'Content-Type': 'application/json',
       }
       if (isSupabaseConfigured()) {
-        const supabase = createClient()
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        if (session?.access_token) {
-          authHeaders.Authorization = `Bearer ${session.access_token}`
-        }
+        const token = await getBrowserSessionAccessToken()
+        if (token) authHeaders.Authorization = `Bearer ${token}`
       }
       const r = await fetch('/api/admin/create-venue-user', {
         method: 'POST',
@@ -934,7 +924,8 @@ export function AdminDashboardScreen() {
     }
     setAdminPwSaving(true)
     try {
-      const supabase = createClient()
+      const supabase = getBrowserSupabase()
+      if (!supabase) return
       const { error } = await supabase.auth.updateUser({ password: pw })
       if (error) {
         toast.error(formatAuthError(error))

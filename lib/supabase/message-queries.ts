@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
 
 export async function fetchParticipatingOpportunityIds(
@@ -168,4 +168,20 @@ export async function fetchParticipantsForOpportunity(
   }
 
   return out
+}
+
+export async function insertMatchChatMessage(
+  supabase: SupabaseClient,
+  params: {
+    opportunityId: string
+    senderId: string
+    content: string
+  }
+): Promise<{ error: PostgrestError | null }> {
+  const { error } = await supabase.from('messages').insert({
+    opportunity_id: params.opportunityId,
+    sender_id: params.senderId,
+    content: params.content,
+  })
+  return { error }
 }

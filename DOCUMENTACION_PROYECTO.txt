@@ -1,0 +1,427 @@
+================================================================================
+  SPORTMATCH — DOCUMENTACIÓN GENERAL DEL PROYECTO
+  Archivo generado como referencia del repositorio (código + Supabase).
+================================================================================
+
+1. QUÉ ES EL PROYECTO
+--------------------------------------------------------------------------------
+SPORTMATCH es una aplicación web de matchmaking para fútbol amateur (enfoque
+6 vs 6 y variantes). Permite a jugadores publicar y descubrir partidos
+(buscar rival, faltan jugadores, revueltas abiertas), chatear por partido,
+gestionar equipos, y a centros deportivos gestionar canchas y reservas.
+Incluye panel de administración, páginas públicas SEO (Rancagua), fichas de
+equipo/revuelta/centro, y presencia básica de jugadores para métricas admin.
+
+Nombre npm: sportmatch | Versión: 0.1.0 | Node: 22.x
+
+
+2. STACK TECNOLÓGICO
+--------------------------------------------------------------------------------
+- Framework: Next.js 16 (App Router), React 19, TypeScript 5.7
+- Estilos: Tailwind CSS 4, componentes UI (Radix + shadcn-style en components/ui)
+- Backend datos: Supabase (PostgreSQL, Auth, Storage, Realtime)
+- Formularios / validación: react-hook-form, zod
+- Fechas: date-fns, date-fns-tz (zona por NEXT_PUBLIC_APP_TIMEZONE, default Chile)
+- Temas: next-themes (claro / oscuro / sistema, clave local sportmatch-theme)
+- Analytics: Vercel Analytics (solo si VERCEL=1)
+- Despliegue típico: Vercel o Netlify (hay plugin @netlify/plugin-nextjs)
+
+
+3. ESTRUCTURA DE CARPETAS (RESUMEN)
+--------------------------------------------------------------------------------
+app/                    Rutas Next.js: página principal SPA, API routes, SEO
+  page.tsx              Shell de la app: según currentScreen renderiza pantallas
+  layout.tsx            Metadatos OG/Twitter, fuentes, Providers, Analytics
+  globals.css           Tokens y estilos globales
+  api/admin/*           Endpoints protegidos (admin, sesión, service role)
+  api/presence          Heartbeat de jugadores (perfil last_seen_at)
+  centro/[venueId]     Página pública del centro deportivo
+  equipo/[teamId]       Página pública de equipo
+  revuelta/[opportunityId]  Página pública de revuelta / partido abierto
+  rancagua/*            Landings SEO (futbolito, canchas, buscar rival, etc.)
+  sitemap.ts            Sitemap dinámico (puede usar service role)
+  swipe/page.tsx        Ruta aparte (swipe / experimento UI)
+
+components/             Pantallas grandes + piezas reutilizables
+  *-screen.tsx          Pantallas principales del cliente (home, matches, etc.)
+  ui/                   Primitivos (Button, Card, Dialog, etc.)
+  seo/                  Componentes para páginas SEO Rancagua
+
+lib/                    Lógica de dominio, tipos, cliente Supabase, queries
+  app-context.tsx       Estado global: auth, usuario, partidos, navegación, realtime
+  types.ts              Tipos TypeScript alineados al esquema
+  supabase/             client, server, queries por dominio, RLS helpers
+  *.ts                  Utilidades (WhatsApp, slots de cancha, pricing, geo, etc.)
+
+hooks/                  Hooks React (toast, mobile, discover-teams, etc.)
+
+supabase/migrations/    SQL versionado del esquema PostgreSQL
+
+public/                 Assets estáticos (logo, etc.)
+
+
+4. MODELO DE APLICACIÓN (SPA EN app/page.tsx)
+--------------------------------------------------------------------------------
+La raíz "/" es una SPA gobernada por React Context (AppProvider en
+lib/app-context.tsx). No hay router de URL por pantalla en el núcleo jugador;
+el estado currentScreen decide qué componente mostrar.
+
+Pantallas (AppScreen):
+  landing              Landing pública / entrada
+  auth                 Login y registro (email + Google OAuth)
+  onboarding           Completar perfil jugador (incl. datos esenciales)
+  home                 Inicio jugador
+  create               Crear partido / oportunidad
+  explore              Explorar partidos
+  matches              Hub partidos (próximos, chats, finalizados)
+  chat                 Chat del partido seleccionado
+  matchDetails         Detalle de un partido
+  profile              Perfil y ajustes del usuario
+  teams                Equipos (descubrir, roster, rivales, revueltas)
+  venueOnboarding      Alta inicial cuenta tipo centro (si aplica)
+  venueDashboard       Panel del centro deportivo (reservas, perfil, canchas, horario, resumen)
+  adminDashboard       Panel administrador
+
+Navegación inferior (bottom-nav): home, explore, matches, create, teams, profile
+(solo pantallas incluidas en PLAYER_NAV_SCREENS).
+
+Tipos de cuenta (profiles / lógica): player | venue | admin. Tras login se
+redirige al flujo correspondiente (onboarding jugador, dashboard centro, admin).
+
+
+5. SUPABASE — PAPEL EN EL SISTEMA
+--------------------------------------------------------------------------------
+- Autenticación: email/contraseña y proveedores (p. ej. Google)
+- Tabla profiles: 1:1 con auth.users, datos de jugador/venue/admin según evolución
+- Partidos: match_opportunities, participantes, mensajes, rival challenges,
+  revueltas (lineups, solicitudes externas), completado y ratings
+- Equipos: teams, team_members, invitaciones, solicitudes, logos en Storage
+- Geo: tablas geo_* (país, región, ciudad) para filtros y perfil
+- Centros: sports_venues, venue_courts, venue_weekly_hours, venue_reservations
+- Reseñas de centros: migración sports_venue_reviews (tabla/vistas según migración)
+- Sanciones / reportes / conduct cards: migraciones modulares
+- Realtime: suscripciones en cliente (perfiles, reservas de venue, etc.)
+
+Hay decenas de migraciones en orden cronológico; las primeras definen el núcleo
+(20250322180000_initial_schema.sql y RLS). Las posteriores añaden venue,
+geo, estadísticas de equipo, revuelta, admin, reviews, presencia, etc.
+
+
+6. RUTAS API (app/api)
+--------------------------------------------------------------------------------
+Todas bajo /api/... — uso típico: sesión Supabase en cookie/header, o service
+role solo en servidor.
+
+Admin (protección con require-admin u equivalente):
+  GET/POST  /api/admin/geo              Catálogo geográfico
+  GET       /api/admin/metrics          Métricas
+  GET/POST  /api/admin/reports         Reportes
+  GET/POST  /api/admin/sanctions        Sanciones
+  GET       /api/admin/venues           Listado centros
+  PATCH     /api/admin/venues/[id]      Actualizar centro
+  POST      /api/admin/venues/[id]/owner           Asignar dueño
+  PATCH     /api/admin/venues/[id]/owner-email    Email dueño
+  PATCH     /api/admin/venues/[id]/owner-password Contraseña dueño
+  POST      /api/admin/create-venue-user           Crear usuario centro
+  GET       /api/admin/players-dashboard          Dashboard jugadores / presencia
+
+Presencia:
+  POST      /api/presence               Heartbeat (actualiza last_seen_at en perfil)
+
+(Ver cada route.ts para métodos exactos, body y códigos de error.)
+
+
+7. PÁGINAS PÚBLICAS (SSR / SEO)
+--------------------------------------------------------------------------------
+- /centro/[venueId]         Ficha del centro, reservas públicas según reglas
+- /equipo/[teamId]          Ficha de equipo (stats, rivales, etc. según código)
+- /revuelta/[opportunityId] Invitación / vista pública de revuelta
+- /rancagua/...             Varias URLs para SEO local (canchas, futbolito,
+                            buscar rival, revueltas, faltan jugadores)
+- /swipe                    Ruta experimental aparte
+
+sitemap.ts agrega URLs dinámicas cuando hay variables de entorno y datos.
+
+
+8. FUNCIONALIDADES PRINCIPALES POR DOMINIO
+--------------------------------------------------------------------------------
+Jugadores
+  - Registro, login, onboarding (nombre, edad/cumple, género, posición, nivel,
+    ciudad/geo, WhatsApp en formato Chile +569…)
+  - Crear partidos: rival, busco jugadores, revuelta abierta; opción reserva RPC
+    en centros asociados
+  - Explorar y unirse a partidos; chat por oportunidad
+  - Equipos: crear/unirse, roles (capitán, vice), límite de miembros, invitaciones
+  - Rivales, desafíos, finalización de partido, votaciones y ratings
+  - Filtros por región/ciudad en descubrimiento de equipos (team-geo-filter)
+
+Centros deportivos (venue)
+  - Dashboard: pestaña Resumen (KPIs por periodo, cupos libres del día calendario
+    actual, tramo “Ahora”, historial filtrable), Reservas del día, Perfil de
+    contacto, Canchas, Horario semanal
+  - Reservas manuales, confirmación/cancelación, integración con pagos en estado
+  - Realtime sobre venue_reservations para refrescar listados
+
+Administración
+  - Gestión de centros, métricas, reportes, sanciones, catálogo geo
+  - Panel de jugadores con presencia (last_seen_at)
+  - Creación de usuarios centro y asignación de dueño
+
+Público
+  - Landings Rancagua, JSON-LD (lib/seo), enlaces WhatsApp normalizados
+
+
+9. VARIABLES DE ENTORNO (REFERENCIA)
+--------------------------------------------------------------------------------
+Obligatorias / habituales en runtime:
+  NEXT_PUBLIC_SUPABASE_URL
+  NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+Servidor (solo API, sitemap, datos sensibles):
+  SUPABASE_SERVICE_ROLE_KEY
+
+Sitio y SEO:
+  NEXT_PUBLIC_SITE_URL          URL canónica (OG, enlaces absolutos)
+  NEXT_PUBLIC_APP_TIMEZONE      Zona horaria de la app (default America/Santiago)
+
+Despliegue:
+  VERCEL=1                      Activa Vercel Analytics en layout
+
+Sin estas claves, parte de la app degradará o no compilará rutas que las lean.
+
+
+10. SCRIPTS NPM
+--------------------------------------------------------------------------------
+  npm run dev      Servidor desarrollo Next
+  npm run build    Build producción
+  npm run start    Servidor producción
+  npm run lint     ESLint
+
+
+11. ARCHIVOS Y MÓDULOS CLAVE (PARA NAVEGAR EL CÓDIGO)
+--------------------------------------------------------------------------------
+lib/app-context.tsx       Corazón del estado: sesión, partidos, equipos, venue,
+                          admin, realtime, createMatch, reservas, etc.
+lib/types.ts              Contrato de tipos con la BD y la UI
+lib/supabase/client.ts    Cliente browser; isSupabaseConfigured()
+lib/supabase/server.ts    Uso en Server Components / route handlers
+lib/supabase/queries.ts   Consultas generales de partidos/perfiles
+lib/supabase/venue-queries.ts   Centros, canchas, reservas por rango
+lib/supabase/team-queries.ts    Equipos y membresía
+lib/supabase/message-queries.ts Chat
+lib/supabase/require-admin.ts   Verificación admin
+lib/supabase/require-session.ts Sesión para API routes
+lib/query-keys.ts         Claves TanStack Query centralizadas (invalidación)
+lib/query-client-provider.tsx  QueryClientProvider + defaults
+components/venue-dashboard-screen.tsx   Panel centro (resumen + reservas)
+components/admin-dashboard-screen.tsx Panel admin (pestañas)
+proxy.ts                  Middleware/proxy relacionado con Supabase (revisar en repo)
+
+
+12. CONVENCIONES Y NOTAS
+--------------------------------------------------------------------------------
+- Idioma UI principal: español (Chile).
+- RLS en Supabase: el cliente respeta políticas; operaciones admin suelen usar
+  service role en API routes.
+- Imágenes de perfil y logos: buckets en Storage; URLs públicas con bust de
+  caché en avatares cuando aplica.
+- El proyecto evoluciona por migraciones SQL: al clonar, aplicar migraciones en
+  orden en el proyecto Supabase vinculado.
+
+
+13. MIGRACIONES (LISTADO — ORDEN CRONOLÓGICO APROXIMADO)
+--------------------------------------------------------------------------------
+Ver carpeta supabase/migrations para el detalle SQL. Nombres representativos:
+  initial_schema, rls_policies, match_completion_and_ratings, rival_challenges,
+  team_logos_storage, revuelta (lineup, goalkeeper, roles, capacity),
+  players_seek_profile, profile_avatars, team_join_requests, team_private,
+  sports_venues_and_bookings, venue_public_reservations_rpc, team_members_limit,
+  teams_limit, venue_reservations payments/history, admin/self confirmed,
+  venue_manual_reservations, court_price_per_hour, geo_locations,
+  team_city_immutable, team_roster_max_18, profiles_player_essentials,
+  match_outcomes_stats_votes, team_stats_wdl, team_rival_streaks,
+  public_player_profiles_reports_sanctions, sync_team_member_position,
+  profiles_birth_date, private_revuelta_team, revuelta_ext_requests_organizer,
+  vice_captain_team_limit_3, finalize_rival_match_organizer,
+  realtime_profiles_sync_team_photo, seed_chile_regions_communes,
+  mod_sanction_alert_timestamps, conduct_cards_cumulative,
+  sports_venues_is_paused, profiles_last_seen_at, sports_venue_reviews,
+  fix_revuelta_ext_req_rls_recursion
+(+ cualquier migración añadida después de redactar este documento)
+
+
+14. MANTENIMIENTO DE ESTE DOCUMENTO
+--------------------------------------------------------------------------------
+Este archivo es una instantánea descriptiva. Ante cambios grandes (nuevas APIs,
+tablas o flujos), conviene actualizar las secciones 5–8 y el listado de rutas.
+La fuente de verdad sigue siendo el código y las migraciones SQL.
+
+
+15. REFACTORIZACIÓN POR FASES (ESTADO ACTUAL)
+--------------------------------------------------------------------------------
+  Fase 1–2 — Contexto estable + realtime incremental (app-context)
+    - Cuatro contextos por dominio (UI / auth / match / team) ya existían en
+      lib/contexts/domain-contexts.tsx; se redujo la recreación innecesaria del
+      value de cada Provider:
+      * useMemo de auth/match/team solo depende de datos que cambian (listas,
+        usuario, flags), no de callbacks ya estables (useStableCallback).
+      * UI: useMemo solo con estado de pantalla/selección, no con setters ni
+        callbacks estables.
+    - avatarDisplayUrl y updateProfilePhoto pasan a useStableCallback leyendo
+      usuario y bust/epoch vía refs (profilePhotoCacheBustRef,
+      profilePhotoEpochByUserRef, currentUserRef), para no cambiar la identidad
+      del callback en cada render del perfil.
+    - refreshCurrentUserProfile unificado en useStableCallback.
+    - Realtime jugador: debounce 250 ms + tope maxWait 2000 ms para que ráfagas
+      de eventos no pospongan el flush indefinidamente; timers se limpian en
+      cleanup.
+
+Objetivo general
+  Reducir renders y refetch innecesario, endurecer seguridad (validaciones y
+  atomicidad) en BD, y modernizar el fetching/cache con TanStack Query, sin un
+  “big bang” que rompa pantallas.
+
+Orden recomendado (y por qué)
+  “Fase 1 + 2 primero es lo correcto”: hoy el value del provider y el
+  refreshAppData amplifican coste y re-renders; arreglar eso da el mayor retorno
+  con menos riesgo que reescribir todo el flujo de datos de golpe.
+
+  Compatibilidad temporal con useApp() evita un “big bang” y encaja con “no
+  romper nada”.
+
+  Fase 4 (RPC/API) es la dirección adecuada para reservas, joins y reportes: la
+  seguridad real debe vivir en BD, no solo en UI.
+
+  TanStack Query (Fase 5) encaja bien después de separar un poco dominios y
+  reducir el refetch salvaje; si se mete antes sin ordenar realtime/contexto,
+  se puede terminar cacheando basura o invalidando demasiado.
+
+  Orden que se mantiene:
+    1 → 2 → (3 y 4 en paralelo por área de producto) → 5 → 6 → 7
+
+Matices / riesgos a tener en cuenta
+  - Varios contextos + useMemo/useCallback: ayuda, pero si los valores de cada
+    contexto siguen siendo objetos nuevos cada vez, el beneficio es parcial.
+    La clave es estabilidad de referencias por dominio y que los componentes no
+    consuman contextos que no necesitan (split real, no solo carpetas).
+  - Realtime incremental (Fase 2) es la parte más delicada: hay que mapear
+    exactamente qué filas ve cada usuario (RLS) y mantener el mismo
+    comportamiento que hoy (incluyendo casos raros). Cambiar tabla por tabla,
+    con pruebas manuales/regresión.
+  - “Prohibir createClient() en componentes” (Fase 3) es buena norma a medio
+    plazo; al principio puede ser mucho churn. Enfoque recomendado: archivo por
+    archivo cuando se toca esa pantalla.
+  - Fase 6 (memo): útil al final; memo sin medir a veces no cambia nada si los
+    props cambian siempre. Mejor después de Query y splits de contexto.
+  - Fase 7: encajar UIContext y encapsular navegación es el preparativo
+    correcto; no implementar routing todavía evita dos migraciones a la vez.
+
+Estado implementado en este repo (lo “listo”)
+  Nota: el trabajo se hizo de forma incremental, validando con TypeScript y
+  build de Next en cada bloque.
+
+  Fase 3 — Centralizar Supabase (cliente + queries)
+    - Se evitó el uso directo de createClient() en componentes, migrando a
+      getBrowserSupabase() (con null checks) y helpers en lib/supabase/*.
+    - Se añadieron módulos de queries/mutations por dominio (p. ej. reservas,
+      participantes, reportes, dashboard de venue).
+    - lib/app-context.tsx se actualizó para consumir esos helpers y no hacer
+      queries “sueltas” desde UI.
+
+  Fase 4 — RPC/API (seguridad y reglas en BD)
+    - Reservas (venue_reservations):
+      * RPCs para confirmar/cancelar por dueño y autoconfirmar por booker.
+      * Componentes actualizados para usar helpers que llaman RPC.
+    - Joins:
+      * RPC join_match_opportunity: validaciones de auth, no pasado, reglas de
+        revuelta privada, y consistencia de cupos.
+      * RPC request_revuelta_external_join: solicitudes externas con validación
+        (no miembro, no duplicado, partido correcto y no pasado).
+    - Moderación/admin:
+      * RPC admin_update_player_report_status.
+      * RPC admin_clear_suspension y admin_clear_ban (admin-only).
+      * API routes admin migrados a llamar RPC usando JWT del admin.
+    - Hardening transaccional:
+      * RPC create_match_opportunity_with_optional_reservation (atómico).
+      * RPC accept_team_invite y respond_team_join_request (atómicos).
+      * RPC create_team_with_captain (atómico).
+      * RPC create_rival_challenge y respond_rival_challenge (atómicos).
+
+  Fase 5 — TanStack Query (fetching + cache)
+    - Se añadió un QueryClientProvider global:
+      * lib/query-client-provider.tsx
+      * components/providers.tsx envuelve AppProvider con QueryProvider.
+    - Migración “B” (bajo riesgo): opciones de ciudad con venues en Home:
+      * lib/hooks/use-geo-cities-with-venues.ts (useQuery)
+      * components/home-screen.tsx consume el hook.
+    - Migración “A” /centro/[venueId]:
+      * components/venue-centro-client.tsx: reservas públicas por día con useQuery
+        + keepPreviousData para UX estable.
+    - App /revuelta dentro de MatchDetails (detalle de partido):
+      * components/match-details-screen.tsx:
+        - participantes: useQuery + invalidación por realtime
+        - ratings (overview + mi rating): useQuery + invalidación
+        - solicitudes externas revuelta privada: useQuery + invalidación
+        - estado de reserva: useQuery + invalidación
+        - contacto venue y contador de organizador: useQuery
+        - autoconfirmación de reserva: useMutation con update optimista, rollback
+          y revalidación.
+    - Claves TanStack Query centralizadas:
+      * lib/query-keys.ts (+ stableIdsKey para listas de ids en el hub).
+      * Todas las queries anteriores y match-details usan queryKeys.* para
+        invalidación consistente (incl. prefijos por dominio: geo, venueCentro,
+        sportsVenue, matchOpportunity, profile, matchesHub, chat).
+    - Hub Partidos (components/matches-screen.tsx):
+      * useQuery: reservas solo del jugador/admin, último mensaje por chat activo,
+        resúmenes de ratings en finalizados, reseñas de centro en reservas pasadas.
+      * useMutation: confirmar reserva solo desde el hub + invalidateQueries.
+    - Chat (components/chat-screen.tsx):
+      * useQuery: mensajes (queryKeys.chat.messages), participantes (misma key que
+        detalle → cache compartido con match-details-screen), mi rating.
+      * Realtime INSERT en messages → invalida mensajes y participantes.
+      * useMutation: enviar mensaje + invalidar hilo.
+    - Ampliación Fase 5 (explore, teams, create, venue-dashboard — abril 2026):
+      * lib/query-keys.ts: prefijos explore, teams, create, venueDashboard.
+      * explore-screen: ciudades con useGeoCitiesWithVenuesInRegion; listado de
+        centros con useQuery; grilla de disponibilidad por venueIds + horizonte
+        con useQuery + placeholderData (keepPreviousData).
+      * teams-screen: ajustes privados del equipo (miembro) con useQuery;
+        tras guardar coordinación, setQueryData en la misma clave.
+      * create-screen: lista de centros por geo con useQuery
+        (queryKeys.create.sportsVenuesForPlayer); merge de prefill con
+        fetchVenueById si hace falta; canchas del centro vinculado, slots del
+        día y centros alternativos al mismo horario con useQuery (clave con
+        refresh de slots y hint de duración del venue).
+      * venue-dashboard-screen: bundle dueño (venue + canchas + horario semanal)
+        con useQuery; useMutation para confirmar/cancelar reserva, reserva
+        manual, nombre/teléfono del centro, alta/edición/baja de canchas,
+        horario semanal y `updateVenueReservationFields` (pagos); onSuccess
+        invalida owner bundle y recarga reservas del día + rango del tablero
+        cuando aplica.
+
+  - Realtime (jugador + panel centro):
+      * lib/app-context.tsx: en lugar de un solo canal `app-realtime:<userId>`,
+        tres canales `app-rt:<userId>:match|team|users` con las mismas tablas
+        que antes; el debounce incremental (flush match | team | users) no cambia.
+      * venue-dashboard-screen: suscripción a `venue_reservations` con nombre
+        de canal que incluye la firma de ids de cancha; si hay 1–100 canchas,
+        INSERT/UPDATE usan filtro `court_id=in.(...)` y DELETE va sin filtro
+        (limitación de Supabase: los DELETE no admiten filter en postgres_changes).
+        Sin canchas o más de 100 canchas se mantiene `event: '*'` sin filtro de columna.
+      * Chat, detalle de partido y otras pantallas ya usaban canales y filtros
+        propios (`messages`, `match_opportunity_participants`); sin cambio.
+      * Regresión manual sugerida: dos jugadores — partidos/rivales/equipos se
+        actualizan al otro; perfil/foto y moderación reflejan UPDATE; dueño de
+        centro ve reservas del día y tablero al crear/editar/cancelar desde jugador.
+
+  - Fase 1–2 adicional (cerrada): componentes y hooks consumen useAppAuth /
+    useAppUI / useAppMatch / useAppTeam según el dominio; useApp() queda solo
+    como export en lib/app-context (compatibilidad / depuración). Medición de
+    renders antes/después: opcional con React DevTools Profiler.
+
+Pendiente / siguientes pasos recomendados
+  - Según prioridad de producto: métricas, tests e2e, u otras pantallas a TanStack Query.
+
+================================================================================
+  FIN DOCUMENTACIÓN GENERAL
+================================================================================

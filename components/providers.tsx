@@ -3,6 +3,7 @@
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { AppProvider } from '@/lib/app-context'
+import { QueryProvider } from '@/lib/query-client-provider'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -13,7 +14,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       storageKey="sportmatch-theme"
       disableTransitionOnChange
     >
-      <AppProvider>{children}</AppProvider>
+      <QueryProvider>
+        <AppProvider>{children}</AppProvider>
+      </QueryProvider>
       <Toaster richColors position="top-center" />
     </ThemeProvider>
   )

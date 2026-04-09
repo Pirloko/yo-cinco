@@ -4,12 +4,15 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 
-import { useApp } from '@/lib/app-context'
+import { useAppAuth, useAppTeam, useAppUI } from '@/lib/app-context'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
 import { DiscoverTeamsCarousel } from '@/components/discover-teams-carousel'
 import { RegionCityFilterSelect } from '@/components/region-city-filter'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
 import { fetchGeoCitiesWithVenuesInRegion } from '@/lib/supabase/venue-queries'
 import { useDiscoverTeams } from '@/hooks/use-discover-teams'
 import { saveRivalTargetTeamId } from '@/lib/rival-prefill'
@@ -18,13 +21,9 @@ import { userIsTeamStaffCaptain } from '@/lib/team-membership'
 
 export function SwipeScreen() {
   const router = useRouter()
-  const {
-    currentUser,
-    requestToJoinTeam,
-    teamJoinRequests,
-    setCurrentScreen,
-    getUserTeams,
-  } = useApp()
+  const { setCurrentScreen } = useAppUI()
+  const { currentUser } = useAppAuth()
+  const { requestToJoinTeam, teamJoinRequests, getUserTeams } = useAppTeam()
   const [cityFilter, setCityFilter] = useState('')
   const [cityFilterOptions, setCityFilterOptions] = useState<
     Array<{ id: string; name: string }>
@@ -51,10 +50,12 @@ export function SwipeScreen() {
       return
     }
     setCityFilter('')
-    void fetchGeoCitiesWithVenuesInRegion(
-      createClient(),
-      currentUser.regionId
-    ).then(setCityFilterOptions)
+    const sb = getBrowserSupabase()
+    if (sb) {
+      void fetchGeoCitiesWithVenuesInRegion(sb, currentUser.regionId).then(
+        setCityFilterOptions
+      )
+    }
   }, [currentUser?.regionId, currentUser?.cityId])
 
   const goHome = () => {

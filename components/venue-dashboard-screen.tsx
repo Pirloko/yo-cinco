@@ -1,9 +1,28 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { useApp } from '@/lib/app-context'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import { useAppAuth } from '@/lib/app-context'
+import { queryKeys } from '@/lib/query-keys'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
+import { fetchMatchAndOrganizerMapsForVenueBookings } from '@/lib/supabase/venue-dashboard-queries'
+import {
+  deleteVenueCourtById,
+  insertVenueCourtRow,
+  syncVenueWeeklyHoursFromOwnerUi,
+  updateSportsVenueNameAndPhone,
+  updateVenueCourtPrice,
+} from '@/lib/supabase/venue-owner-mutations'
+import {
+  insertVenueReservationRow,
+  updateVenueReservationFields,
+  cancelVenueReservationAsVenueOwner,
+  confirmVenueReservationAsVenueOwner,
+} from '@/lib/supabase/venue-reservation-mutations'
 import {
   fetchVenueForOwner,
   fetchVenueCourts,
@@ -262,16 +281,6 @@ const DEFAULT_OPEN_CLOSE: { open: string; close: string } = {
   close: '22:00',
 }
 
-function toPgTime(hhmm: string): string {
-  const x = hhmm.trim()
-  if (/^\d{1,2}:\d{2}$/.test(x)) {
-    const [h, m] = x.split(':')
-    return `${h.padStart(2, '0')}:${m}:00`
-  }
-  if (/^\d{2}:\d{2}:\d{2}$/.test(x)) return x
-  return `${x}:00`
-}
-
 function pad2(n: number) {
   return n.toString().padStart(2, '0')
 }
@@ -281,14 +290,14 @@ function toDateInputValue(d: Date) {
 }
 
 export function VenueDashboardScreen() {
-  const { currentUser, logout } = useApp()
+  const queryClient = useQueryClient()
+  const { currentUser, logout } = useAppAuth()
   const [tab, setTab] = useState<
     'dashboard' | 'bookings' | 'profile' | 'courts' | 'hours'
   >('bookings')
   const [venue, setVenue] = useState<SportsVenue | null>(null)
   const [courts, setCourts] = useState<VenueCourt[]>([])
   const [weeklyLoaded, setWeeklyLoaded] = useState<VenueWeeklyHour[]>([])
-  const [loading, setLoading] = useState(true)
   const [dayStr, setDayStr] = useState(() => toDateInputValue(new Date()))
   const [reservations, setReservations] = useState<
     Awaited<ReturnType<typeof fetchVenueReservationsRange>>
@@ -317,7 +326,6 @@ export function VenueDashboardScreen() {
   })
   const [hoursQuickOpen, setHoursQuickOpen] = useState(DEFAULT_OPEN_CLOSE.open)
   const [hoursQuickClose, setHoursQuickClose] = useState(DEFAULT_OPEN_CLOSE.close)
-  const [hoursSaving, setHoursSaving] = useState(false)
 
   const bookingsFetchGen = useRef(0)
   const dashboardFetchGen = useRef(0)
@@ -345,9 +353,7 @@ export function VenueDashboardScreen() {
   const [pwNew, setPwNew] = useState('')
   const [pwConfirm, setPwConfirm] = useState('')
   const [pwSaving, setPwSaving] = useState(false)
-  const [profileSaving, setProfileSaving] = useState(false)
   const [showManualForm, setShowManualForm] = useState(false)
-  const [manualSaving, setManualSaving] = useState(false)
   const [manualForm, setManualForm] = useState({
     courtId: '',
     time: '20:00',
@@ -359,10 +365,39 @@ export function VenueDashboardScreen() {
   })
 
   const ownerId = currentUser?.id
-  const reloadAll = useCallback(async () => {
-    if (!ownerId || !isSupabaseConfigured()) return
-    const supabase = createClient()
-    const v = await fetchVenueForOwner(supabase, ownerId)
+
+  const ownerBundleQuery = useQuery({
+    queryKey: queryKeys.venueDashboard.ownerBundle(ownerId),
+    enabled: Boolean(ownerId && isSupabaseConfigured()),
+    queryFn: async () => {
+      const supabase = getBrowserSupabase()
+      if (!supabase || !ownerId) {
+        return {
+          venue: null as SportsVenue | null,
+          courts: [] as VenueCourt[],
+          weeklyLoaded: [] as VenueWeeklyHour[],
+        }
+      }
+      const v = await fetchVenueForOwner(supabase, ownerId)
+      if (!v) {
+        return {
+          venue: null as SportsVenue | null,
+          courts: [] as VenueCourt[],
+          weeklyLoaded: [] as VenueWeeklyHour[],
+        }
+      }
+      const [cList, wList] = await Promise.all([
+        fetchVenueCourts(supabase, v.id),
+        fetchVenueWeeklyHours(supabase, v.id),
+      ])
+      return { venue: v, courts: cList, weeklyLoaded: wList }
+    },
+  })
+
+  useEffect(() => {
+    const bundle = ownerBundleQuery.data
+    if (bundle === undefined) return
+    const v = bundle.venue
     setVenue(v)
     if (!v) {
       setCourts([])
@@ -370,12 +405,8 @@ export function VenueDashboardScreen() {
       setPhoneSuffix('')
       return
     }
-    const [cList, wList] = await Promise.all([
-      fetchVenueCourts(supabase, v.id),
-      fetchVenueWeeklyHours(supabase, v.id),
-    ])
-    setCourts(cList)
-    setWeeklyLoaded(wList)
+    setCourts(bundle.courts)
+    setWeeklyLoaded(bundle.weeklyLoaded)
     setProfileForm({
       name: v.name,
       address: v.address,
@@ -388,29 +419,29 @@ export function VenueDashboardScreen() {
     setPhoneSuffix(extractWhatsappSuffix8(v.phone))
     const hb: Record<number, DayHours> = {}
     for (let d = 0; d <= 6; d++) hb[d] = null
-    for (const h of wList) {
+    for (const h of bundle.weeklyLoaded) {
       hb[h.dayOfWeek] = { open: h.openTime, close: h.closeTime }
     }
     setHoursByDay(hb)
-  }, [ownerId])
+  }, [ownerBundleQuery.data])
 
-  useEffect(() => {
-    let ok = true
-    ;(async () => {
-      setLoading(true)
-      await reloadAll()
-      if (ok) setLoading(false)
-    })()
-    return () => {
-      ok = false
+  const loading =
+    Boolean(ownerId && isSupabaseConfigured()) && ownerBundleQuery.isPending
+
+  const invalidateVenueOwnerBundle = useCallback(() => {
+    if (ownerId) {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.venueDashboard.ownerBundle(ownerId),
+      })
     }
-  }, [reloadAll])
+  }, [ownerId, queryClient])
 
   const loadBookingsForSelectedDay = useCallback(async () => {
     const venueId = venue?.id
     if (!venueId || !isSupabaseConfigured()) return
     const gen = ++bookingsFetchGen.current
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const d = new Date(dayStr + 'T12:00:00')
     const start = new Date(d)
     start.setHours(0, 0, 0, 0)
@@ -425,49 +456,10 @@ export function VenueDashboardScreen() {
     if (gen !== bookingsFetchGen.current) return
     setReservations(list)
 
-    const matchIds = [...new Set((list ?? []).map((r) => r.matchOpportunityId).filter(Boolean))] as string[]
-    const mMap = new Map<string, { id: string; title: string; creatorId: string }>()
-    const contactIds = new Set<string>()
-    const fallbackBookerIds = new Set<string>()
-    for (const r of list ?? []) {
-      if (r.bookerUserId) fallbackBookerIds.add(r.bookerUserId)
-    }
-
-    if (matchIds.length > 0) {
-      const { data: matches } = await supabase
-        .from('match_opportunities')
-        .select('id, title, creator_id')
-        .in('id', matchIds)
-      if (gen !== bookingsFetchGen.current) return
-      for (const m of matches ?? []) {
-        const id = m.id as string
-        const creatorId = m.creator_id as string
-        contactIds.add(creatorId)
-        mMap.set(id, { id, title: (m.title as string) ?? 'Partido', creatorId })
-      }
-    }
+    const { matchById: mMap, organizerById: pMap } =
+      await fetchMatchAndOrganizerMapsForVenueBookings(supabase, list)
     if (gen !== bookingsFetchGen.current) return
     setMatchById(mMap)
-
-    for (const id of fallbackBookerIds) contactIds.add(id)
-    if (contactIds.size === 0) {
-      if (gen !== bookingsFetchGen.current) return
-      setOrganizerById(new Map())
-      return
-    }
-    const { data: profs } = await supabase
-      .from('profiles')
-      .select('id, name, whatsapp_phone')
-      .in('id', [...contactIds])
-    if (gen !== bookingsFetchGen.current) return
-    const pMap = new Map<string, { id: string; name: string; whatsappPhone: string | null }>()
-    for (const p of profs ?? []) {
-      pMap.set(p.id as string, {
-        id: p.id as string,
-        name: (p.name as string) ?? 'Organizador',
-        whatsappPhone: (p.whatsapp_phone as string | null) ?? null,
-      })
-    }
     setOrganizerById(pMap)
   }, [venue?.id, dayStr])
 
@@ -477,7 +469,8 @@ export function VenueDashboardScreen() {
     const gen = ++dashboardFetchGen.current
     setDashboardLoading(true)
     try {
-      const supabase = createClient()
+      const supabase = getBrowserSupabase()
+      if (!supabase) return
       const { from, to } = dashboardPeriodRange(dashboardPeriod)
       const list = await fetchVenueReservationsRange(
         supabase,
@@ -492,6 +485,208 @@ export function VenueDashboardScreen() {
     }
   }, [venue?.id, dashboardPeriod])
 
+  const refreshBookingsAndDashboard = useCallback(() => {
+    void loadBookingsForSelectedDay()
+    if (tabRef.current === 'dashboard') void loadDashboardRange()
+  }, [loadBookingsForSelectedDay, loadDashboardRange])
+
+  const confirmReservationMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const sb = getBrowserSupabase()
+      if (!sb) throw new Error('Sin conexión')
+      const { error } = await confirmVenueReservationAsVenueOwner(sb, id)
+      if (error) throw new Error(error.message)
+    },
+    onSuccess: () => {
+      toast.success('Reserva confirmada')
+      invalidateVenueOwnerBundle()
+      refreshBookingsAndDashboard()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const cancelReservationMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      const sb = getBrowserSupabase()
+      if (!sb) throw new Error('Sin conexión')
+      const { error } = await cancelVenueReservationAsVenueOwner(
+        sb,
+        id,
+        reason
+      )
+      if (error) throw new Error(error.message)
+    },
+    onSuccess: () => {
+      toast.success('Reserva cancelada')
+      invalidateVenueOwnerBundle()
+      refreshBookingsAndDashboard()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const updateReservationFieldsMutation = useMutation({
+    mutationFn: async ({
+      reservationId,
+      payload,
+    }: {
+      reservationId: string
+      payload: Record<string, unknown>
+    }) => {
+      const sb = getBrowserSupabase()
+      if (!sb) throw new Error('Sin conexión')
+      const { error } = await updateVenueReservationFields(
+        sb,
+        reservationId,
+        payload
+      )
+      if (error) throw new Error(error.message)
+    },
+    onSuccess: () => {
+      invalidateVenueOwnerBundle()
+      refreshBookingsAndDashboard()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const createManualReservationMutation = useMutation({
+    mutationFn: async (vars: {
+      payload: Record<string, unknown>
+      dayStrNext: string
+    }) => {
+      const sb = getBrowserSupabase()
+      if (!sb) throw new Error('Sin conexión')
+      const { error } = await insertVenueReservationRow(sb, vars.payload)
+      if (error) {
+        if (error.message.includes('venue_reservation_overlap')) {
+          throw new Error('Ese horario ya está ocupado en esta cancha.')
+        }
+        throw new Error(error.message)
+      }
+    },
+    onSuccess: (_d, vars) => {
+      toast.success('Reserva manual creada correctamente.')
+      setManualForm((f) => ({
+        ...f,
+        courtId: '',
+        clientName: '',
+        clientWhatsappSuffix: '',
+        note: '',
+      }))
+      invalidateVenueOwnerBundle()
+      setDayStr(vars.dayStrNext)
+      refreshBookingsAndDashboard()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const saveVenueContactProfileMutation = useMutation({
+    mutationFn: async (vars: {
+      venueId: string
+      name: string
+      phone: string
+    }) => {
+      const sb = getBrowserSupabase()
+      if (!sb) throw new Error('Sin conexión')
+      const { error } = await updateSportsVenueNameAndPhone(
+        sb,
+        vars.venueId,
+        vars.name,
+        vars.phone
+      )
+      if (error) throw new Error(error.message)
+    },
+    onSuccess: () => {
+      toast.success('Nombre y teléfono actualizados.')
+      invalidateVenueOwnerBundle()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const addCourtMutation = useMutation({
+    mutationFn: async (vars: {
+      venueId: string
+      name: string
+      nextOrder: number
+    }) => {
+      const sb = getBrowserSupabase()
+      if (!sb) throw new Error('Sin conexión')
+      const { error } = await insertVenueCourtRow(
+        sb,
+        vars.venueId,
+        vars.name,
+        vars.nextOrder
+      )
+      if (error) throw new Error(error.message)
+    },
+    onSuccess: () => {
+      setNewCourtName('')
+      toast.success('Cancha agregada')
+      invalidateVenueOwnerBundle()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const saveCourtPriceMutation = useMutation({
+    mutationFn: async (vars: {
+      courtId: string
+      venueId: string
+      price: number | null
+    }) => {
+      const sb = getBrowserSupabase()
+      if (!sb) throw new Error('Sin conexión')
+      const { error } = await updateVenueCourtPrice(
+        sb,
+        vars.courtId,
+        vars.venueId,
+        vars.price
+      )
+      if (error) throw new Error(error.message)
+    },
+    onSuccess: () => {
+      toast.success('Precio guardado')
+      invalidateVenueOwnerBundle()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const removeCourtMutation = useMutation({
+    mutationFn: async (courtId: string) => {
+      const sb = getBrowserSupabase()
+      if (!sb) throw new Error('Sin conexión')
+      const { error } = await deleteVenueCourtById(sb, courtId)
+      if (error) throw new Error(error.message)
+    },
+    onSuccess: () => {
+      toast.success('Cancha eliminada')
+      invalidateVenueOwnerBundle()
+      refreshBookingsAndDashboard()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const saveHoursMutation = useMutation({
+    mutationFn: async (vars: {
+      venueId: string
+      hours: Record<number, DayHours>
+      previousWeekly: VenueWeeklyHour[]
+    }) => {
+      const sb = getBrowserSupabase()
+      if (!sb) throw new Error('Sin conexión')
+      const { error } = await syncVenueWeeklyHoursFromOwnerUi(
+        sb,
+        vars.venueId,
+        vars.hours,
+        vars.previousWeekly
+      )
+      if (error) throw new Error(error.message)
+    },
+    onSuccess: () => {
+      toast.success('Horario guardado')
+      invalidateVenueOwnerBundle()
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
   useEffect(() => {
     void loadBookingsForSelectedDay()
   }, [loadBookingsForSelectedDay])
@@ -501,15 +696,26 @@ export function VenueDashboardScreen() {
     void loadDashboardRange()
   }, [tab, venue?.id, loadDashboardRange])
 
+  /** Ids de cancha ordenados: clave de canal + filtro Realtime (máx. 100 valores en `in.()` según Supabase). */
+  const venueReservationCourtIdsSorted = useMemo(
+    () => [...courts].map((c) => c.id).sort(),
+    [courts]
+  )
+  const venueReservationsRealtimeKey =
+    venueReservationCourtIdsSorted.length === 0
+      ? 'nocourts'
+      : venueReservationCourtIdsSorted.join(',')
+  const venueReservationsCourtFilter =
+    venueReservationCourtIdsSorted.length > 0 &&
+    venueReservationCourtIdsSorted.length <= 100
+      ? `court_id=in.(${venueReservationCourtIdsSorted.join(',')})`
+      : null
+
   /** Nuevas reservas / cambios desde jugadores u otros clientes (RLS limita al centro del dueño). */
   useEffect(() => {
     if (!venue?.id || !isSupabaseConfigured()) return
-    let supabase: ReturnType<typeof createClient>
-    try {
-      supabase = createClient()
-    } catch {
-      return
-    }
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     let debounceTimer: ReturnType<typeof setTimeout> | null = null
     const scheduleReload = () => {
       if (debounceTimer) clearTimeout(debounceTimer)
@@ -518,19 +724,63 @@ export function VenueDashboardScreen() {
         if (tabRef.current === 'dashboard') void loadDashboardRange()
       }, 280)
     }
-    const channel = supabase
-      .channel(`venue-dashboard-bookings:${venue.id}`)
-      .on(
+    const channel = supabase.channel(
+      `venue-dashboard-bookings:${venue.id}:${venueReservationsRealtimeKey}`
+    )
+    if (venueReservationsCourtFilter) {
+      // DELETE con filtro no está soportado en Realtime; INSERT/UPDATE van filtrados por cancha.
+      channel.on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'venue_reservations' },
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'venue_reservations',
+          filter: venueReservationsCourtFilter,
+        },
         scheduleReload
       )
-      .subscribe()
+      channel.on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'venue_reservations',
+          filter: venueReservationsCourtFilter,
+        },
+        scheduleReload
+      )
+      channel.on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'venue_reservations',
+        },
+        scheduleReload
+      )
+    } else {
+      channel.on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'venue_reservations',
+        },
+        scheduleReload
+      )
+    }
+    channel.subscribe()
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer)
       void supabase.removeChannel(channel)
     }
-  }, [venue?.id, loadBookingsForSelectedDay, loadDashboardRange])
+  }, [
+    venue?.id,
+    venueReservationsRealtimeKey,
+    venueReservationsCourtFilter,
+    loadBookingsForSelectedDay,
+    loadDashboardRange,
+  ])
 
   const formatWhatsAppLink = (raw: string, message: string) => {
     const digits = raw.replace(/\D/g, '')
@@ -542,45 +792,29 @@ export function VenueDashboardScreen() {
     reservationId: string,
     payload: Record<string, unknown>
   ) => {
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('venue_reservations')
-      .update(payload)
-      .eq('id', reservationId)
-    if (error) {
-      toast.error(error.message)
+    try {
+      await updateReservationFieldsMutation.mutateAsync({
+        reservationId,
+        payload,
+      })
+      return true
+    } catch {
       return false
     }
-    return true
   }
 
-  const confirmReservation = async (id: string) => {
+  const confirmReservation = (id: string) => {
     if (!confirm('¿Confirmar esta reserva? (pago recibido)')) return
-    const ok = await setReservationPayment(id, {
-      status: 'confirmed',
-      payment_status: 'paid',
-      confirmation_source: 'venue_owner',
-      confirmed_by_user_id: currentUser?.id ?? null,
-      confirmation_note: 'Confirmada por centro deportivo',
-    })
-    if (!ok) return
-    toast.success('Reserva confirmada')
-    await reloadAll()
+    confirmReservationMutation.mutate(id)
   }
 
-  const cancelReservation = async (id: string) => {
+  const cancelReservation = (id: string) => {
     const reason = prompt(
       'Motivo de cancelación (el organizador lo verá en su historial):',
       'No se recibió el pago a tiempo'
     )
     if (!reason) return
-    const ok = await setReservationPayment(id, {
-      status: 'cancelled',
-      cancelled_reason: reason,
-    })
-    if (!ok) return
-    toast.success('Reserva cancelada')
-    await reloadAll()
+    cancelReservationMutation.mutate({ id, reason })
   }
 
   const manualSlotMinutes = venue?.slotDurationMinutes ?? 60
@@ -617,7 +851,7 @@ export function VenueDashboardScreen() {
     })
   }, [manualAvailableCourts])
 
-  const createManualReservation = async () => {
+  const createManualReservation = () => {
     if (!venue || !isSupabaseConfigured()) return
     if (!manualForm.courtId) {
       toast.error('Selecciona una cancha disponible para la hora elegida.')
@@ -654,58 +888,37 @@ export function VenueDashboardScreen() {
       return
     }
 
-    setManualSaving(true)
-    try {
-      const noteParts = [
-        'manual_reservation',
-        manualForm.clientName.trim() ? `cliente:${manualForm.clientName.trim()}` : '',
-        clientWhatsappFull ? `telefono:${clientWhatsappFull}` : '',
-        manualForm.note.trim() ? `nota:${manualForm.note.trim()}` : '',
-      ].filter(Boolean)
-      const notes = noteParts.join(' | ')
-      const courtRow = courts.find((c) => c.id === manualForm.courtId)
-      const payload: Record<string, unknown> = {
-        court_id: manualForm.courtId,
-        starts_at: startsAt.toISOString(),
-        ends_at: endsAt.toISOString(),
-        status: manualForm.status,
-        payment_status: manualForm.status === 'confirmed' ? 'paid' : 'unpaid',
-        price_per_hour: courtRow?.pricePerHour ?? null,
-        currency: 'CLP',
-        notes,
-        booker_user_id: null,
-        match_opportunity_id: null,
-        confirmation_source: manualForm.status === 'confirmed' ? 'venue_owner' : null,
-        confirmed_by_user_id:
-          manualForm.status === 'confirmed' ? currentUser?.id ?? null : null,
-        confirmation_note:
-          manualForm.status === 'confirmed'
-            ? 'Reserva manual confirmada por centro'
-            : 'Reserva manual cargada por centro',
-      }
-      const supabase = createClient()
-      const { error } = await supabase.from('venue_reservations').insert(payload)
-      if (error) {
-        if (error.message.includes('venue_reservation_overlap')) {
-          toast.error('Ese horario ya está ocupado en esta cancha.')
-        } else {
-          toast.error(error.message)
-        }
-        return
-      }
-      toast.success('Reserva manual creada correctamente.')
-      setManualForm((f) => ({
-        ...f,
-        courtId: '',
-        clientName: '',
-        clientWhatsappSuffix: '',
-        note: '',
-      }))
-      await reloadAll()
-      setDayStr(toDateInputValue(startsAt))
-    } finally {
-      setManualSaving(false)
+    const noteParts = [
+      'manual_reservation',
+      manualForm.clientName.trim() ? `cliente:${manualForm.clientName.trim()}` : '',
+      clientWhatsappFull ? `telefono:${clientWhatsappFull}` : '',
+      manualForm.note.trim() ? `nota:${manualForm.note.trim()}` : '',
+    ].filter(Boolean)
+    const notes = noteParts.join(' | ')
+    const courtRow = courts.find((c) => c.id === manualForm.courtId)
+    const payload: Record<string, unknown> = {
+      court_id: manualForm.courtId,
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt.toISOString(),
+      status: manualForm.status,
+      payment_status: manualForm.status === 'confirmed' ? 'paid' : 'unpaid',
+      price_per_hour: courtRow?.pricePerHour ?? null,
+      currency: 'CLP',
+      notes,
+      booker_user_id: null,
+      match_opportunity_id: null,
+      confirmation_source: manualForm.status === 'confirmed' ? 'venue_owner' : null,
+      confirmed_by_user_id:
+        manualForm.status === 'confirmed' ? currentUser?.id ?? null : null,
+      confirmation_note:
+        manualForm.status === 'confirmed'
+          ? 'Reserva manual confirmada por centro'
+          : 'Reserva manual cargada por centro',
     }
+    createManualReservationMutation.mutate({
+      payload,
+      dayStrNext: toDateInputValue(startsAt),
+    })
   }
 
   const courtNameById = useMemo(() => {
@@ -828,25 +1041,11 @@ export function VenueDashboardScreen() {
       )
       return
     }
-    setProfileSaving(true)
-    try {
-      const supabase = createClient()
-      const { error } = await supabase
-        .from('sports_venues')
-        .update({
-          name,
-          phone: fullPhone,
-        })
-        .eq('id', venue.id)
-      if (error) {
-        toast.error(error.message)
-        return
-      }
-      toast.success('Nombre y teléfono actualizados.')
-      await reloadAll()
-    } finally {
-      setProfileSaving(false)
-    }
+    saveVenueContactProfileMutation.mutate({
+      venueId: venue.id,
+      name,
+      phone: fullPhone,
+    })
   }
 
   const changeVenuePassword = async () => {
@@ -862,7 +1061,8 @@ export function VenueDashboardScreen() {
       toast.error('Ingresa tu contraseña actual.')
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -897,26 +1097,18 @@ export function VenueDashboardScreen() {
     }
   }
 
-  const addCourt = async () => {
+  const addCourt = () => {
     if (!venue || !newCourtName.trim()) return
-    const supabase = createClient()
     const nextOrder =
       courts.length > 0 ? Math.max(...courts.map((c) => c.sortOrder)) + 1 : 0
-    const { error } = await supabase.from('venue_courts').insert({
-      venue_id: venue.id,
+    addCourtMutation.mutate({
+      venueId: venue.id,
       name: newCourtName.trim(),
-      sort_order: nextOrder,
+      nextOrder,
     })
-    if (error) {
-      toast.error(error.message)
-      return
-    }
-    setNewCourtName('')
-    toast.success('Cancha agregada')
-    await reloadAll()
   }
 
-  const saveCourtPrice = async (courtId: string, raw: string) => {
+  const saveCourtPrice = (courtId: string, raw: string) => {
     if (!venue) return
     const trimmed = raw.trim()
     const n = trimmed === '' ? null : Math.round(Number(trimmed))
@@ -924,30 +1116,16 @@ export function VenueDashboardScreen() {
       toast.error('Precio inválido')
       return
     }
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('venue_courts')
-      .update({ price_per_hour: n })
-      .eq('id', courtId)
-      .eq('venue_id', venue.id)
-    if (error) {
-      toast.error(error.message)
-      return
-    }
-    toast.success('Precio guardado')
-    await reloadAll()
+    saveCourtPriceMutation.mutate({
+      courtId,
+      venueId: venue.id,
+      price: n,
+    })
   }
 
-  const removeCourt = async (id: string) => {
+  const removeCourt = (id: string) => {
     if (!confirm('¿Eliminar esta cancha? Se borrarán sus reservas.')) return
-    const supabase = createClient()
-    const { error } = await supabase.from('venue_courts').delete().eq('id', id)
-    if (error) {
-      toast.error(error.message)
-      return
-    }
-    toast.success('Cancha eliminada')
-    await reloadAll()
+    removeCourtMutation.mutate(id)
   }
 
   const applyHoursTemplate = (dayIndices: readonly number[]) => {
@@ -974,7 +1152,7 @@ export function VenueDashboardScreen() {
     toast.success('Sábado y domingo marcados como cerrados. Guarda para confirmar.')
   }
 
-  const saveHours = async () => {
+  const saveHours = () => {
     if (!venue) return
     for (let d = 0; d <= 6; d++) {
       const cfg = hoursByDay[d]
@@ -994,60 +1172,12 @@ export function VenueDashboardScreen() {
         return
       }
     }
-    setHoursSaving(true)
-    const supabase = createClient()
-    try {
-    for (let d = 0; d <= 6; d++) {
-      const cfg = hoursByDay[d]
-      const existing = weeklyLoaded.find((h) => h.dayOfWeek === d)
-      if (!cfg) {
-        if (existing) {
-          const { error } = await supabase
-            .from('venue_weekly_hours')
-            .delete()
-            .eq('id', existing.id)
-          if (error) {
-            toast.error(error.message)
-            return
-          }
-        }
-      } else {
-        const ot = toPgTime(cfg.open)
-        const ct = toPgTime(cfg.close)
-        if (existing) {
-          const { error } = await supabase
-            .from('venue_weekly_hours')
-            .update({
-              open_time: ot,
-              close_time: ct,
-            })
-            .eq('id', existing.id)
-          if (error) {
-            toast.error(error.message)
-            return
-          }
-        } else {
-          const { error } = await supabase.from('venue_weekly_hours').insert({
-            venue_id: venue.id,
-            day_of_week: d,
-            open_time: ot,
-            close_time: ct,
-          })
-          if (error) {
-            toast.error(error.message)
-            return
-          }
-        }
-      }
-    }
-    toast.success('Horario guardado')
-    await reloadAll()
-    } finally {
-      setHoursSaving(false)
-    }
+    saveHoursMutation.mutate({
+      venueId: venue.id,
+      hours: hoursByDay,
+      previousWeekly: weeklyLoaded,
+    })
   }
-
-  // cancelReservation redefinida más abajo (con motivo y cancelación de partido asociado).
 
   const copyPublicLink = async () => {
     if (!venue || typeof window === 'undefined') return
@@ -1571,9 +1701,14 @@ export function VenueDashboardScreen() {
                         size="default"
                         className="w-full sm:w-auto"
                         onClick={() => void createManualReservation()}
-                        disabled={manualSaving || !manualForm.courtId}
+                        disabled={
+                          createManualReservationMutation.isPending ||
+                          !manualForm.courtId
+                        }
                       >
-                        {manualSaving ? 'Guardando...' : 'Guardar reserva manual'}
+                        {createManualReservationMutation.isPending
+                          ? 'Guardando...'
+                          : 'Guardar reserva manual'}
                       </Button>
                     </CardContent>
                   </Card>
@@ -1686,7 +1821,8 @@ export function VenueDashboardScreen() {
                                 <Button
                                   variant="default"
                                   size="sm"
-                                  onClick={() => void confirmReservation(r.id)}
+                                  disabled={confirmReservationMutation.isPending}
+                                  onClick={() => confirmReservation(r.id)}
                                 >
                                   Confirmar (pagado)
                                 </Button>
@@ -1694,7 +1830,8 @@ export function VenueDashboardScreen() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => void cancelReservation(r.id)}
+                                disabled={cancelReservationMutation.isPending}
+                                onClick={() => cancelReservation(r.id)}
                               >
                                 Cancelar
                               </Button>
@@ -1752,10 +1889,12 @@ export function VenueDashboardScreen() {
                   </div>
                   <Button
                     type="button"
-                    disabled={profileSaving}
+                    disabled={saveVenueContactProfileMutation.isPending}
                     onClick={() => void saveVenueContactProfile()}
                   >
-                    {profileSaving ? 'Guardando…' : 'Guardar nombre y teléfono'}
+                    {saveVenueContactProfileMutation.isPending
+                      ? 'Guardando…'
+                      : 'Guardar nombre y teléfono'}
                   </Button>
                 </div>
 
@@ -1823,7 +1962,11 @@ export function VenueDashboardScreen() {
                     onChange={(e) => setNewCourtName(e.target.value)}
                     className="bg-secondary border-border flex-1"
                   />
-                  <Button type="button" onClick={() => void addCourt()}>
+                  <Button
+                    type="button"
+                    disabled={addCourtMutation.isPending}
+                    onClick={() => addCourt()}
+                  >
                     <Plus className="w-4 h-4 mr-1" />
                     Agregar
                   </Button>
@@ -1847,12 +1990,13 @@ export function VenueDashboardScreen() {
                           placeholder="Opcional"
                           defaultValue={c.pricePerHour ?? ''}
                           key={`${c.id}-${c.pricePerHour ?? 'x'}`}
-                          onBlur={(e) => void saveCourtPrice(c.id, e.target.value)}
+                          onBlur={(e) => saveCourtPrice(c.id, e.target.value)}
                         />
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => void removeCourt(c.id)}
+                          disabled={removeCourtMutation.isPending}
+                          onClick={() => removeCourt(c.id)}
                           aria-label="Eliminar"
                         >
                           <Trash2 className="w-4 h-4 text-destructive" />
@@ -2052,10 +2196,12 @@ export function VenueDashboardScreen() {
 
                 <Button
                   className="w-full sm:w-auto min-h-11"
-                  disabled={hoursSaving}
+                  disabled={saveHoursMutation.isPending}
                   onClick={() => void saveHours()}
                 >
-                  {hoursSaving ? 'Guardando…' : 'Guardar horario'}
+                  {saveHoursMutation.isPending
+                    ? 'Guardando…'
+                    : 'Guardar horario'}
                 </Button>
               </div>
             )}

@@ -1,13 +1,24 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { useApp } from '@/lib/app-context'
+import { useState, useRef, useEffect, useMemo } from 'react'
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
+import { useAppAuth, useAppMatch, useAppUI } from '@/lib/app-context'
+import { queryKeys } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
 import {
   fetchMessagesForOpportunity,
   fetchParticipantsForOpportunity,
+  insertMatchChatMessage,
   type ChatMessageRow,
   type OpportunityParticipantRow,
 } from '@/lib/supabase/message-queries'
@@ -31,11 +42,14 @@ type UiMessage = ChatMessageRow & { isMe: boolean }
 export function ChatScreen() {
   const {
     setCurrentScreen,
-    currentUser,
-    matchOpportunities,
     selectedChatOpportunityId,
     setSelectedChatOpportunityId,
     setSelectedMatchOpportunityId,
+    openPublicProfile,
+  } = useAppUI()
+  const { currentUser, avatarDisplayUrl } = useAppAuth()
+  const {
+    matchOpportunities,
     participatingOpportunityIds,
     finalizeMatchOpportunity,
     suspendMatchOpportunity,
@@ -44,9 +58,7 @@ export function ChatScreen() {
     rivalChallenges,
     submitRivalCaptainVote,
     finalizeRivalOrganizerOverride,
-    openPublicProfile,
-    avatarDisplayUrl,
-  } = useApp()
+  } = useAppMatch()
 
   const opportunity = selectedChatOpportunityId
     ? matchOpportunities.find((m) => m.id === selectedChatOpportunityId)
@@ -72,126 +84,92 @@ export function ChatScreen() {
     ? isMatchChatMessagingOpen(opportunity)
     : false
 
-  const [messages, setMessages] = useState<UiMessage[]>([])
-  const [loading, setLoading] = useState(true)
-  const [newMessage, setNewMessage] = useState('')
-  const [showInfo, setShowInfo] = useState(false)
-  const [myRating, setMyRating] = useState<MatchOpportunityRatingRow | null>(
-    null
-  )
-  const [loadingRating, setLoadingRating] = useState(false)
-  const [participants, setParticipants] = useState<OpportunityParticipantRow[]>([])
-  const [loadingParticipants, setLoadingParticipants] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const queryClient = useQueryClient()
+  const oppId = selectedChatOpportunityId ?? ''
+  const chatUserId = currentUser?.id ?? ''
 
-  const loadMyRating = useCallback(async () => {
-    if (!selectedChatOpportunityId || !currentUser?.id || !isSupabaseConfigured()) {
-      setMyRating(null)
-      return
-    }
-    setLoadingRating(true)
-    try {
-      const supabase = createClient()
-      const row = await fetchMyRatingForOpportunity(
-        supabase,
-        selectedChatOpportunityId,
-        currentUser.id
-      )
-      setMyRating(row)
-    } finally {
-      setLoadingRating(false)
-    }
-  }, [selectedChatOpportunityId, currentUser?.id])
-
-  const loadParticipants = useCallback(async () => {
-    if (
-      !selectedChatOpportunityId ||
-      !currentUser?.id ||
-      !isSupabaseConfigured() ||
-      !canAccessThread
-    ) {
-      setParticipants([])
-      return
-    }
-    setLoadingParticipants(true)
-    try {
-      const supabase = createClient()
-      const rows = await fetchParticipantsForOpportunity(
-        supabase,
-        selectedChatOpportunityId
-      )
-      setParticipants(rows)
-    } finally {
-      setLoadingParticipants(false)
-    }
-  }, [selectedChatOpportunityId, currentUser?.id, canAccessThread])
-
-  const loadMessages = useCallback(async () => {
-    if (!selectedChatOpportunityId || !currentUser?.id || !isSupabaseConfigured()) {
-      setMessages([])
-      setLoading(false)
-      return
-    }
-    if (!canAccessThread) {
-      setMessages([])
-      setLoading(false)
-      return
-    }
-    const uid = currentUser.id
-    setLoading(true)
-    try {
-      const supabase = createClient()
-      const rows = await fetchMessagesForOpportunity(
-        supabase,
-        selectedChatOpportunityId
-      )
-      setMessages(
-        rows.map((m) => ({
+  const messagesQuery = useQuery({
+    queryKey: queryKeys.chat.messages(oppId, chatUserId),
+    enabled: Boolean(
+      oppId && chatUserId && canAccessThread && isSupabaseConfigured()
+    ),
+    queryFn: async () => {
+      const uid = chatUserId
+      try {
+        const supabase = getBrowserSupabase()
+        if (!supabase) return []
+        const rows = await fetchMessagesForOpportunity(supabase, oppId)
+        return rows.map((m) => ({
           ...m,
           isMe: m.senderId === uid,
-        }))
-      )
-    } catch {
-      toast.error('No se pudieron cargar los mensajes')
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedChatOpportunityId, currentUser?.id, canAccessThread])
+        })) as UiMessage[]
+      } catch {
+        toast.error('No se pudieron cargar los mensajes')
+        return []
+      }
+    },
+  })
+  const messages = messagesQuery.data ?? []
+  const loading = messagesQuery.isFetching && messages.length === 0
+
+  const participantsQuery = useQuery({
+    queryKey: queryKeys.matchOpportunity.participants(oppId),
+    enabled: Boolean(
+      oppId && chatUserId && canAccessThread && isSupabaseConfigured()
+    ),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const supabase = getBrowserSupabase()
+      if (!supabase) return []
+      return fetchParticipantsForOpportunity(supabase, oppId)
+    },
+  })
+  const participants: OpportunityParticipantRow[] = participantsQuery.data ?? []
+  const loadingParticipants = participantsQuery.isFetching
+
+  const myRatingQuery = useQuery({
+    queryKey: queryKeys.matchOpportunity.myRating(oppId, chatUserId),
+    enabled: Boolean(oppId && chatUserId && isSupabaseConfigured()),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const supabase = getBrowserSupabase()
+      if (!supabase) return null
+      return fetchMyRatingForOpportunity(supabase, oppId, chatUserId)
+    },
+  })
+  const myRating: MatchOpportunityRatingRow | null = myRatingQuery.data ?? null
+  const loadingRating = myRatingQuery.isFetching
+
+  const [newMessage, setNewMessage] = useState('')
+  const [showInfo, setShowInfo] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    loadMessages()
-  }, [loadMessages])
-
-  useEffect(() => {
-    void loadMyRating()
-  }, [loadMyRating])
-
-  useEffect(() => {
-    void loadParticipants()
-  }, [loadParticipants])
-
-  useEffect(() => {
-    if (
-      !selectedChatOpportunityId ||
-      !isSupabaseConfigured() ||
-      !canAccessThread
-    ) {
+    if (!selectedChatOpportunityId || !isSupabaseConfigured() || !canAccessThread) {
       return
     }
-    const supabase = createClient()
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
+    const oid = selectedChatOpportunityId
+    const uid = currentUser?.id
+    if (!uid) return
     const channel = supabase
-      .channel(`messages:${selectedChatOpportunityId}`)
+      .channel(`messages:${oid}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
-          filter: `opportunity_id=eq.${selectedChatOpportunityId}`,
+          filter: `opportunity_id=eq.${oid}`,
         },
         () => {
-          loadMessages()
-          loadParticipants()
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.chat.messages(oid, uid),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.matchOpportunity.participants(oid),
+          })
         }
       )
       .subscribe()
@@ -199,11 +177,41 @@ export function ChatScreen() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [selectedChatOpportunityId, loadMessages, loadParticipants, canAccessThread])
+  }, [selectedChatOpportunityId, canAccessThread, queryClient, currentUser?.id])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  const sendMessageMutation = useMutation({
+    mutationFn: async (content: string) => {
+      if (!selectedChatOpportunityId || !currentUser) {
+        throw new Error('Sesión no disponible')
+      }
+      const supabase = getBrowserSupabase()
+      if (!supabase) throw new Error('Cliente no disponible')
+      const { error } = await insertMatchChatMessage(supabase, {
+        opportunityId: selectedChatOpportunityId,
+        senderId: currentUser.id,
+        content,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      setNewMessage('')
+      if (selectedChatOpportunityId && currentUser) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.chat.messages(
+            selectedChatOpportunityId,
+            currentUser.id
+          ),
+        })
+      }
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : 'No se pudo enviar el mensaje')
+    },
+  })
 
   const handleSend = async () => {
     if (
@@ -229,20 +237,11 @@ export function ChatScreen() {
       return
     }
 
-    const supabase = createClient()
-    const { error } = await supabase.from('messages').insert({
-      opportunity_id: selectedChatOpportunityId,
-      sender_id: currentUser.id,
-      content: newMessage.trim(),
-    })
-
-    if (error) {
-      toast.error(error.message)
-      return
+    try {
+      await sendMessageMutation.mutateAsync(newMessage.trim())
+    } catch {
+      // toast en onError
     }
-
-    setNewMessage('')
-    loadMessages()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -447,7 +446,15 @@ export function ChatScreen() {
           )}
           myRating={myRating}
           loadingRating={loadingRating}
-          onReloadMyRating={() => void loadMyRating()}
+          onReloadMyRating={() => {
+            if (!opportunity || !currentUser) return
+            void queryClient.invalidateQueries({
+              queryKey: queryKeys.matchOpportunity.myRating(
+                opportunity.id,
+                currentUser.id
+              ),
+            })
+          }}
           finalizeMatchOpportunity={finalizeMatchOpportunity}
           submitRivalCaptainVote={submitRivalCaptainVote}
           finalizeRivalOrganizerOverride={finalizeRivalOrganizerOverride}
@@ -559,7 +566,9 @@ export function ChatScreen() {
           />
           <Button
             onClick={() => void handleSend()}
-            disabled={!newMessage.trim() || !chatMessagingOpen}
+            disabled={
+              !newMessage.trim() || !chatMessagingOpen || sendMessageMutation.isPending
+            }
             size="icon"
             className="w-12 h-12 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
