@@ -4,14 +4,13 @@ import { notFound } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
-import { CACHE_REVALIDATE_SECONDS } from '@/lib/cache-policy'
 import { fetchPublicRevueltaSnapshot } from '@/lib/supabase/public-revuelta-server'
 import { isValidOpportunityInviteId } from '@/lib/match-invite-url'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
-export const revalidate = CACHE_REVALIDATE_SECONDS.publicDynamic
+export const revalidate = 60
 
 async function getServerSession(): Promise<boolean> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL

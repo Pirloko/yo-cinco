@@ -4,10 +4,9 @@ import { notFound } from 'next/navigation'
 import { MapPin } from 'lucide-react'
 import { isValidTeamInviteId } from '@/lib/team-invite-url'
 import { fetchPublicVenuePageData } from '@/lib/supabase/public-venue-server'
-import { CACHE_REVALIDATE_SECONDS } from '@/lib/cache-policy'
 import { VenueCentroClient } from '@/components/venue-centro-client'
 
-export const revalidate = CACHE_REVALIDATE_SECONDS.publicStatic
+export const revalidate = 300
 
 export async function generateMetadata({
   params,

@@ -3,7 +3,7 @@ import { fetchPublicPlayerProfileServer } from '@/lib/supabase/public-player-ser
 import { CACHE_REVALIDATE_SECONDS } from '@/lib/cache-policy'
 import { isValidTeamInviteId } from '@/lib/team-invite-url'
 
-export const revalidate = CACHE_REVALIDATE_SECONDS.publicDynamic
+export const revalidate = 60
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
