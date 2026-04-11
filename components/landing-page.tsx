@@ -72,7 +72,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        {/* Logo oficial + aviso apps (siempre debajo de logohome.png) */}
+        {/* Logo oficial + aviso apps (debajo del hero visual) */}
         <section className="relative mx-auto w-full max-w-3xl flex-shrink-0 px-4 pb-6 md:pb-10">
           <div className="animate-float-logo relative mx-auto w-full max-w-[min(100%,520px)]">
             <div
@@ -81,14 +81,13 @@ export function LandingPage() {
             />
             <div className="relative z-10 mx-auto w-full">
               <Image
-                src="/logohome.png"
+                src="/logohome.webp"
                 alt="SPORTMATCH: ubicación y deportes"
-                width={1024}
-                height={1024}
+                width={1200}
+                height={800}
                 className="h-auto w-full object-contain drop-shadow-[0_0_48px_oklch(0.72_0.19_142_/_0.25)] dark:drop-shadow-[0_0_64px_oklch(0.72_0.19_142_/_0.35)]"
                 sizes="(max-width: 768px) 100vw, 520px"
                 priority
-                loading="eager"
               />
               <CurvedArchWordmark />
             </div>
@@ -202,7 +201,7 @@ function CurvedArchWordmark() {
 }
 
 /**
- * Debajo de logohome.png: aviso de tiendas (solo informativo, sin enlaces).
+ * Debajo del logo hero: aviso de tiendas (solo informativo, sin enlaces).
  * Diseño: dos “píldoras” horizontales estilo fila de descargas, tono suave.
  */
 function MobileStoresBelowLogo() {
@@ -242,11 +241,12 @@ function MobileStoresBelowLogo() {
           </span>
           {/* Badge oficial Google Play */}
           <Image
-            src="/badge-google-play.png"
+            src="/badge-google-play.webp"
             alt="Disponible en Google Play"
-            width={646}
-            height={250}
+            width={480}
+            height={186}
             className="h-14 w-auto max-w-[min(100%,240px)] object-contain object-left opacity-95"
+            sizes="240px"
           />
         </li>
       </ul>

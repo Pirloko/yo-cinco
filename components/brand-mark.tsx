@@ -11,7 +11,7 @@ type BrandMarkProps = {
   label?: string
   textClassName?: string
   className?: string
-  /** Miniatura de `/logohome.png` alineada con el wordmark del hero */
+  /** Miniatura de `/logohome.webp` alineada con el wordmark del hero */
   showLogo?: boolean
   /** Misma cadencia que el texto curvo “SportMatch” (tracking + sans bold) */
   wordmarkTypography?: boolean
@@ -35,10 +35,10 @@ export function BrandMark({
     <div className={cn('flex items-center gap-3 md:gap-3.5', className)}>
       {showLogo ? (
         <Image
-          src="/logohome.png"
+          src="/logohome.webp"
           alt=""
-          width={512}
-          height={512}
+          width={1200}
+          height={800}
           className={cn('shrink-0 object-contain', logoClass)}
           sizes="(max-width: 768px) 80px, 112px"
           priority={false}

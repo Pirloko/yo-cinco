@@ -122,14 +122,13 @@ export function AuthScreen() {
                 aria-hidden
               />
               <Image
-                src="/logohome.png"
+                src="/logohome.webp"
                 alt="SPORTMATCH"
-                width={400}
-                height={400}
+                width={1200}
+                height={800}
                 className="relative z-10 mx-auto h-40 w-auto max-w-[min(100%,280px)] object-contain drop-shadow-[0_0_28px_oklch(0.72_0.19_142_/_0.3)] md:h-44"
                 sizes="(max-width: 768px) 70vw, 280px"
                 priority
-                loading="eager"
               />
             </div>
           </div>

@@ -85,7 +85,7 @@
 --------------------------------------------------------------------------------
 
   typescript.ignoreBuildErrors: true   (el build no falla por errores TS; revisar en CI)
-  images.unoptimized: true            (Next Image sin optimización servidor; acorde a hosting)
+  images.formats: avif + webp         (optimización Next Image en servidor; assets hero en WebP en public/)
 
 --------------------------------------------------------------------------------
 6. PROXY (ANTES MIDDLEWARE) — RAÍZ DEL PROYECTO
