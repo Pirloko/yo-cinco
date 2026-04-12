@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useAppAuth, useAppUI } from '@/lib/app-context'
 import { Button } from '@/components/ui/button'
@@ -18,6 +17,7 @@ import {
   KeyRound,
   LogOut,
   Mail,
+  MessageSquare,
   MapPinned,
   Pause,
   Pencil,
@@ -42,8 +42,11 @@ import {
   getBrowserSessionAccessToken,
   isSupabaseConfigured,
 } from '@/lib/supabase/client'
+import {
+  fetchAppUserFeedbackForAdmin,
+  type AppUserFeedbackRow,
+} from '@/lib/supabase/app-feedback-queries'
 import { formatAuthError } from '@/lib/supabase/auth-errors'
-import { prefetchPublicPlayerProfile } from '@/lib/public-player-prefetch'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -213,15 +216,8 @@ const RANGE_OPTIONS: Array<{ id: RangeKey; label: string }> = [
 ]
 
 export function AdminDashboardScreen() {
-  const queryClient = useQueryClient()
   const { currentUser, logout } = useAppAuth()
   const { openPublicProfile } = useAppUI()
-  const prefetchReportPlayerProfile = useCallback(
-    (userId: string) => {
-      void prefetchPublicPlayerProfile(queryClient, userId)
-    },
-    [queryClient]
-  )
   const [loading, setLoading] = useState(true)
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null)
   const [range, setRange] = useState<RangeKey>('month')
@@ -277,6 +273,8 @@ export function AdminDashboardScreen() {
   const [resFilterRegion, setResFilterRegion] = useState('all')
   const [resFilterCity, setResFilterCity] = useState('all')
   const [resFilterVenue, setResFilterVenue] = useState('all')
+  const [appFeedbackRows, setAppFeedbackRows] = useState<AppUserFeedbackRow[]>([])
+  const [appFeedbackLoading, setAppFeedbackLoading] = useState(false)
 
   const reservationFilterLists = useMemo(() => {
     const empty = {
@@ -509,6 +507,34 @@ export function AdminDashboardScreen() {
   useEffect(() => {
     if (adminTab === 'centro') void loadAdminVenues()
   }, [adminTab, loadAdminVenues])
+
+  const loadAppUserFeedback = useCallback(async () => {
+    if (!currentUser || currentUser.accountType !== 'admin') return
+    if (!isSupabaseConfigured()) {
+      toast.error('Supabase no está configurado.')
+      return
+    }
+    const sb = getBrowserSupabase()
+    if (!sb) {
+      toast.error('No se pudo iniciar el cliente de datos.')
+      return
+    }
+    setAppFeedbackLoading(true)
+    try {
+      const { rows, error } = await fetchAppUserFeedbackForAdmin(sb)
+      if (error) {
+        toast.error(error.message ?? 'No se pudieron cargar los comentarios.')
+        return
+      }
+      setAppFeedbackRows(rows)
+    } finally {
+      setAppFeedbackLoading(false)
+    }
+  }, [currentUser])
+
+  useEffect(() => {
+    if (adminTab === 'comentarios_app') void loadAppUserFeedback()
+  }, [adminTab, loadAppUserFeedback])
 
   const updateReportStatus = useCallback(
     async (
@@ -1020,6 +1046,13 @@ export function AdminDashboardScreen() {
                   {pendingReportsCount}
                 </Badge>
               ) : null}
+            </TabsTrigger>
+            <TabsTrigger
+              value="comentarios_app"
+              className="shrink-0 gap-1.5 px-2.5 py-2 text-xs sm:px-3 sm:text-sm"
+            >
+              <MessageSquare className="h-4 w-4 shrink-0" />
+              <span className="whitespace-nowrap">Comentarios app</span>
             </TabsTrigger>
             <TabsTrigger value="geo" className="shrink-0 gap-1.5 px-2.5 py-2 text-xs sm:px-3 sm:text-sm">
               <MapPinned className="h-4 w-4 shrink-0" />
@@ -1984,9 +2017,6 @@ export function AdminDashboardScreen() {
                               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                                 <button
                                   type="button"
-                                  onMouseEnter={() =>
-                                    prefetchReportPlayerProfile(r.reported_user_id)
-                                  }
                                   onClick={() => openPublicProfile(r.reported_user_id)}
                                   className="flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-left transition-colors hover:bg-amber-500/10 hover:ring-2 hover:ring-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                 >
@@ -2011,9 +2041,6 @@ export function AdminDashboardScreen() {
                                 </button>
                                 <button
                                   type="button"
-                                  onMouseEnter={() =>
-                                    prefetchReportPlayerProfile(r.reporter_id)
-                                  }
                                   onClick={() => openPublicProfile(r.reporter_id)}
                                   className="flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-left transition-colors hover:bg-muted/50 hover:ring-2 hover:ring-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                                 >
@@ -2151,6 +2178,83 @@ export function AdminDashboardScreen() {
                         </div>
                       )
                     })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="comentarios_app" className="mt-0">
+            <Card className="gap-0 overflow-hidden border-border py-0 shadow-sm">
+              <CardHeader className="border-b border-border bg-secondary/20 px-4 py-4 sm:px-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle className="text-lg">Sugerencias, opiniones y errores</CardTitle>
+                    <CardDescription>
+                      Mensajes enviados desde Perfil → «Sugerencias, opiniones, errores».
+                    </CardDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void loadAppUserFeedback()}
+                    disabled={appFeedbackLoading}
+                  >
+                    {appFeedbackLoading ? (
+                      <>
+                        <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        Cargando…
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                        Actualizar
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4 p-4 sm:p-6">
+                {appFeedbackRows.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+                    {appFeedbackLoading
+                      ? 'Cargando comentarios…'
+                      : 'Aún no hay mensajes o no pudieron cargarse.'}
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {appFeedbackRows.map((row) => (
+                      <div
+                        key={row.id}
+                        className="rounded-xl border border-border bg-card p-4 shadow-sm"
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(row.created_at).toLocaleString('es-CL')}
+                              {row.app_version ? (
+                                <span className="ml-2">
+                                  · app v{row.app_version}
+                                </span>
+                              ) : null}
+                            </p>
+                            <p className="whitespace-pre-wrap text-sm text-foreground">
+                              {row.message}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0"
+                            onClick={() => openPublicProfile(row.user_id)}
+                          >
+                            Ver perfil
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </CardContent>

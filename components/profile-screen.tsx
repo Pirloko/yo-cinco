@@ -7,6 +7,7 @@ import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Sheet,
   SheetContent,
@@ -37,6 +38,7 @@ import {
   AlertTriangle,
   OctagonAlert,
   Ban,
+  MessageSquare,
 } from 'lucide-react'
 import type { Level } from '@/lib/types'
 import { getOrganizerTierProgress } from '@/lib/organizer-level'
@@ -45,6 +47,12 @@ import {
   isBirthdayToday,
 } from '@/lib/age-birthday'
 import { ThemeSegmentedControl } from '@/components/theme-controls'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
+import { insertAppUserFeedback } from '@/lib/supabase/app-feedback-queries'
+import { APP_DISPLAY_VERSION } from '@/lib/constants/app-release'
 
 const LEVEL_LABELS: Record<Level, string> = {
   principiante: 'Principiante',
@@ -100,6 +108,9 @@ export function ProfileScreen() {
   const { getUserTeams } = useAppTeam()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [feedbackText, setFeedbackText] = useState('')
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
   const photoInputRef = useRef<HTMLInputElement>(null)
   const [photoWorking, setPhotoWorking] = useState(false)
 
@@ -243,7 +254,58 @@ export function ProfileScreen() {
       description: 'Ajustes y app',
       onClick: () => setSettingsOpen(true),
     },
+    {
+      label: 'Sugerencias, opiniones, errores',
+      icon: MessageSquare,
+      description: 'Envía un mensaje al equipo SPORTMATCH',
+      onClick: () => {
+        if (isBanned) {
+          toast.error('No disponible mientras tu cuenta está restringida.')
+          return
+        }
+        setFeedbackOpen(true)
+      },
+    },
   ]
+
+  const submitFeedback = async () => {
+    if (!currentUser) return
+    const trimmed = feedbackText.trim()
+    if (trimmed.length < 1) {
+      toast.error('Escribe un mensaje antes de enviar.')
+      return
+    }
+    if (trimmed.length > 4000) {
+      toast.error('El mensaje no puede superar 4000 caracteres.')
+      return
+    }
+    if (!isSupabaseConfigured()) {
+      toast.error('La app no está conectada al servidor.')
+      return
+    }
+    const sb = getBrowserSupabase()
+    if (!sb) {
+      toast.error('No se pudo conectar al servidor.')
+      return
+    }
+    setFeedbackSubmitting(true)
+    try {
+      const { error } = await insertAppUserFeedback(sb, {
+        userId: currentUser.id,
+        message: trimmed,
+        appVersion: APP_DISPLAY_VERSION,
+      })
+      if (error) {
+        toast.error(error.message || 'No se pudo enviar el mensaje.')
+        return
+      }
+      toast.success('Gracias, tu mensaje fue enviado.')
+      setFeedbackOpen(false)
+      setFeedbackText('')
+    } finally {
+      setFeedbackSubmitting(false)
+    }
+  }
 
   const getLevelColor = () => {
     switch (currentUser?.level) {
@@ -637,7 +699,7 @@ export function ProfileScreen() {
       </div>
 
       <p className="text-center mt-6 text-xs text-muted-foreground">
-        SPORTMATCH v1.0.0
+        SPORTMATCH v{APP_DISPLAY_VERSION}
       </p>
 
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
@@ -704,6 +766,65 @@ export function ProfileScreen() {
             <LogOut className="w-4 h-4 mr-2" />
             Cerrar sesión
           </Button>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet
+        open={feedbackOpen}
+        onOpenChange={(open) => {
+          setFeedbackOpen(open)
+          if (!open) setFeedbackText('')
+        }}
+      >
+        <SheetContent side="bottom" className="rounded-t-2xl max-h-[85vh]">
+          <SheetHeader className="text-left border-b border-border pb-4">
+            <SheetTitle>Sugerencias, opiniones, errores</SheetTitle>
+            <SheetDescription>
+              Cuéntanos qué mejorar, qué te gusta o si algo falla. Solo el equipo puede leerlo.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-3 py-4">
+            <Textarea
+              value={feedbackText}
+              onChange={(e) => setFeedbackText(e.target.value)}
+              placeholder="Escribe aquí tu mensaje…"
+              className="min-h-[140px] border-border bg-background"
+              maxLength={4000}
+              disabled={feedbackSubmitting}
+            />
+            <p className="text-right text-xs tabular-nums text-muted-foreground">
+              {feedbackText.length}/4000
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              disabled={feedbackSubmitting}
+              onClick={() => {
+                setFeedbackOpen(false)
+                setFeedbackText('')
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="flex-1"
+              disabled={feedbackSubmitting}
+              onClick={() => void submitFeedback()}
+            >
+              {feedbackSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Enviando…
+                </>
+              ) : (
+                'Enviar'
+              )}
+            </Button>
+          </div>
         </SheetContent>
       </Sheet>
 

@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
-import Link from 'next/link'
 
 import {
   useAppAuth,
@@ -19,7 +18,6 @@ import {
   Shuffle,
   Sparkles,
   Bell,
-  ChevronRight,
 } from 'lucide-react'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import { MatchOpportunity, MatchType } from '@/lib/types'
@@ -249,30 +247,6 @@ export function HomeScreen() {
             onClick={() => setActiveFilter('open')}
           />
         </div>
-      </div>
-
-      {/* Descubre equipos → pantalla /swipe */}
-      <div className="px-4 mb-6">
-        <Link
-          href="/swipe"
-          className="flex w-full items-center justify-between gap-3 rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/20 to-accent/20 p-4 text-left transition-all hover:border-primary/50 group"
-        >
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/20">
-              <Sparkles className="h-6 w-6 text-primary" aria-hidden />
-            </div>
-            <div className="min-w-0">
-              <p className="font-semibold text-foreground">Descubre equipos</p>
-              <p className="text-sm text-muted-foreground">
-                Solicita unirte o desafía
-              </p>
-            </div>
-          </div>
-          <ChevronRight
-            className="h-6 w-6 shrink-0 text-primary transition-transform group-hover:translate-x-0.5"
-            aria-hidden
-          />
-        </Link>
       </div>
 
       {/* Match Feed */}

@@ -1,0 +1,68 @@
+================================================================================
+  SPORTMATCH — Uso de prefetch del perfil público (referencia actualizada)
+================================================================================
+
+CONTEXTO
+--------------------------------------------------------------------------------
+Prefetch = anticipar GET /api/public-player-profile?userId=… vía TanStack
+`prefetchQuery`, misma `queryKey` que el sheet (`useQuery`). Si no hay prefetch,
+el sheet igual carga datos al abrir.
+
+Optimización egress (implementada en código):
+  - Debounce 200 ms por userId (evita ráfagas al mover el mouse).
+  - Tras prefetch exitoso, no repetir para el mismo userId en la misma pestaña.
+  - Sin prefetch en click (solo hover/focus donde siga activo).
+  - Prefetch retirado en equipos y admin (menos superficies de disparo).
+
+
+DEFINICIÓN CENTRAL
+--------------------------------------------------------------------------------
+Archivo: lib/public-player-prefetch.ts
+
+Función: prefetchPublicPlayerProfile(queryClient, userId) → void
+
+  - Valida UUID; ignora SSR.
+  - Si ese userId ya se prefetcheado con éxito en esta pestaña → no hace nada.
+  - Programa prefetch con debounce 200 ms por id (reinicia el timer si el hover
+    se repite antes de cumplirse el delay).
+  - prefetchQuery: queryKeys.publicPlayer.detail(id), staleTime QUERY_STALE_TIME_MS.
+  - Solo añade al Set de sesión si la promesa del prefetch resuelve (fallo →
+    se puede reintentar con otro hover).
+
+
+DÓNDE SIGUE ACTIVO (solo hover / focus)
+--------------------------------------------------------------------------------
+
+1) components/match-details-screen.tsx
+   - prefetchParticipantProfile → prefetchPublicPlayerProfile
+   - ParticipantListItem: onMouseEnter / onFocus → onPrefetchProfile(id)
+   - openParticipantProfile(userId): solo openPublicProfile (sin prefetch).
+
+2) components/chat-screen.tsx
+   - Igual que detalle: ParticipantRow + onPrefetchProfile; abrir perfil sin prefetch.
+
+
+DÓNDE YA NO HAY PREFETCH
+--------------------------------------------------------------------------------
+
+3) components/teams-screen.tsx — solo click → openPublicProfile (sin hover).
+
+4) components/admin-dashboard-screen.tsx — solo click → openPublicProfile.
+
+
+ARCHIVOS RELACIONADOS
+--------------------------------------------------------------------------------
+  lib/public-player-profile-fetch.ts
+  lib/query-keys.ts (publicPlayer.detail)
+  components/public-player-profile-sheet.tsx (useQuery)
+
+
+RESUMEN
+--------------------------------------------------------------------------------
+Prefetch controlado solo en detalle de partido y chat; click no duplica;
+debounce + “una vez por usuario por sesión” tras éxito; equipos y admin sin
+prefetch para reducir egress.
+
+================================================================================
+Fin del documento
+================================================================================

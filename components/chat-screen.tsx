@@ -318,12 +318,12 @@ export function ChatScreen() {
     [queryClient]
   )
 
+  /** Prefetch solo en hover/focus; el click abre el sheet y useQuery carga si hace falta. */
   const openParticipantProfile = useCallback(
     (userId: string) => {
-      void prefetchPublicPlayerProfile(queryClient, userId)
       openPublicProfile(userId)
     },
-    [openPublicProfile, queryClient]
+    [openPublicProfile]
   )
 
   const openMatchDetails = useCallback(() => {
