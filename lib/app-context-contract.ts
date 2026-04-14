@@ -125,6 +125,10 @@ export interface AppContextType {
     opportunityId: string,
     reason: string
   ) => Promise<void>
+  leaveMatchOpportunityWithReason: (
+    opportunityId: string,
+    reason: string
+  ) => Promise<void>
   submitMatchRating: (
     opportunityId: string,
     payload: {

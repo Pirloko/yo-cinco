@@ -229,6 +229,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch {
       // No bloquear inicio de sesión si la RPC aún no está aplicada.
     }
+    try {
+      await supabase.rpc('self_heal_match_creators_by_email')
+    } catch {
+      // Refuerzo: no bloquear sesión si esta RPC aún no existe.
+    }
   })
 
   const login = useStableCallback(async (
@@ -1149,15 +1154,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toastReadOnly(ro.reason)
       return
     }
-    const opp = matchOpportunities.find((m) => m.id === opportunityId)
-    if (!opp || opp.creatorId !== currentUser.id) {
-      toast.error('Solo el organizador puede suspender el partido.')
-      return
-    }
-    if (opp.status === 'completed') {
-      toast.error('No puedes suspender un partido ya finalizado.')
-      return
-    }
     const cleanReason = reason.trim()
     if (cleanReason.length < 5) {
       toast.error('El motivo debe tener al menos 5 caracteres.')
@@ -1166,26 +1162,96 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const supabase = getBrowserSupabase()
     if (!supabase) return
-    const now = new Date().toISOString()
-    const { error } = await supabase
-      .from('match_opportunities')
-      .update({
-        status: 'cancelled',
-        suspended_at: now,
-        suspended_reason: cleanReason,
-        updated_at: now,
-      })
-      .eq('id', opportunityId)
-      .eq('creator_id', currentUser.id)
+    const { data, error } = await supabase.rpc('cancel_match_opportunity_with_reason', {
+      p_opportunity_id: opportunityId,
+      p_reason: cleanReason,
+    })
 
     if (error) {
       toast.error(error.message)
       return
     }
 
+    const payload = data as { ok?: boolean; error?: string; message?: string } | null
+    if (!payload?.ok) {
+      const code = payload?.error ?? 'unknown'
+      if (code === 'not_rival_captain') {
+        toast.error('En equipo vs equipo solo pueden cancelar los capitanes involucrados.')
+        return
+      }
+      if (code === 'too_late_rival_cancel') {
+        toast.error('Equipo vs equipo solo se puede cancelar hasta 24 horas antes.')
+        return
+      }
+      if (code === 'not_organizer') {
+        toast.error('Solo el organizador puede suspender este partido.')
+        return
+      }
+      if (code === 'already_closed') {
+        toast.error('Este partido ya no se puede cancelar.')
+        return
+      }
+      toast.error(payload?.message || 'No se pudo cancelar el partido.')
+      return
+    }
+
     const matches = await fetchLatestMatchOpportunities(supabase)
     setMatchOpportunities(matches)
-    toast.success('Partido suspendido.')
+    toast.success('Partido cancelado.')
+  })
+
+  const leaveMatchOpportunityWithReason = useStableCallback(async (
+    opportunityId: string,
+    reason: string
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
+    const cleanReason = reason.trim()
+    if (cleanReason.length < 5) {
+      toast.error('El motivo debe tener al menos 5 caracteres.')
+      return
+    }
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
+    const { data, error } = await supabase.rpc('leave_match_opportunity_with_reason', {
+      p_opportunity_id: opportunityId,
+      p_reason: cleanReason,
+    })
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    const payload = data as { ok?: boolean; error?: string; message?: string } | null
+    if (!payload?.ok) {
+      const code = payload?.error ?? 'unknown'
+      if (code === 'too_late_leave') {
+        toast.error('Solo puedes salirte hasta 2 horas antes del partido.')
+        return
+      }
+      if (code === 'not_participant') {
+        toast.error('No apareces como participante activo en este partido.')
+        return
+      }
+      if (code === 'reason_required') {
+        toast.error('El motivo de salida es obligatorio.')
+        return
+      }
+      if (code === 'not_supported_for_type') {
+        toast.error('Esta salida aplica para revueltas y partidos de jugadores.')
+        return
+      }
+      toast.error(payload?.message || 'No se pudo salir del partido.')
+      return
+    }
+    const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
+    setMatchOpportunities(matchBundle.matchOpportunities)
+    setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+    toast.success('Te saliste del partido.')
+    void updateLastSeen(supabase, currentUser.id, { force: true })
   })
 
   const submitMatchRating = useStableCallback(async (
@@ -2269,6 +2335,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       submitRivalCaptainVote,
       finalizeRivalOrganizerOverride,
       suspendMatchOpportunity,
+      leaveMatchOpportunityWithReason,
       submitMatchRating,
       users,
       getFilteredMatches,

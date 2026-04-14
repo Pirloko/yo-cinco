@@ -102,6 +102,10 @@ type Props = {
     opportunityId: string,
     reason: string
   ) => Promise<void>
+  leaveMatchOpportunityWithReason: (
+    opportunityId: string,
+    reason: string
+  ) => Promise<void>
   submitMatchRating: (
     opportunityId: string,
     payload: {
@@ -125,6 +129,7 @@ export function MatchCompletionPanel({
   submitRivalCaptainVote,
   finalizeRivalOrganizerOverride,
   suspendMatchOpportunity,
+  leaveMatchOpportunityWithReason,
   submitMatchRating,
 }: Props) {
   const isCreator = opportunity.creatorId === currentUserId
@@ -193,8 +198,14 @@ export function MatchCompletionPanel({
       opportunity.type === 'open' ||
       (opportunity.type === 'rival' && rivalChallenge?.status === 'accepted'))
 
-  const showOrganizerRivalSuspend =
-    isCreator && !completed && opportunity.status !== 'cancelled' && opportunity.type === 'rival'
+  const canCancelRivalAsCaptain =
+    opportunity.type === 'rival' &&
+    !completed &&
+    opportunity.status !== 'cancelled' &&
+    !!rivalChallenge &&
+    (rivalChallenge.challengerCaptainId === currentUserId ||
+      rivalChallenge.acceptedCaptainId === currentUserId ||
+      rivalChallenge.challengedCaptainId === currentUserId)
 
   const [finalizing, setFinalizing] = useState(false)
   const [votingCaptain, setVotingCaptain] = useState(false)
@@ -213,6 +224,9 @@ export function MatchCompletionPanel({
     number | 'other' | null
   >(null)
   const [suspendOtherText, setSuspendOtherText] = useState('')
+  const [leaveExpanded, setLeaveExpanded] = useState(false)
+  const [leaveReason, setLeaveReason] = useState('')
+  const [leaving, setLeaving] = useState(false)
 
   const [orgStars, setOrgStars] = useState(0)
   const [matchStars, setMatchStars] = useState(0)
@@ -245,6 +259,26 @@ export function MatchCompletionPanel({
 
   const canConfirmSuspend =
     resolvedSuspendReason() !== null && !suspending
+
+  const canLeaveAsParticipant =
+    !isCreator &&
+    isConfirmedParticipant &&
+    !completed &&
+    opportunity.status !== 'cancelled' &&
+    (opportunity.type === 'players' || opportunity.type === 'open')
+
+  const handleLeave = async () => {
+    const reason = leaveReason.trim()
+    if (reason.length < 5) return
+    setLeaving(true)
+    try {
+      await leaveMatchOpportunityWithReason(opportunity.id, reason)
+      setLeaveExpanded(false)
+      setLeaveReason('')
+    } finally {
+      setLeaving(false)
+    }
+  }
 
   const outcomeLine = () => {
     if (!completed || !finalizedAt) return null
@@ -375,7 +409,8 @@ export function MatchCompletionPanel({
     showCaptainVote ||
     showOrganizerOverride ||
     showOrganizerDisputeWait ||
-    showOrganizerRivalSuspend
+    canCancelRivalAsCaptain ||
+    canLeaveAsParticipant
 
   if (!completed && !hasPreMatchContent) return null
 
@@ -785,11 +820,11 @@ export function MatchCompletionPanel({
         </div>
       )}
 
-      {showOrganizerRivalSuspend && !showOrganizerFinalizeCasual && (
+      {canCancelRivalAsCaptain && !showOrganizerFinalizeCasual && (
         <div className="space-y-2">
-          <p className="text-sm font-medium text-foreground">Suspender partido</p>
+          <p className="text-sm font-medium text-foreground">Cancelar partido rival</p>
           <p className="text-xs text-muted-foreground">
-            Si no se jugará, elige un motivo y confirma la suspensión.
+            Puede cancelar cualquiera de los dos capitanes, con al menos 24 horas de anticipación.
           </p>
           <Button
             type="button"
@@ -804,7 +839,7 @@ export function MatchCompletionPanel({
               }
             }}
           >
-            <span>Suspender partido</span>
+              <span>Cancelar partido</span>
             {suspendExpanded ? (
               <ChevronUp className="w-4 h-4 shrink-0 opacity-90" />
             ) : (
@@ -813,9 +848,7 @@ export function MatchCompletionPanel({
           </Button>
           {suspendExpanded && (
             <div className="space-y-3 rounded-lg border border-border bg-card/60 p-3">
-              <p className="text-xs font-medium text-foreground">
-                Motivo de la suspensión
-              </p>
+                <p className="text-xs font-medium text-foreground">Motivo de la cancelación</p>
               <div className="flex flex-col gap-2">
                 {SUSPEND_PRESET_REASONS.map((label, i) => (
                   <label
@@ -862,7 +895,7 @@ export function MatchCompletionPanel({
                     <Textarea
                       value={suspendOtherText}
                       onChange={(e) => setSuspendOtherText(e.target.value)}
-                      placeholder="Describe el motivo…"
+                        placeholder="Describe el motivo de cancelación…"
                       className="bg-background border-border min-h-[72px] resize-none text-sm ml-6"
                       maxLength={1000}
                       disabled={suspending}
@@ -903,7 +936,78 @@ export function MatchCompletionPanel({
                       Suspendiendo…
                     </>
                   ) : (
-                    'Confirmar suspensión'
+                      'Confirmar cancelación'
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {canLeaveAsParticipant && (
+        <div className="space-y-2 rounded-xl border border-border bg-card/40 p-3">
+          <p className="text-sm font-medium text-foreground">Salir del partido</p>
+          <p className="text-xs text-muted-foreground">
+            Puedes salirte hasta 2 horas antes. Debes indicar el motivo.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full justify-between"
+            disabled={leaving}
+            onClick={() => {
+              setLeaveExpanded((v) => !v)
+              if (leaveExpanded) setLeaveReason('')
+            }}
+          >
+            <span>Salir con motivo</span>
+            {leaveExpanded ? (
+              <ChevronUp className="w-4 h-4 shrink-0 opacity-90" />
+            ) : (
+              <ChevronDown className="w-4 h-4 shrink-0 opacity-90" />
+            )}
+          </Button>
+          {leaveExpanded && (
+            <div className="space-y-3 rounded-lg border border-border bg-card/60 p-3">
+              <Textarea
+                value={leaveReason}
+                onChange={(e) => setLeaveReason(e.target.value)}
+                placeholder="Escribe el motivo de tu salida..."
+                className="bg-background border-border min-h-[90px] resize-none text-sm"
+                maxLength={1000}
+                disabled={leaving}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Mínimo 5 caracteres. Este motivo es obligatorio.
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={leaving}
+                  onClick={() => {
+                    setLeaveExpanded(false)
+                    setLeaveReason('')
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-red-500/40 text-red-400 hover:bg-red-500/10 sm:min-w-[180px]"
+                  disabled={leaving || leaveReason.trim().length < 5}
+                  onClick={() => void handleLeave()}
+                >
+                  {leaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saliendo…
+                    </>
+                  ) : (
+                    'Confirmar salida'
                   )}
                 </Button>
               </div>

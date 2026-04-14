@@ -58,6 +58,7 @@ export function ChatScreen() {
     participatingOpportunityIds,
     finalizeMatchOpportunity,
     suspendMatchOpportunity,
+    leaveMatchOpportunityWithReason,
     submitMatchRating,
     randomizeRevueltaTeams,
     rivalChallenges,
@@ -518,6 +519,7 @@ export function ChatScreen() {
           submitRivalCaptainVote={submitRivalCaptainVote}
           finalizeRivalOrganizerOverride={finalizeRivalOrganizerOverride}
           suspendMatchOpportunity={suspendMatchOpportunity}
+          leaveMatchOpportunityWithReason={leaveMatchOpportunityWithReason}
           submitMatchRating={submitMatchRating}
         />
       )}

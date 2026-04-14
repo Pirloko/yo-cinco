@@ -56,6 +56,7 @@ export type MatchContextValue = Pick<
   | 'submitRivalCaptainVote'
   | 'finalizeRivalOrganizerOverride'
   | 'suspendMatchOpportunity'
+  | 'leaveMatchOpportunityWithReason'
   | 'submitMatchRating'
   | 'users'
   | 'getFilteredMatches'

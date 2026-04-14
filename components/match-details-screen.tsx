@@ -85,6 +85,7 @@ export function MatchDetailsScreen() {
     randomizeRevueltaTeams,
     finalizeMatchOpportunity,
     suspendMatchOpportunity,
+    leaveMatchOpportunityWithReason,
     submitMatchRating,
     rivalChallenges,
     submitRivalCaptainVote,
@@ -1005,6 +1006,7 @@ export function MatchDetailsScreen() {
         submitRivalCaptainVote={submitRivalCaptainVote}
         finalizeRivalOrganizerOverride={finalizeRivalOrganizerOverride}
         suspendMatchOpportunity={suspendMatchOpportunity}
+        leaveMatchOpportunityWithReason={leaveMatchOpportunityWithReason}
         submitMatchRating={submitMatchRating}
       />
 

@@ -61,6 +61,16 @@ export async function POST(req: Request) {
       return errorJson(ctx, 500, error.message, 'merge_failed')
     }
 
+    const { error: creatorError } = await admin.rpc('admin_reassign_match_creators', {
+      p_source_user_id: sourceUserId,
+      p_target_user_id: targetUserId,
+    })
+    if (creatorError) {
+      apiLog('warn', 'admin_reassign_match_creators_failed', ctx, {
+        message: creatorError.message,
+      })
+    }
+
     apiLog('info', 'admin_merge_profiles_ok', ctx, {
       sourceUserId,
       targetUserId,
