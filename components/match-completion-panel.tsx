@@ -928,14 +928,11 @@ export function MatchCompletionPanel({
           <p className="text-sm font-medium text-foreground">Reprogramar partido</p>
           <p className="text-xs text-muted-foreground">
             Si cambias centro o fecha/hora, quienes estaban confirmados vuelven a
-            pendiente para reconfirmar.
-            {opportunity.venueReservationId ? (
-              <>
-                {' '}
-                Si había reserva de cancha en la app, al guardar se anula esa reserva
-                (el partido sigue; conviene avisar al centro).
-              </>
-            ) : null}
+            pendiente para reconfirmar. Al guardar se elimina la reserva de cancha
+            vinculada en la app (si había); el bloque para confirmar cancha solo
+            vuelve cuando el partido tenga otra reserva activa. Si el nombre del
+            centro y la ubicación no cambian, se mantiene el enlace a la ficha y
+            el WhatsApp del centro.
           </p>
           <Button
             type="button"
