@@ -13,6 +13,13 @@ import {
   PROFILE_SELECT_WITH_GEO,
 } from '@/lib/supabase/geo-queries'
 
+function normalizeMatchVenueLabel(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+}
+
 export async function fetchProfileForUser(
   supabase: SupabaseClient,
   userId: string,
@@ -159,6 +166,37 @@ export async function fetchMatchOpportunities(
     }
   }
 
+  const rowsMissingVenueLink = rows.filter(
+    (r) =>
+      !r.sports_venue_id &&
+      Boolean(r.city_id) &&
+      (r.venue ?? '').trim().length >= 2
+  )
+  const cityIdsForVenueFallback = [
+    ...new Set(
+      rowsMissingVenueLink
+        .map((r) => r.city_id)
+        .filter((id): id is string => Boolean(id))
+    ),
+  ]
+  const venueIdByCityAndName = new Map<string, string>()
+  if (cityIdsForVenueFallback.length > 0) {
+    const { data: fallbackVenueRows } = await supabase
+      .from('sports_venues')
+      .select('id, name, phone, city_id')
+      .eq('is_paused', false)
+      .in('city_id', cityIdsForVenueFallback)
+
+    for (const v of fallbackVenueRows ?? []) {
+      const cityId = v.city_id as string
+      const key = `${cityId}|${normalizeMatchVenueLabel(v.name as string)}`
+      if (!venueIdByCityAndName.has(key)) {
+        venueIdByCityAndName.set(key, v.id as string)
+      }
+      venuePhoneById.set(v.id as string, (v.phone as string) ?? '')
+    }
+  }
+
   return rows.map((row) => {
     const joined = joinedByOpportunity.get(row.id)
     const withSafeJoined: MatchOpportunityRow =
@@ -166,14 +204,24 @@ export async function fetchMatchOpportunities(
     const resId = row.venue_reservation_id
     const vr =
       resId != null ? reservationById.get(resId) ?? null : undefined
-    const vPhone = row.sports_venue_id
-      ? venuePhoneById.get(row.sports_venue_id) ?? null
-      : null
+    const fallbackKey =
+      !row.sports_venue_id && row.city_id && (row.venue ?? '').trim().length >= 2
+        ? `${row.city_id}|${normalizeMatchVenueLabel(row.venue)}`
+        : null
+    const resolvedFromName = fallbackKey
+      ? venueIdByCityAndName.get(fallbackKey)
+      : undefined
+    const resolvedVenueId = row.sports_venue_id ?? resolvedFromName ?? null
+    const vPhone =
+      resolvedVenueId != null
+        ? venuePhoneById.get(resolvedVenueId) ?? null
+        : null
     return mapMatchOpportunityFromDb(
       withSafeJoined,
       byId.get(row.creator_id) ?? null,
       vr === undefined ? undefined : vr,
-      vPhone
+      vPhone,
+      row.sports_venue_id ? undefined : resolvedFromName
     )
   })
 }

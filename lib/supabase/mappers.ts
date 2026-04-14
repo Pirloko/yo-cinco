@@ -165,7 +165,9 @@ export function mapMatchOpportunityFromDb(
     price_per_hour: number | null
     currency: string | null
   } | null,
-  venueContactPhone?: string | null
+  venueContactPhone?: string | null,
+  /** Si `sports_venue_id` en BD es null pero el nombre coincide con un centro en la misma ciudad (solo UI / listados). */
+  resolvedSportsVenueIdForUi?: string | null
 ): MatchOpportunity {
   const c = creator ?? {
     id: row.creator_id,
@@ -212,7 +214,11 @@ export function mapMatchOpportunityFromDb(
     matchStatsAppliedAt: row.match_stats_applied_at
       ? new Date(row.match_stats_applied_at)
       : undefined,
-    sportsVenueId: row.sports_venue_id ?? undefined,
+    sportsVenueId:
+      row.sports_venue_id ??
+      (resolvedSportsVenueIdForUi?.trim()
+        ? resolvedSportsVenueIdForUi.trim()
+        : undefined),
     venueContactPhone: venueContactPhone?.trim() || undefined,
     venueReservationId: row.venue_reservation_id ?? undefined,
     venueReservationPricing:
