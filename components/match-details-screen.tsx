@@ -739,35 +739,47 @@ export function MatchDetailsScreen() {
                 </p>
               ) : null}
             </div>
-          ) : isCreator &&
-            (opportunity.status === 'pending' ||
-              opportunity.status === 'confirmed') ? (
+          ) : (opportunity.status === 'pending' ||
+              opportunity.status === 'confirmed') &&
+            (isCreator || isParticipant) ? (
             <div className="rounded-xl border border-dashed border-border bg-muted/30 p-3 space-y-2">
               <p className="text-xs font-medium text-foreground">
                 Reserva de cancha en la app
               </p>
-              <p className="text-xs text-muted-foreground">
-                Este partido no tiene una reserva de cancha vinculada. El botón
-                «Ya coordiné con el centro, confirmar reserva» solo aparece cuando
-                hay una reserva activa asociada (por ejemplo tras reservar desde
-                Crear). Puedes seguir coordinando con el centro por WhatsApp.
-              </p>
-              {contactWaHref ? (
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="border-green-500/40 text-green-400 hover:bg-green-500/10"
-                >
-                  <a href={contactWaHref} target="_blank" rel="noreferrer">
-                    <MessageCircle className="w-4 h-4 mr-1.5" />
-                    Contactar al centro por WhatsApp
-                  </a>
-                </Button>
+              {isCreator ? (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Este partido no tiene una reserva de cancha vinculada. El botón
+                    «Ya coordiné con el centro, confirmar reserva» solo aparece cuando
+                    hay una reserva activa asociada (por ejemplo tras reservar desde
+                    Crear). Puedes seguir coordinando con el centro por WhatsApp.
+                  </p>
+                  {contactWaHref ? (
+                    <Button
+                      asChild
+                      variant="outline"
+                      size="sm"
+                      className="border-green-500/40 text-green-400 hover:bg-green-500/10"
+                    >
+                      <a href={contactWaHref} target="_blank" rel="noreferrer">
+                        <MessageCircle className="w-4 h-4 mr-1.5" />
+                        Contactar al centro por WhatsApp
+                      </a>
+                    </Button>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Este centro no figura con teléfono en la app. Usa «Ver ficha del
+                      centro» o el contacto que publique el club.
+                    </p>
+                  )}
+                </>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  Este centro no figura con teléfono en la app. Usa «Ver ficha del
-                  centro» o el contacto que publique el club.
+                  Este partido aún no tiene una reserva de cancha vinculada en la app,
+                  así que aquí no se muestra si la cancha está confirmada. Cuando el
+                  organizador enlace una reserva desde Crear, verás el estado en este
+                  mismo lugar. Mientras tanto, pregunta en el chat del grupo o al
+                  organizador.
                 </p>
               )}
             </div>
