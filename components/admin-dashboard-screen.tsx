@@ -246,6 +246,9 @@ export function AdminDashboardScreen() {
   const [adminNewPassword, setAdminNewPassword] = useState('')
   const [adminConfirmPassword, setAdminConfirmPassword] = useState('')
   const [adminPwSaving, setAdminPwSaving] = useState(false)
+  const [mergeSourceUserId, setMergeSourceUserId] = useState('')
+  const [mergeTargetUserId, setMergeTargetUserId] = useState('')
+  const [mergeProfilesSaving, setMergeProfilesSaving] = useState(false)
   const [adminVenues, setAdminVenues] = useState<AdminVenueListItem[]>([])
   const [venuesLoading, setVenuesLoading] = useState(false)
   const [venueNameFilter, setVenueNameFilter] = useState('')
@@ -971,6 +974,38 @@ export function AdminDashboardScreen() {
       setAdminConfirmPassword('')
     } finally {
       setAdminPwSaving(false)
+    }
+  }
+
+  const handleMergeProfiles = async () => {
+    const sourceUserId = mergeSourceUserId.trim()
+    const targetUserId = mergeTargetUserId.trim()
+    if (!sourceUserId || !targetUserId) {
+      toast.error('Debes indicar ID origen y ID destino.')
+      return
+    }
+    if (sourceUserId === targetUserId) {
+      toast.error('El ID origen y destino deben ser distintos.')
+      return
+    }
+    setMergeProfilesSaving(true)
+    try {
+      const headers = await buildAdminAuthHeaders()
+      const r = await fetch('/api/admin/merge-profiles', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ sourceUserId, targetUserId }),
+      })
+      const json = (await r.json()) as { ok?: boolean; error?: string }
+      if (!r.ok || !json.ok) {
+        toast.error(json.error ?? 'No se pudo fusionar las cuentas.')
+        return
+      }
+      toast.success('Cuentas fusionadas. El usuario destino recupera propiedad y permisos.')
+      setMergeSourceUserId('')
+      setMergeTargetUserId('')
+    } finally {
+      setMergeProfilesSaving(false)
     }
   }
 
@@ -2326,6 +2361,50 @@ export function AdminDashboardScreen() {
                 </Button>
               </CardFooter>
             </Card>
+
+            <Card className="mt-4 gap-0 overflow-hidden border-border py-0 shadow-sm">
+              <CardHeader className="border-b border-border bg-secondary/20 px-4 py-4 sm:px-6">
+                <CardTitle className="text-lg">Recuperación de cuenta duplicada</CardTitle>
+                <CardDescription>
+                  Migra todos los datos del usuario origen al destino (equipo, capitanía,
+                  revueltas, reservas, reportes y más).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 p-4 sm:p-6">
+                <div className="grid max-w-3xl grid-cols-1 gap-4 md:grid-cols-2">
+                  <Field
+                    label="ID usuario origen (antiguo)"
+                    value={mergeSourceUserId}
+                    onChange={setMergeSourceUserId}
+                    placeholder="UUID a migrar"
+                  />
+                  <Field
+                    label="ID usuario destino (actual)"
+                    value={mergeTargetUserId}
+                    onChange={setMergeTargetUserId}
+                    placeholder="UUID que conservará la cuenta"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Recomendado cuando existe doble cuenta con el mismo correo. El perfil origen se
+                  elimina al finalizar la migración.
+                </p>
+              </CardContent>
+              <CardFooter className="flex justify-end border-t border-border bg-muted/20 px-4 py-4 sm:px-6">
+                <Button
+                  type="button"
+                  className="w-full sm:w-auto"
+                  disabled={
+                    mergeProfilesSaving ||
+                    !mergeSourceUserId.trim() ||
+                    !mergeTargetUserId.trim()
+                  }
+                  onClick={() => void handleMergeProfiles()}
+                >
+                  {mergeProfilesSaving ? 'Fusionando…' : 'Fusionar cuentas'}
+                </Button>
+              </CardFooter>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
@@ -2527,11 +2606,13 @@ function Field({
   value,
   onChange,
   type = 'text',
+  placeholder,
 }: {
   label: string
   value: string
   onChange: (v: string) => void
   type?: string
+  placeholder?: string
 }) {
   return (
     <div className="space-y-1">
@@ -2540,6 +2621,7 @@ function Field({
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
         className="h-11 bg-secondary border-border text-foreground"
       />
     </div>

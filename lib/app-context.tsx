@@ -221,6 +221,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return { ok: true }
   })
 
+  const trySelfHealDuplicateProfile = useStableCallback(async (
+    supabase: NonNullable<ReturnType<typeof getBrowserSupabase>>
+  ) => {
+    try {
+      await supabase.rpc('self_heal_duplicate_profile_by_email')
+    } catch {
+      // No bloquear inicio de sesión si la RPC aún no está aplicada.
+    }
+  })
+
   const login = useStableCallback(async (
     email: string,
     password: string,
@@ -273,6 +283,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!user?.email) {
         return { ok: false, error: 'No se pudo obtener la sesión.' }
       }
+
+      await trySelfHealDuplicateProfile(supabase)
 
       const profile = await loadProfileForUser(supabase, user.id, user.email)
       if (!profile) {
@@ -1904,6 +1916,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const supabase = getBrowserSupabase()
       if (!supabase) return
+      await trySelfHealDuplicateProfile(supabase)
       const profile = await loadProfileForUser(supabase, authUser.id, email)
       if (!profile) return
       setCurrentUser(profile)
