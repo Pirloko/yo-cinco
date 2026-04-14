@@ -109,6 +109,17 @@ export type OpportunityParticipantRow = {
   cancelledReason?: string | null
 }
 
+/**
+ * Quien se salió (`cancelled`) solo debe listarse para el organizador o admin.
+ */
+export function participantsVisibleForMatchUi(
+  rows: OpportunityParticipantRow[],
+  opts: { viewerMaySeeCancelled: boolean }
+): OpportunityParticipantRow[] {
+  if (opts.viewerMaySeeCancelled) return rows
+  return rows.filter((p) => p.status !== 'cancelled')
+}
+
 export async function fetchParticipantsForOpportunity(
   supabase: SupabaseClient,
   opportunityId: string

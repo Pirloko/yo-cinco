@@ -25,6 +25,7 @@ import {
 import {
   fetchParticipantsForOpportunity,
   fetchMatchOpportunityParticipantLeaveReasons,
+  participantsVisibleForMatchUi,
   type OpportunityParticipantRow,
 } from '@/lib/supabase/message-queries'
 import {
@@ -168,6 +169,14 @@ export function MatchDetailsScreen() {
       return { ...p, cancelledReason: r.cancelledReason }
     })
   }, [participants, participantLeaveReasonsQuery.data])
+
+  const participantsShownToViewer = useMemo(
+    () =>
+      participantsVisibleForMatchUi(participantsForList, {
+        viewerMaySeeCancelled: canViewParticipantLeaveReasons,
+      }),
+    [participantsForList, canViewParticipantLeaveReasons]
+  )
 
   const ratingsSessionQuery = useQuery({
     queryKey: queryKeys.matchOpportunity.ratingsSession(
@@ -829,9 +838,9 @@ export function MatchDetailsScreen() {
           <h3 className="font-medium text-foreground mb-3">Participantes</h3>
           {loadingParticipants ? (
             <p className="text-sm text-muted-foreground">Cargando participantes...</p>
-          ) : participants.length > 0 ? (
+          ) : participantsShownToViewer.length > 0 ? (
             <div className="space-y-2">
-              {participantsForList.map((p) => (
+              {participantsShownToViewer.map((p) => (
                 <ParticipantListItem
                   key={p.id}
                   participant={p}

@@ -19,6 +19,7 @@ import {
   fetchMessagesForOpportunity,
   fetchParticipantsForOpportunity,
   fetchMatchOpportunityParticipantLeaveReasons,
+  participantsVisibleForMatchUi,
   insertMatchChatMessage,
   type ChatMessageRow,
   type OpportunityParticipantRow,
@@ -172,6 +173,14 @@ export function ChatScreen() {
       return { ...p, cancelledReason: r.cancelledReason }
     })
   }, [participants, participantLeaveReasonsQuery.data])
+
+  const participantsShownToViewer = useMemo(
+    () =>
+      participantsVisibleForMatchUi(participantsForList, {
+        viewerMaySeeCancelled: canViewParticipantLeaveReasons,
+      }),
+    [participantsForList, canViewParticipantLeaveReasons]
+  )
 
   useMatchOpportunityParticipantsRealtime(
     selectedChatOpportunityId,
@@ -510,9 +519,9 @@ export function ChatScreen() {
               </p>
               {loadingParticipants ? (
                 <p className="text-xs text-muted-foreground">Cargando participantes...</p>
-              ) : participants.length > 0 ? (
+              ) : participantsShownToViewer.length > 0 ? (
                 <div className="space-y-2">
-                  {participantsForList.map((p) => (
+                  {participantsShownToViewer.map((p) => (
                     <ParticipantRow
                       key={p.id}
                       participant={p}
