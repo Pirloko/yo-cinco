@@ -929,6 +929,13 @@ export function MatchCompletionPanel({
           <p className="text-xs text-muted-foreground">
             Si cambias centro o fecha/hora, quienes estaban confirmados vuelven a
             pendiente para reconfirmar.
+            {opportunity.venueReservationId ? (
+              <>
+                {' '}
+                Si había reserva de cancha en la app, al guardar se anula esa reserva
+                (el partido sigue; conviene avisar al centro).
+              </>
+            ) : null}
           </p>
           <Button
             type="button"

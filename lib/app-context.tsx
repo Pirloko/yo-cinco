@@ -1305,8 +1305,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (code === 'has_venue_reservation') {
         toast.error(
-          'Este partido tiene una reserva asociada. Cancela o reprograma la reserva primero.'
+          'Tu proyecto aún usa una regla antigua: con reserva vinculada no se puede reprogramar. Aplica la migración más reciente de reprogramación en Supabase.'
         )
+        return
+      }
+      if (code === 'reservation_not_found') {
+        toast.error('La reserva vinculada ya no existe. Recarga el detalle del partido.')
+        return
+      }
+      if (code === 'not_reservation_booker') {
+        toast.error('Solo quien reservó la cancha puede reprogramar con esa reserva vinculada.')
+        return
+      }
+      if (code === 'reservation_status_unsupported') {
+        toast.error('Estado de la reserva no permite reprogramar desde aquí. Contacta soporte.')
         return
       }
       if (code === 'too_late_reschedule') {
