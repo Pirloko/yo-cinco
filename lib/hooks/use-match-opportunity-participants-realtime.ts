@@ -8,6 +8,7 @@ import {
   replaceParticipantsCacheFromServer,
   type ParticipantsRealtimePayload,
 } from '@/lib/realtime/match-opportunity-participants-realtime'
+import { queryKeys } from '@/lib/query-keys'
 
 /**
  * Sincroniza la query `matchOpportunity.participants` con Realtime (Fase 5).
@@ -44,6 +45,9 @@ export function useMatchOpportunityParticipantsRealtime(
         if (merged === 'refetch') {
           await replaceParticipantsCacheFromServer(supabase, queryClient, oppId)
         }
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.matchOpportunity.participantLeaveReasons(oppId),
+        })
       })()
     }
 

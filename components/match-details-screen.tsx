@@ -24,6 +24,7 @@ import {
 } from '@/lib/supabase/client'
 import {
   fetchParticipantsForOpportunity,
+  fetchMatchOpportunityParticipantLeaveReasons,
   type OpportunityParticipantRow,
 } from '@/lib/supabase/message-queries'
 import {
@@ -86,6 +87,7 @@ export function MatchDetailsScreen() {
     finalizeMatchOpportunity,
     suspendMatchOpportunity,
     leaveMatchOpportunityWithReason,
+    rescheduleMatchOpportunityWithReason,
     submitMatchRating,
     rivalChallenges,
     submitRivalCaptainVote,
@@ -128,6 +130,44 @@ export function MatchDetailsScreen() {
   })
   const participants: OpportunityParticipantRow[] = participantsQuery.data ?? []
   const loadingParticipants = participantsQuery.isFetching
+
+  const canViewParticipantLeaveReasons = Boolean(
+    opportunity &&
+      currentUser &&
+      (opportunity.creatorId === currentUser.id ||
+        currentUser.accountType === 'admin')
+  )
+
+  const participantLeaveReasonsQuery = useQuery({
+    queryKey: queryKeys.matchOpportunity.participantLeaveReasons(
+      selectedMatchOpportunityId
+    ),
+    enabled: Boolean(
+      selectedMatchOpportunityId &&
+        canViewParticipantLeaveReasons &&
+        sessionQueryEnabled(currentUser?.id)
+    ),
+    queryFn: async () => {
+      if (!selectedMatchOpportunityId) return new Map()
+      const sb = getBrowserSupabase()
+      if (!sb) return new Map()
+      return fetchMatchOpportunityParticipantLeaveReasons(
+        sb,
+        selectedMatchOpportunityId
+      )
+    },
+  })
+
+  const participantsForList = useMemo(() => {
+    const reasons = participantLeaveReasonsQuery.data
+    if (!reasons || reasons.size === 0) return participants
+    return participants.map((p) => {
+      if (p.status !== 'cancelled') return { ...p, cancelledReason: null }
+      const r = reasons.get(p.id)
+      if (!r) return { ...p, cancelledReason: null }
+      return { ...p, cancelledReason: r.cancelledReason }
+    })
+  }, [participants, participantLeaveReasonsQuery.data])
 
   const ratingsSessionQuery = useQuery({
     queryKey: queryKeys.matchOpportunity.ratingsSession(
@@ -738,7 +778,7 @@ export function MatchDetailsScreen() {
             <p className="text-sm text-muted-foreground">Cargando participantes...</p>
           ) : participants.length > 0 ? (
             <div className="space-y-2">
-              {participants.map((p) => (
+              {participantsForList.map((p) => (
                 <ParticipantListItem
                   key={p.id}
                   participant={p}
@@ -1007,6 +1047,9 @@ export function MatchDetailsScreen() {
         finalizeRivalOrganizerOverride={finalizeRivalOrganizerOverride}
         suspendMatchOpportunity={suspendMatchOpportunity}
         leaveMatchOpportunityWithReason={leaveMatchOpportunityWithReason}
+        rescheduleMatchOpportunityWithReason={
+          rescheduleMatchOpportunityWithReason
+        }
         submitMatchRating={submitMatchRating}
       />
 
@@ -1065,17 +1108,28 @@ const ParticipantListItem = memo(function ParticipantListItem({
           </span>
         </button>
       </div>
-      <Badge variant="secondary" className="capitalize text-xs">
-        {participant.status === 'creator'
-          ? 'Organizador'
-          : participant.status === 'confirmed'
-            ? 'Confirmado'
-            : participant.status === 'pending'
-              ? 'Pendiente'
-              : participant.status === 'invited'
-                ? 'Invitado'
-                : 'Cancelado'}
-      </Badge>
+      <div className="shrink-0 text-right max-w-[min(200px,45%)]">
+        <Badge variant="secondary" className="capitalize text-xs">
+          {participant.status === 'creator'
+            ? 'Organizador'
+            : participant.status === 'confirmed'
+              ? 'Confirmado'
+              : participant.status === 'pending'
+                ? 'Pendiente'
+                : participant.status === 'invited'
+                  ? 'Invitado'
+                  : 'Cancelado'}
+        </Badge>
+        {participant.status === 'cancelled' &&
+        participant.cancelledReason ? (
+          <p
+            className="text-[10px] text-muted-foreground mt-1 leading-snug line-clamp-2"
+            title={participant.cancelledReason}
+          >
+            {participant.cancelledReason}
+          </p>
+        ) : null}
+      </div>
     </div>
   )
 })

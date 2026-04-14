@@ -36,6 +36,22 @@ const SUSPEND_PRESET_REASONS = [
   'Conflicto de horario o agenda',
 ] as const
 
+/** Motivos predefinidos al salir como jugador (no organizador). */
+const LEAVE_PRESET_REASONS = [
+  'Conflicto de horario o agenda',
+  'Motivos de salud o lesión',
+  'No puedo llegar al lugar o a la hora',
+  'Cambio de planes personales',
+  'Prefiero no jugar este encuentro',
+] as const
+
+const RESCHEDULE_PRESET_REASONS = [
+  'Centro no disponible para ese horario',
+  'El centro ofreció otro horario',
+  'Ajuste logístico de cancha/ubicación',
+  'Condiciones climáticas o del recinto',
+] as const
+
 function StarRow({
   label,
   value,
@@ -106,6 +122,13 @@ type Props = {
     opportunityId: string,
     reason: string
   ) => Promise<void>
+  rescheduleMatchOpportunityWithReason: (payload: {
+    opportunityId: string
+    venue: string
+    location: string
+    dateTime: Date
+    reason: string
+  }) => Promise<void>
   submitMatchRating: (
     opportunityId: string,
     payload: {
@@ -130,6 +153,7 @@ export function MatchCompletionPanel({
   finalizeRivalOrganizerOverride,
   suspendMatchOpportunity,
   leaveMatchOpportunityWithReason,
+  rescheduleMatchOpportunityWithReason,
   submitMatchRating,
 }: Props) {
   const isCreator = opportunity.creatorId === currentUserId
@@ -207,6 +231,11 @@ export function MatchCompletionPanel({
       rivalChallenge.acceptedCaptainId === currentUserId ||
       rivalChallenge.challengedCaptainId === currentUserId)
 
+  const canRescheduleAsOrganizer =
+    isCreator &&
+    !completed &&
+    opportunity.status !== 'cancelled'
+
   const [finalizing, setFinalizing] = useState(false)
   const [votingCaptain, setVotingCaptain] = useState(false)
   const [overriding, setOverriding] = useState(false)
@@ -225,8 +254,20 @@ export function MatchCompletionPanel({
   >(null)
   const [suspendOtherText, setSuspendOtherText] = useState('')
   const [leaveExpanded, setLeaveExpanded] = useState(false)
-  const [leaveReason, setLeaveReason] = useState('')
+  const [leaveChoice, setLeaveChoice] = useState<number | 'other' | null>(null)
+  const [leaveOtherText, setLeaveOtherText] = useState('')
   const [leaving, setLeaving] = useState(false)
+  const [rescheduleExpanded, setRescheduleExpanded] = useState(false)
+  const [rescheduleVenue, setRescheduleVenue] = useState(opportunity.venue)
+  const [rescheduleLocation, setRescheduleLocation] = useState(opportunity.location)
+  const [rescheduleDateTimeLocal, setRescheduleDateTimeLocal] = useState(() => {
+    const d = opportunity.dateTime
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000)
+    return local.toISOString().slice(0, 16)
+  })
+  const [rescheduleChoice, setRescheduleChoice] = useState<number | 'other' | null>(null)
+  const [rescheduleOtherText, setRescheduleOtherText] = useState('')
+  const [rescheduling, setRescheduling] = useState(false)
 
   const [orgStars, setOrgStars] = useState(0)
   const [matchStars, setMatchStars] = useState(0)
@@ -260,6 +301,16 @@ export function MatchCompletionPanel({
   const canConfirmSuspend =
     resolvedSuspendReason() !== null && !suspending
 
+  const resolvedLeaveReason = (): string | null => {
+    if (leaveChoice === null) return null
+    if (typeof leaveChoice === 'number') {
+      return LEAVE_PRESET_REASONS[leaveChoice] ?? null
+    }
+    const t = leaveOtherText.trim()
+    if (t.length < 5) return null
+    return `Otro: ${t}`
+  }
+
   const canLeaveAsParticipant =
     !isCreator &&
     isConfirmedParticipant &&
@@ -268,15 +319,66 @@ export function MatchCompletionPanel({
     (opportunity.type === 'players' || opportunity.type === 'open')
 
   const handleLeave = async () => {
-    const reason = leaveReason.trim()
-    if (reason.length < 5) return
+    const reason = resolvedLeaveReason()
+    if (!reason) return
     setLeaving(true)
     try {
       await leaveMatchOpportunityWithReason(opportunity.id, reason)
       setLeaveExpanded(false)
-      setLeaveReason('')
+      setLeaveChoice(null)
+      setLeaveOtherText('')
     } finally {
       setLeaving(false)
+    }
+  }
+
+  const canConfirmLeave = resolvedLeaveReason() !== null && !leaving
+
+  const resolvedRescheduleReason = (): string | null => {
+    if (rescheduleChoice === null) return null
+    if (typeof rescheduleChoice === 'number') {
+      return RESCHEDULE_PRESET_REASONS[rescheduleChoice] ?? null
+    }
+    const t = rescheduleOtherText.trim()
+    if (t.length < 5) return null
+    return `Otro: ${t}`
+  }
+
+  const parseLocalDateTime = (v: string): Date | null => {
+    if (!v.trim()) return null
+    const d = new Date(v)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+
+  const canConfirmReschedule = (() => {
+    const dt = parseLocalDateTime(rescheduleDateTimeLocal)
+    return (
+      !rescheduling &&
+      rescheduleVenue.trim().length >= 3 &&
+      rescheduleLocation.trim().length >= 3 &&
+      !!dt &&
+      resolvedRescheduleReason() !== null
+    )
+  })()
+
+  const handleReschedule = async () => {
+    const dt = parseLocalDateTime(rescheduleDateTimeLocal)
+    const reason = resolvedRescheduleReason()
+    if (!dt || !reason) return
+    setRescheduling(true)
+    try {
+      await rescheduleMatchOpportunityWithReason({
+        opportunityId: opportunity.id,
+        venue: rescheduleVenue,
+        location: rescheduleLocation,
+        dateTime: dt,
+        reason,
+      })
+      setRescheduleExpanded(false)
+      setRescheduleChoice(null)
+      setRescheduleOtherText('')
+    } finally {
+      setRescheduling(false)
     }
   }
 
@@ -410,6 +512,7 @@ export function MatchCompletionPanel({
     showOrganizerOverride ||
     showOrganizerDisputeWait ||
     canCancelRivalAsCaptain ||
+    canRescheduleAsOrganizer ||
     canLeaveAsParticipant
 
   if (!completed && !hasPreMatchContent) return null
@@ -820,6 +923,164 @@ export function MatchCompletionPanel({
         </div>
       )}
 
+      {canRescheduleAsOrganizer && (
+        <div className="space-y-2 rounded-xl border border-border bg-card/40 p-3">
+          <p className="text-sm font-medium text-foreground">Reprogramar partido</p>
+          <p className="text-xs text-muted-foreground">
+            Si cambias centro o fecha/hora, quienes estaban confirmados vuelven a
+            pendiente para reconfirmar.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full justify-between"
+            disabled={rescheduling}
+            onClick={() => {
+              setRescheduleExpanded((v) => !v)
+              if (rescheduleExpanded) {
+                setRescheduleChoice(null)
+                setRescheduleOtherText('')
+              }
+            }}
+          >
+            <span>Editar centro, fecha y hora</span>
+            {rescheduleExpanded ? (
+              <ChevronUp className="w-4 h-4 shrink-0 opacity-90" />
+            ) : (
+              <ChevronDown className="w-4 h-4 shrink-0 opacity-90" />
+            )}
+          </Button>
+          {rescheduleExpanded && (
+            <div className="space-y-3 rounded-lg border border-border bg-card/60 p-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  Centro deportivo
+                </Label>
+                <input
+                  value={rescheduleVenue}
+                  onChange={(e) => setRescheduleVenue(e.target.value)}
+                  className="w-full h-10 rounded-md border border-border bg-background px-3 text-sm"
+                  placeholder="Nombre del centro"
+                  disabled={rescheduling}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Ubicación</Label>
+                <input
+                  value={rescheduleLocation}
+                  onChange={(e) => setRescheduleLocation(e.target.value)}
+                  className="w-full h-10 rounded-md border border-border bg-background px-3 text-sm"
+                  placeholder="Dirección o referencia"
+                  disabled={rescheduling}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Fecha y hora</Label>
+                <input
+                  type="datetime-local"
+                  value={rescheduleDateTimeLocal}
+                  onChange={(e) => setRescheduleDateTimeLocal(e.target.value)}
+                  className="w-full h-10 rounded-md border border-border bg-background px-3 text-sm"
+                  disabled={rescheduling}
+                />
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-foreground">
+                  Motivo del cambio
+                </p>
+                {RESCHEDULE_PRESET_REASONS.map((label, i) => (
+                  <label
+                    key={label}
+                    className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer text-sm ${
+                      rescheduleChoice === i
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border bg-secondary/50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="reschedule-reason"
+                      className="accent-primary shrink-0"
+                      checked={rescheduleChoice === i}
+                      onChange={() => {
+                        setRescheduleChoice(i)
+                        setRescheduleOtherText('')
+                      }}
+                      disabled={rescheduling}
+                    />
+                    <span className="text-left leading-snug">{label}</span>
+                  </label>
+                ))}
+                <label
+                  className={`flex flex-col gap-2 p-2.5 rounded-lg border cursor-pointer text-sm ${
+                    rescheduleChoice === 'other'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border bg-secondary/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="reschedule-reason"
+                      className="accent-primary shrink-0"
+                      checked={rescheduleChoice === 'other'}
+                      onChange={() => setRescheduleChoice('other')}
+                      disabled={rescheduling}
+                    />
+                    <span className="font-medium">Otro</span>
+                  </div>
+                  {rescheduleChoice === 'other' && (
+                    <Textarea
+                      value={rescheduleOtherText}
+                      onChange={(e) => setRescheduleOtherText(e.target.value)}
+                      placeholder="Describe el motivo…"
+                      className="bg-background border-border min-h-[72px] resize-none text-sm ml-6"
+                      maxLength={1000}
+                      disabled={rescheduling}
+                    />
+                  )}
+                </label>
+                {rescheduleChoice === 'other' && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Mínimo 5 caracteres.
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={rescheduling}
+                  onClick={() => {
+                    setRescheduleExpanded(false)
+                    setRescheduleChoice(null)
+                    setRescheduleOtherText('')
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  className="sm:min-w-[180px]"
+                  disabled={!canConfirmReschedule}
+                  onClick={() => void handleReschedule()}
+                >
+                  {rescheduling ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Guardando…
+                    </>
+                  ) : (
+                    'Guardar reprogramación'
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {canCancelRivalAsCaptain && !showOrganizerFinalizeCasual && (
         <div className="space-y-2">
           <p className="text-sm font-medium text-foreground">Cancelar partido rival</p>
@@ -949,7 +1210,8 @@ export function MatchCompletionPanel({
         <div className="space-y-2 rounded-xl border border-border bg-card/40 p-3">
           <p className="text-sm font-medium text-foreground">Salir del partido</p>
           <p className="text-xs text-muted-foreground">
-            Puedes salirte hasta 2 horas antes. Debes indicar el motivo.
+            Puedes salirte hasta 2 horas antes. Elige un motivo (o «Otro» con
+            detalle).
           </p>
           <Button
             type="button"
@@ -957,11 +1219,17 @@ export function MatchCompletionPanel({
             className="w-full justify-between"
             disabled={leaving}
             onClick={() => {
-              setLeaveExpanded((v) => !v)
-              if (leaveExpanded) setLeaveReason('')
+              setLeaveExpanded((v) => {
+                const next = !v
+                if (v) {
+                  setLeaveChoice(null)
+                  setLeaveOtherText('')
+                }
+                return next
+              })
             }}
           >
-            <span>Salir con motivo</span>
+            <span>Elegir motivo y salir</span>
             {leaveExpanded ? (
               <ChevronUp className="w-4 h-4 shrink-0 opacity-90" />
             ) : (
@@ -970,17 +1238,68 @@ export function MatchCompletionPanel({
           </Button>
           {leaveExpanded && (
             <div className="space-y-3 rounded-lg border border-border bg-card/60 p-3">
-              <Textarea
-                value={leaveReason}
-                onChange={(e) => setLeaveReason(e.target.value)}
-                placeholder="Escribe el motivo de tu salida..."
-                className="bg-background border-border min-h-[90px] resize-none text-sm"
-                maxLength={1000}
-                disabled={leaving}
-              />
-              <p className="text-[11px] text-muted-foreground">
-                Mínimo 5 caracteres. Este motivo es obligatorio.
+              <p className="text-xs font-medium text-foreground">
+                Motivo de tu salida
               </p>
+              <div className="flex flex-col gap-2">
+                {LEAVE_PRESET_REASONS.map((label, i) => (
+                  <label
+                    key={label}
+                    className={`flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer text-sm ${
+                      leaveChoice === i
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border bg-secondary/50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="leave-reason"
+                      className="accent-primary shrink-0"
+                      checked={leaveChoice === i}
+                      onChange={() => {
+                        setLeaveChoice(i)
+                        setLeaveOtherText('')
+                      }}
+                      disabled={leaving}
+                    />
+                    <span className="text-left leading-snug">{label}</span>
+                  </label>
+                ))}
+                <label
+                  className={`flex flex-col gap-2 p-2.5 rounded-lg border cursor-pointer text-sm ${
+                    leaveChoice === 'other'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border bg-secondary/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="leave-reason"
+                      className="accent-primary shrink-0"
+                      checked={leaveChoice === 'other'}
+                      onChange={() => setLeaveChoice('other')}
+                      disabled={leaving}
+                    />
+                    <span className="font-medium">Otro</span>
+                  </div>
+                  {leaveChoice === 'other' && (
+                    <Textarea
+                      value={leaveOtherText}
+                      onChange={(e) => setLeaveOtherText(e.target.value)}
+                      placeholder="Describe el motivo…"
+                      className="bg-background border-border min-h-[72px] resize-none text-sm ml-6"
+                      maxLength={1000}
+                      disabled={leaving}
+                    />
+                  )}
+                </label>
+              </div>
+              {leaveChoice === 'other' && (
+                <p className="text-[11px] text-muted-foreground">
+                  Mínimo 5 caracteres.
+                </p>
+              )}
               <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
                 <Button
                   type="button"
@@ -989,7 +1308,8 @@ export function MatchCompletionPanel({
                   disabled={leaving}
                   onClick={() => {
                     setLeaveExpanded(false)
-                    setLeaveReason('')
+                    setLeaveChoice(null)
+                    setLeaveOtherText('')
                   }}
                 >
                   Cancelar
@@ -998,7 +1318,7 @@ export function MatchCompletionPanel({
                   type="button"
                   variant="outline"
                   className="border-red-500/40 text-red-400 hover:bg-red-500/10 sm:min-w-[180px]"
-                  disabled={leaving || leaveReason.trim().length < 5}
+                  disabled={!canConfirmLeave}
                   onClick={() => void handleLeave()}
                 >
                   {leaving ? (

@@ -809,20 +809,22 @@ export function MatchesScreen() {
                       ) : null}
 
                       <div className="space-y-2 pt-1">
-                        <UpcomingVenueWhatsappCta
-                          phone={match.venueContactPhone}
-                          venueName={match.venue}
-                          dateLine={formatMatchInTimezone(
-                            match.dateTime,
-                            'EEEE d MMM'
-                          )}
-                          timeLine={formatMatchInTimezone(
-                            match.dateTime,
-                            'HH:mm'
-                          )}
-                          detailLine={match.title}
-                          playerFirstName={playerFirstName}
-                        />
+                        {isCreator ? (
+                          <UpcomingVenueWhatsappCta
+                            phone={match.venueContactPhone}
+                            venueName={match.venue}
+                            dateLine={formatMatchInTimezone(
+                              match.dateTime,
+                              'EEEE d MMM'
+                            )}
+                            timeLine={formatMatchInTimezone(
+                              match.dateTime,
+                              'HH:mm'
+                            )}
+                            detailLine={match.title}
+                            playerFirstName={playerFirstName}
+                          />
+                        ) : null}
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
                           <button
                             type="button"

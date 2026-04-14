@@ -129,6 +129,13 @@ export interface AppContextType {
     opportunityId: string,
     reason: string
   ) => Promise<void>
+  rescheduleMatchOpportunityWithReason: (payload: {
+    opportunityId: string
+    venue: string
+    location: string
+    dateTime: Date
+    reason: string
+  }) => Promise<void>
   submitMatchRating: (
     opportunityId: string,
     payload: {

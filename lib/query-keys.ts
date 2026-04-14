@@ -46,6 +46,13 @@ export const queryKeys = {
     all: queryKeyRoot.matchOpportunity,
     participants: (opportunityId: string | null | undefined) =>
       [...queryKeyRoot.matchOpportunity, 'participants', opportunityId] as const,
+    /** Motivos de salida: solo organizador o admin (RPC). */
+    participantLeaveReasons: (opportunityId: string | null | undefined) =>
+      [
+        ...queryKeyRoot.matchOpportunity,
+        'participantLeaveReasons',
+        opportunityId,
+      ] as const,
     ratingsOverview: (opportunityId: string | null | undefined) =>
       [...queryKeyRoot.matchOpportunity, 'ratingsOverview', opportunityId] as const,
     myRating: (

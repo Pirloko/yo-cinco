@@ -13,6 +13,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock,
+  FileSearch,
   Gavel,
   KeyRound,
   LogOut,
@@ -94,6 +95,11 @@ import {
   isValidEmailFormat,
   normalizeAdminEmail,
 } from '@/lib/supabase/admin-venue-owner'
+import {
+  fetchParticipantsForOpportunity,
+  fetchMatchOpportunityParticipantLeaveReasons,
+  type OpportunityParticipantRow,
+} from '@/lib/supabase/message-queries'
 
 type AdminMetrics = {
   range: RangeKey
@@ -278,6 +284,52 @@ export function AdminDashboardScreen() {
   const [resFilterVenue, setResFilterVenue] = useState('all')
   const [appFeedbackRows, setAppFeedbackRows] = useState<AppUserFeedbackRow[]>([])
   const [appFeedbackLoading, setAppFeedbackLoading] = useState(false)
+  const [matchOppLookupId, setMatchOppLookupId] = useState('')
+  const [matchOppLookupLoading, setMatchOppLookupLoading] = useState(false)
+  const [matchOppLookupTitle, setMatchOppLookupTitle] = useState<string | null>(null)
+  const [matchOppLookupRows, setMatchOppLookupRows] = useState<
+    OpportunityParticipantRow[] | null
+  >(null)
+
+  const loadMatchOppParticipants = useCallback(async () => {
+    const id = matchOppLookupId.trim()
+    if (!id) {
+      toast.error('Ingresa el UUID del partido.')
+      return
+    }
+    if (!isSupabaseConfigured()) return
+    const sb = getBrowserSupabase()
+    if (!sb) return
+    setMatchOppLookupLoading(true)
+    setMatchOppLookupRows(null)
+    setMatchOppLookupTitle(null)
+    try {
+      const { data: mo, error: moErr } = await sb
+        .from('match_opportunities')
+        .select('title')
+        .eq('id', id)
+        .maybeSingle()
+      if (moErr) {
+        toast.error(moErr.message)
+        return
+      }
+      setMatchOppLookupTitle(
+        typeof mo?.title === 'string' && mo.title.trim() ? mo.title.trim() : '—'
+      )
+      const parts = await fetchParticipantsForOpportunity(sb, id)
+      const reasons = await fetchMatchOpportunityParticipantLeaveReasons(sb, id)
+      const merged = parts.map((p) => {
+        if (p.status !== 'cancelled') return p
+        const r = reasons.get(p.id)
+        return r ? { ...p, cancelledReason: r.cancelledReason } : p
+      })
+      setMatchOppLookupRows(merged)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo cargar el partido.')
+    } finally {
+      setMatchOppLookupLoading(false)
+    }
+  }, [matchOppLookupId])
 
   const reservationFilterLists = useMemo(() => {
     const empty = {
@@ -1060,6 +1112,10 @@ export function AdminDashboardScreen() {
               <Users className="h-4 w-4 shrink-0" />
               <span className="whitespace-nowrap">Jugadores</span>
             </TabsTrigger>
+            <TabsTrigger value="partidos" className="shrink-0 gap-1.5 px-2.5 py-2 text-xs sm:px-3 sm:text-sm">
+              <FileSearch className="h-4 w-4 shrink-0" />
+              <span className="whitespace-nowrap">Partidos</span>
+            </TabsTrigger>
             <TabsTrigger value="reservas" className="shrink-0 gap-1.5 px-2.5 py-2 text-xs sm:px-3 sm:text-sm">
               <Table2 className="h-4 w-4 shrink-0" />
               <span className="whitespace-nowrap">Reservas</span>
@@ -1266,6 +1322,85 @@ export function AdminDashboardScreen() {
 
           <TabsContent value="jugadores" className="mt-0">
             <AdminPlayersDashboardPanel />
+          </TabsContent>
+
+          <TabsContent value="partidos" className="mt-0 space-y-4">
+            <Card className="gap-0 overflow-hidden border-border py-0 shadow-sm">
+              <CardHeader className="border-b border-border bg-secondary/20 px-4 py-4 sm:px-6">
+                <CardTitle className="text-lg">Consulta partido</CardTitle>
+                <CardDescription>
+                  Pega el UUID de <span className="font-mono">match_opportunities</span> para ver
+                  participantes y el motivo cuando alguien se salió (vía RPC privilegiada).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 p-4 sm:p-6">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Input
+                    className="font-mono text-sm"
+                    placeholder="p. ej. a1b2c3d4-…"
+                    value={matchOppLookupId}
+                    onChange={(e) => setMatchOppLookupId(e.target.value)}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                  <Button
+                    type="button"
+                    disabled={matchOppLookupLoading}
+                    onClick={() => void loadMatchOppParticipants()}
+                    className="shrink-0"
+                  >
+                    {matchOppLookupLoading ? (
+                      <>
+                        <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" />
+                        Cargando…
+                      </>
+                    ) : (
+                      'Cargar'
+                    )}
+                  </Button>
+                </div>
+                {matchOppLookupTitle != null ? (
+                  <p className="text-sm font-medium text-foreground">
+                    Título: {matchOppLookupTitle}
+                  </p>
+                ) : null}
+                {matchOppLookupRows != null && matchOppLookupRows.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Sin filas de participantes.</p>
+                ) : null}
+                {matchOppLookupRows != null && matchOppLookupRows.length > 0 ? (
+                  <ul className="space-y-2">
+                    {matchOppLookupRows.map((p) => (
+                      <li
+                        key={p.id}
+                        className="rounded-lg border border-border bg-card/60 px-3 py-2.5"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm font-medium text-foreground">{p.name}</span>
+                          <Badge variant="secondary" className="capitalize text-xs">
+                            {p.status === 'creator'
+                              ? 'Organizador'
+                              : p.status === 'confirmed'
+                                ? 'Confirmado'
+                                : p.status === 'pending'
+                                  ? 'Pendiente'
+                                  : p.status === 'invited'
+                                    ? 'Invitado'
+                                    : 'Cancelado'}
+                          </Badge>
+                        </div>
+                        {p.status === 'cancelled' && p.cancelledReason ? (
+                          <p className="mt-1.5 text-xs text-muted-foreground leading-snug">
+                            <span className="font-medium text-foreground/90">Motivo salida:</span>{' '}
+                            {p.cancelledReason}
+                          </p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="reservas" className="mt-0">

@@ -105,6 +105,8 @@ export type OpportunityParticipantRow = {
   status: 'creator' | 'confirmed' | 'pending' | 'invited' | 'cancelled'
   /** Solo revuelta (open): participante eligió ir de arquero. */
   isGoalkeeper?: boolean
+  /** Motivo al pasar a cancelado (p. ej. salida voluntaria con RPC). */
+  cancelledReason?: string | null
 }
 
 export async function fetchParticipantsForOpportunity(
@@ -151,6 +153,7 @@ export async function fetchParticipantsForOpportunity(
       photo: (c?.photo_url as string) || DEFAULT_AVATAR,
       status: 'creator',
       isGoalkeeper: creatorPart ? creatorPart.is_goalkeeper === true : false,
+      cancelledReason: null,
     })
   }
 
@@ -164,10 +167,57 @@ export async function fetchParticipantsForOpportunity(
       photo: (u?.photo_url as string) || DEFAULT_AVATAR,
       status: (p.status as OpportunityParticipantRow['status']) || 'pending',
       isGoalkeeper: p.is_goalkeeper === true,
+      cancelledReason: null,
     })
   }
 
   return out
+}
+
+export type ParticipantLeaveReasonRow = {
+  userId: string
+  cancelledReason: string
+  cancelledAt: Date | null
+}
+
+/**
+ * Solo organizador del partido o perfil admin. Usa RPC SECURITY DEFINER.
+ */
+export async function fetchMatchOpportunityParticipantLeaveReasons(
+  supabase: SupabaseClient,
+  opportunityId: string
+): Promise<Map<string, ParticipantLeaveReasonRow>> {
+  const map = new Map<string, ParticipantLeaveReasonRow>()
+  const { data, error } = await supabase.rpc(
+    'get_match_opportunity_participant_leave_reasons',
+    { p_opportunity_id: opportunityId }
+  )
+  if (error) return map
+  const payload = data as
+    | {
+        ok?: boolean
+        error?: string
+        items?: Array<{
+          user_id?: string
+          cancelled_reason?: string | null
+          cancelled_at?: string | null
+        }>
+      }
+    | null
+  if (!payload?.ok || !Array.isArray(payload.items)) return map
+  for (const row of payload.items) {
+    const uid = row.user_id
+    const reason = row.cancelled_reason?.trim()
+    if (typeof uid !== 'string' || !reason) continue
+    map.set(uid, {
+      userId: uid,
+      cancelledReason: reason,
+      cancelledAt: row.cancelled_at
+        ? new Date(row.cancelled_at as string)
+        : null,
+    })
+  }
+  return map
 }
 
 export async function insertMatchChatMessage(

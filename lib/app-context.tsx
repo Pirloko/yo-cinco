@@ -1254,6 +1254,87 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void updateLastSeen(supabase, currentUser.id, { force: true })
   })
 
+  const rescheduleMatchOpportunityWithReason = useStableCallback(async (payload: {
+    opportunityId: string
+    venue: string
+    location: string
+    dateTime: Date
+    reason: string
+  }) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
+    const venue = payload.venue.trim()
+    const location = payload.location.trim()
+    const reason = payload.reason.trim()
+    if (venue.length < 3 || location.length < 3) {
+      toast.error('Centro y ubicación deben tener al menos 3 caracteres.')
+      return
+    }
+    if (reason.length < 5) {
+      toast.error('El motivo debe tener al menos 5 caracteres.')
+      return
+    }
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
+    const { data, error } = await supabase.rpc(
+      'reschedule_match_opportunity_with_reason',
+      {
+        p_opportunity_id: payload.opportunityId,
+        p_new_venue: venue,
+        p_new_location: location,
+        p_new_date_time: payload.dateTime.toISOString(),
+        p_reason: reason,
+      }
+    )
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    const res = data as
+      | { ok?: boolean; error?: string; sensitive_change?: boolean }
+      | null
+    if (!res?.ok) {
+      const code = res?.error ?? 'unknown'
+      if (code === 'not_organizer') {
+        toast.error('Solo el organizador puede reprogramar este partido.')
+        return
+      }
+      if (code === 'has_venue_reservation') {
+        toast.error(
+          'Este partido tiene una reserva asociada. Cancela o reprograma la reserva primero.'
+        )
+        return
+      }
+      if (code === 'too_late_reschedule') {
+        toast.error('Solo se puede reprogramar hasta 2 horas antes del partido.')
+        return
+      }
+      if (code === 'new_time_too_soon') {
+        toast.error('La nueva fecha/hora debe quedar al menos a 2 horas desde ahora.')
+        return
+      }
+      if (code === 'no_changes') {
+        toast.error('No detectamos cambios para guardar.')
+        return
+      }
+      toast.error('No se pudo reprogramar el partido.')
+      return
+    }
+    const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
+    setMatchOpportunities(matchBundle.matchOpportunities)
+    setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+    toast.success(
+      res.sensitive_change
+        ? 'Partido reprogramado. Los confirmados volvieron a pendiente para reconfirmar.'
+        : 'Partido reprogramado.'
+    )
+    void updateLastSeen(supabase, currentUser.id, { force: true })
+  })
+
   const submitMatchRating = useStableCallback(async (
     opportunityId: string,
     payload: {
@@ -2336,6 +2417,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       finalizeRivalOrganizerOverride,
       suspendMatchOpportunity,
       leaveMatchOpportunityWithReason,
+      rescheduleMatchOpportunityWithReason,
       submitMatchRating,
       users,
       getFilteredMatches,
@@ -2343,7 +2425,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       participatingOpportunityIds,
       rivalChallenges,
     }),
-    [matchOpportunities, users, participatingOpportunityIds, rivalChallenges]
+    [
+      matchOpportunities,
+      users,
+      participatingOpportunityIds,
+      rivalChallenges,
+      rescheduleMatchOpportunityWithReason,
+    ]
   )
 
   const teamContextValue = useMemo(

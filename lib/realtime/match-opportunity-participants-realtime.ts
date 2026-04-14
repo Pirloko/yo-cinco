@@ -105,6 +105,7 @@ export async function applyMatchOpportunityParticipantsRealtime(
           ...cur,
           status,
           isGoalkeeper: isGk,
+          cancelledReason: null,
         }
       }
       continue
@@ -118,6 +119,7 @@ export async function applyMatchOpportunityParticipantsRealtime(
         photo,
         status,
         isGoalkeeper: isGk,
+        cancelledReason: null,
       })
       continue
     }
