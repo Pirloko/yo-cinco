@@ -2,10 +2,30 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { queryKeys } from '@/lib/query-keys'
 import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
+import type { EncounterLineupRole, PickTeamSide } from '@/lib/types'
 import {
   fetchParticipantsForOpportunity,
   type OpportunityParticipantRow,
 } from '@/lib/supabase/message-queries'
+
+function parsePickTeam(raw: unknown): PickTeamSide | undefined {
+  if (raw === 'A' || raw === 'B') return raw
+  return undefined
+}
+
+function parseEncounterLineupRole(
+  raw: unknown
+): EncounterLineupRole | undefined {
+  if (
+    raw === 'gk' ||
+    raw === 'defensa' ||
+    raw === 'mediocampista' ||
+    raw === 'delantero'
+  ) {
+    return raw
+  }
+  return undefined
+}
 
 export type ParticipantsRealtimePayload = {
   eventType: 'INSERT' | 'UPDATE' | 'DELETE'
@@ -87,11 +107,20 @@ export async function applyMatchOpportunityParticipantsRealtime(
     if (typeof userId !== 'string') return 'refetch'
     const status = parseParticipantStatus(row.status)
     const isGk = row.is_goalkeeper === true
+    const pickTeam = parsePickTeam(row.pick_team)
+    const encounterLineupRole = parseEncounterLineupRole(
+      row.encounter_lineup_role
+    )
 
     if (cid && userId === cid) {
       const idx = findCreatorIndex()
       if (idx < 0) return 'refetch'
-      next[idx] = { ...next[idx], isGoalkeeper: isGk }
+      next[idx] = {
+        ...next[idx],
+        isGoalkeeper: isGk,
+        pickTeam: pickTeam ?? next[idx].pickTeam,
+        encounterLineupRole: encounterLineupRole ?? next[idx].encounterLineupRole,
+      }
       continue
     }
 
@@ -99,12 +128,19 @@ export async function applyMatchOpportunityParticipantsRealtime(
     if (existingIdx >= 0) {
       const cur = next[existingIdx]
       if (cur.status === 'creator') {
-        next[existingIdx] = { ...cur, isGoalkeeper: isGk }
+        next[existingIdx] = {
+          ...cur,
+          isGoalkeeper: isGk,
+          pickTeam: pickTeam ?? cur.pickTeam,
+          encounterLineupRole: encounterLineupRole ?? cur.encounterLineupRole,
+        }
       } else {
         next[existingIdx] = {
           ...cur,
           status,
           isGoalkeeper: isGk,
+          pickTeam: pickTeam ?? cur.pickTeam,
+          encounterLineupRole: encounterLineupRole ?? cur.encounterLineupRole,
           cancelledReason: null,
         }
       }
@@ -119,6 +155,8 @@ export async function applyMatchOpportunityParticipantsRealtime(
         photo,
         status,
         isGoalkeeper: isGk,
+        pickTeam,
+        encounterLineupRole,
         cancelledReason: null,
       })
       continue

@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   keepPreviousData,
@@ -28,7 +29,12 @@ import {
   type RatingSummary,
 } from '@/lib/supabase/rating-queries'
 import { fetchMatchesHubSecondaryBundle } from '@/lib/services/matches-hub.service'
-import type { MatchOpportunity, MatchesHubTab, RivalResult } from '@/lib/types'
+import type {
+  MatchOpportunity,
+  MatchType,
+  MatchesHubTab,
+  RivalResult,
+} from '@/lib/types'
 import {
   formatClp,
   reservationTotalFromHourly,
@@ -57,7 +63,15 @@ import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { MATCH_CARD_SHELL, COMPACT_CARD_ROW } from '@/lib/card-shell'
 import { cn } from '@/lib/utils'
 
-const MATCH_TYPE_META = {
+const MATCH_TYPE_META: Record<
+  MatchType,
+  {
+    icon: ReactNode
+    label: string
+    color: string
+    headerBg: string
+  }
+> = {
   rival: {
     icon: <Target className="w-4 h-4" />,
     label: 'Rival vs rival',
@@ -76,7 +90,19 @@ const MATCH_TYPE_META = {
     color: 'bg-accent/20 text-accent',
     headerBg: 'bg-accent/10 border-accent/30',
   },
-} as const
+  team_pick_public: {
+    icon: <Users className="w-4 h-4" />,
+    label: 'Selección de equipos (público)',
+    color: 'bg-emerald-500/20 text-emerald-300',
+    headerBg: 'bg-emerald-500/10 border-emerald-500/30',
+  },
+  team_pick_private: {
+    icon: <Users className="w-4 h-4" />,
+    label: 'Selección de equipos (privado)',
+    color: 'bg-slate-500/25 text-slate-200',
+    headerBg: 'bg-slate-500/10 border-slate-500/30',
+  },
+}
 
 function isUserInvolved(
   m: MatchOpportunity,

@@ -48,6 +48,7 @@ import {
   Shield,
 } from 'lucide-react'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
+import type { MatchType } from '@/lib/types'
 import { playersSeekProfileLabel } from '@/lib/players-seek-profile'
 import { MatchCourtPricingBlock } from '@/components/match-court-pricing'
 import { prefetchPublicPlayerProfile } from '@/lib/public-player-prefetch'
@@ -1137,7 +1138,7 @@ const ParticipantListItem = memo(function ParticipantListItem({
   onOpenProfile,
 }: {
   participant: OpportunityParticipantRow
-  opportunityType: 'rival' | 'players' | 'open'
+  opportunityType: MatchType
   avatarDisplayUrl: (photo?: string, userId?: string) => string
   onPrefetchProfile?: (userId: string) => void
   onOpenProfile: (userId: string) => void
@@ -1163,7 +1164,10 @@ const ParticipantListItem = memo(function ParticipantListItem({
           />
           <span className="text-sm text-foreground truncate hover:underline">
             {participant.name}
-            {(opportunityType === 'open' || opportunityType === 'players') &&
+            {(opportunityType === 'open' ||
+              opportunityType === 'players' ||
+              opportunityType === 'team_pick_public' ||
+              opportunityType === 'team_pick_private') &&
             participant.isGoalkeeper
               ? ' 🧤'
               : ''}

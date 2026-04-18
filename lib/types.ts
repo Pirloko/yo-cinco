@@ -6,7 +6,12 @@ export type Position = 'portero' | 'defensa' | 'mediocampista' | 'delantero'
 
 export type Level = 'principiante' | 'intermedio' | 'avanzado' | 'competitivo'
 
-export type MatchType = 'rival' | 'players' | 'open'
+export type MatchType =
+  | 'rival'
+  | 'players'
+  | 'open'
+  | 'team_pick_public'
+  | 'team_pick_private'
 
 /** Búsqueda de jugadores: qué cupos ofrece el organizador. */
 export type PlayersSeekProfile =
@@ -15,6 +20,11 @@ export type PlayersSeekProfile =
   | 'gk_and_field'
 
 export type MatchStatus = 'pending' | 'confirmed' | 'completed' | 'cancelled'
+
+/** Rol de cancha solo para el encuentro (modo selección de equipos). */
+export type EncounterLineupRole = 'gk' | 'defensa' | 'mediocampista' | 'delantero'
+
+export type PickTeamSide = 'A' | 'B'
 
 export type { RevueltaLineup }
 
@@ -302,6 +312,8 @@ export interface MatchOpportunity {
   teamName?: string
   /** Revuelta (open) privada: solo este equipo entra directo; externos solicitan al organizador. */
   privateRevueltaTeamId?: string
+  /** Código 4 dígitos para unirse (solo `team_pick_private`). */
+  joinCode?: string
   playersNeeded?: number
   playersJoined?: number
   /** Solo type players: cupos (arquero / campo / ambos). */

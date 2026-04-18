@@ -1,4 +1,5 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
+import type { EncounterLineupRole, PickTeamSide } from '@/lib/types'
 import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
 
 export async function fetchParticipatingOpportunityIds(
@@ -105,6 +106,10 @@ export type OpportunityParticipantRow = {
   status: 'creator' | 'confirmed' | 'pending' | 'invited' | 'cancelled'
   /** Solo revuelta (open): participante eligió ir de arquero. */
   isGoalkeeper?: boolean
+  /** Modo selección de equipos: bando A o B. */
+  pickTeam?: PickTeamSide
+  /** Modo selección de equipos: rol solo para este encuentro. */
+  encounterLineupRole?: EncounterLineupRole
   /** Motivo al pasar a cancelado (p. ej. salida voluntaria con RPC). */
   cancelledReason?: string | null
 }
@@ -134,7 +139,7 @@ export async function fetchParticipantsForOpportunity(
 
   const { data: parts } = await supabase
     .from('match_opportunity_participants')
-    .select('user_id, status, is_goalkeeper')
+    .select('user_id, status, is_goalkeeper, pick_team, encounter_lineup_role')
     .eq('opportunity_id', opportunityId)
 
   const userIds = new Set<string>()
@@ -164,6 +169,10 @@ export async function fetchParticipantsForOpportunity(
       photo: (c?.photo_url as string) || DEFAULT_AVATAR,
       status: 'creator',
       isGoalkeeper: creatorPart ? creatorPart.is_goalkeeper === true : false,
+      pickTeam: (creatorPart?.pick_team as PickTeamSide | undefined) ?? undefined,
+      encounterLineupRole:
+        (creatorPart?.encounter_lineup_role as EncounterLineupRole | undefined) ??
+        undefined,
       cancelledReason: null,
     })
   }
@@ -178,6 +187,9 @@ export async function fetchParticipantsForOpportunity(
       photo: (u?.photo_url as string) || DEFAULT_AVATAR,
       status: (p.status as OpportunityParticipantRow['status']) || 'pending',
       isGoalkeeper: p.is_goalkeeper === true,
+      pickTeam: (p.pick_team as PickTeamSide | undefined) ?? undefined,
+      encounterLineupRole:
+        (p.encounter_lineup_role as EncounterLineupRole | undefined) ?? undefined,
       cancelledReason: null,
     })
   }

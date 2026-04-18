@@ -43,6 +43,7 @@ import { sessionQueryEnabled } from '@/lib/query-session-enabled'
 import { updateLastSeen } from '@/lib/services/presence.service'
 import { useMatchOpportunityParticipantsRealtime } from '@/lib/hooks/use-match-opportunity-participants-realtime'
 import { toast } from 'sonner'
+import type { MatchType } from '@/lib/types'
 
 type UiMessage = ChatMessageRow & { isMe: boolean }
 
@@ -659,7 +660,7 @@ const ParticipantRow = memo(function ParticipantRow({
   onOpenProfile,
 }: {
   participant: OpportunityParticipantRow
-  opportunityType: 'rival' | 'players' | 'open'
+  opportunityType: MatchType
   avatarDisplayUrl: (photo?: string, userId?: string) => string
   onPrefetchProfile?: (userId: string) => void
   onOpenProfile: (userId: string) => void
@@ -685,7 +686,10 @@ const ParticipantRow = memo(function ParticipantRow({
           />
           <span className="text-sm text-foreground truncate hover:underline">
             {participant.name}
-            {(opportunityType === 'open' || opportunityType === 'players') &&
+            {(opportunityType === 'open' ||
+              opportunityType === 'players' ||
+              opportunityType === 'team_pick_public' ||
+              opportunityType === 'team_pick_private') &&
             participant.isGoalkeeper
               ? ' 🧤'
               : ''}
