@@ -15,7 +15,6 @@ import { MatchCard } from '@/components/match-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
-  Target,
   Users,
   Shuffle,
   Sparkles,
@@ -39,7 +38,7 @@ import {
 import type { TeamPickPrivateResolveSuccess } from '@/lib/supabase/team-pick-queries'
 import { minimalMatchOpportunityForTeamPickPreview } from '@/lib/team-pick-ui'
 
-type FilterType = 'all' | MatchType | 'team_pick'
+type FilterType = 'all' | Exclude<MatchType, 'rival'> | 'team_pick'
 
 export function HomeScreen() {
   const {
@@ -242,7 +241,7 @@ export function HomeScreen() {
 
       {/* Quick Actions */}
       <div className="p-4">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <QuickActionCard
             icon={<Sparkles className="w-6 h-6" />}
             label="Todos"
@@ -250,14 +249,6 @@ export function HomeScreen() {
             selected={activeFilter === 'all'}
             color="bg-primary/10 text-primary border-primary/30"
             onClick={() => setActiveFilter('all')}
-          />
-          <QuickActionCard
-            icon={<Target className="w-6 h-6" />}
-            label="Se busca rival"
-            cta="Acepta un desafío"
-            selected={activeFilter === 'rival'}
-            color="bg-red-500/10 text-red-400 border-red-500/30"
-            onClick={() => setActiveFilter('rival')}
           />
           <QuickActionCard
             icon={<Users className="w-6 h-6" />}

@@ -18,62 +18,43 @@ type RivalChallengeRow = {
 
 export async function fetchRivalChallengesForUser(
   supabase: SupabaseClient,
-  userId: string
+  _userId: string
 ): Promise<RivalChallenge[]> {
-  const { data: staffTeams } = await supabase
-    .from('teams')
-    .select('id')
-    .or(`captain_id.eq.${userId},vice_captain_id.eq.${userId}`)
-  const myStaffTeamIds = (staffTeams ?? []).map((t) => t.id as string)
-
-  const directOrParts = [
-    `challenger_captain_id.eq.${userId}`,
-    `challenged_captain_id.eq.${userId}`,
-  ]
-  if (myStaffTeamIds.length > 0) {
-    directOrParts.push(
-      `challenged_team_id.in.(${myStaffTeamIds.join(',')})`
-    )
-  }
-
-  const { data: directRows } = await supabase
+  void _userId
+  const { data: rows, error } = await supabase
     .from('rival_challenges')
     .select(
       'id, opportunity_id, challenger_team_id, challenger_captain_id, challenged_team_id, challenged_captain_id, accepted_team_id, accepted_captain_id, mode, status, created_at, responded_at'
     )
-    .or(directOrParts.join(','))
     .order('created_at', { ascending: false })
 
-  const { data: openRows } = await supabase
-    .from('rival_challenges')
-    .select(
-      'id, opportunity_id, challenger_team_id, challenger_captain_id, challenged_team_id, challenged_captain_id, accepted_team_id, accepted_captain_id, mode, status, created_at, responded_at'
-    )
-    .eq('mode', 'open')
-    .eq('status', 'pending')
-    .neq('challenger_captain_id', userId)
-    .order('created_at', { ascending: false })
+  if (error || !rows?.length) return []
 
-  const all = [
-    ...(directRows ?? []),
-    ...(openRows ?? []).filter(
-      (r) => !myStaffTeamIds.includes(r.challenger_team_id as string)
+  const all = rows as RivalChallengeRow[]
+  const teamIds = [
+    ...new Set(
+      all.flatMap((r) =>
+        [r.challenger_team_id, r.challenged_team_id, r.accepted_team_id].filter(
+          Boolean
+        )
+      ) as string[]
     ),
-  ] as RivalChallengeRow[]
-  if (all.length === 0) return []
-
-  const teamIds = [...new Set(
-    all.flatMap((r) => [
-      r.challenger_team_id,
-      r.challenged_team_id,
-      r.accepted_team_id,
-    ]).filter(Boolean) as string[]
-  )]
+  ]
   const oppIds = [...new Set(all.map((r) => r.opportunity_id))]
 
   const [{ data: teams }, { data: opps }] = await Promise.all([
-    supabase.from('teams').select('id, name, captain_id').in('id', teamIds),
-    supabase.from('match_opportunities').select('id, title').in('id', oppIds),
+    teamIds.length > 0
+      ? supabase.from('teams').select('id, name, captain_id').in('id', teamIds)
+      : Promise.resolve({
+          data: [] as { id: string; name: string; captain_id: string }[],
+          error: null,
+        }),
+    oppIds.length > 0
+      ? supabase.from('match_opportunities').select('id, title').in('id', oppIds)
+      : Promise.resolve({
+          data: [] as { id: string; title: string }[],
+          error: null,
+        }),
   ])
 
   const teamById = new Map(

@@ -1,7 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { format } from 'date-fns'
+import { es } from 'date-fns/locale'
 import { toast } from 'sonner'
 import {
   useAppAuth,
@@ -49,6 +57,8 @@ import {
   ExternalLink,
   Swords,
   UserMinus,
+  Trophy,
+  MapPinned,
 } from 'lucide-react'
 import {
   Team,
@@ -62,6 +72,7 @@ import { sessionQueryEnabled } from '@/lib/query-session-enabled'
 import { QUERY_STALE_TIME_STATIC_MS } from '@/lib/query-defaults'
 import { fetchTeamPrivateSettings } from '@/lib/supabase/team-queries'
 import { teamInviteAbsoluteUrl } from '@/lib/team-invite-url'
+import { revueltaInviteAbsoluteUrl } from '@/lib/match-invite-url'
 import { saveRivalTargetTeamId } from '@/lib/rival-prefill'
 import { TEAM_ROSTER_MAX, TEAM_USER_MAX_MEMBERSHIPS } from '@/lib/team-roster'
 import {
@@ -70,6 +81,14 @@ import {
 } from '@/lib/team-membership'
 
 type TeamsView = 'list' | 'create' | 'detail' | 'invite'
+
+type TeamsDiscoverTab = 'region' | 'ranking'
+
+type TeamCardListOptions = {
+  variant?: 'region' | 'ranking'
+  /** Posición en el ranking (1-based); obligatorio si variant === 'ranking'. */
+  rank?: number
+}
 
 const levelLabels: Record<Level, string> = {
   principiante: 'Principiante',
@@ -175,7 +194,8 @@ export function TeamsScreen() {
     setTeamViceCaptain,
     removeTeamMember,
   } = useAppTeam()
-  const { rivalChallenges, getFilteredUsers } = useAppMatch()
+  const { rivalChallenges, getFilteredUsers, matchOpportunities } =
+    useAppMatch()
   const {
     teamsDetailFocusTeamId,
     setTeamsDetailFocusTeamId,
@@ -196,6 +216,8 @@ export function TeamsScreen() {
   const [draftTeamName, setDraftTeamName] = useState('')
   const [draftTeamDescription, setDraftTeamDescription] = useState('')
   const [teamDetailEditing, setTeamDetailEditing] = useState(false)
+  const [discoverTab, setDiscoverTab] =
+    useState<TeamsDiscoverTab>('region')
   const [logoCacheBust, setLogoCacheBust] = useState(0)
   const [savingTeam, setSavingTeam] = useState(false)
   const [editingCoordinacion, setEditingCoordinacion] = useState(false)
@@ -210,6 +232,18 @@ export function TeamsScreen() {
   )
   const isTeamLimitReached = userTeams.length >= TEAM_USER_MAX_MEMBERSHIPS
   const allTeams = currentUser ? getFilteredTeams(currentUser.gender) : []
+
+  const rankedRegionTeams = useMemo(() => {
+    return [...allTeams].sort((a, b) => {
+      const wA = a.statsWins ?? 0
+      const wB = b.statsWins ?? 0
+      if (wB !== wA) return wB - wA
+      const dA = a.statsDraws ?? 0
+      const dB = b.statsDraws ?? 0
+      if (dB !== dA) return dB - dA
+      return (a.statsLosses ?? 0) - (b.statsLosses ?? 0)
+    })
+  }, [allTeams])
   const pendingInvites = teamInvites.filter(
     inv => inv.inviteeId === currentUser?.id && inv.status === 'pending'
   )
@@ -516,7 +550,14 @@ export function TeamsScreen() {
       )
     : []
 
-  const renderTeamCard = (team: Team, isUserTeam: boolean) => {
+  const renderTeamCard = (
+    team: Team,
+    isUserTeam: boolean,
+    options?: TeamCardListOptions
+  ) => {
+    const variant = options?.variant ?? 'region'
+    const rank = options?.rank
+
     const isPrimaryCaptain = userIsTeamPrimaryCaptain(team, currentUser?.id ?? '')
     const isViceCaptain =
       !!team.viceCaptainId && team.viceCaptainId === currentUser?.id
@@ -529,6 +570,140 @@ export function TeamsScreen() {
       team.members.length < TEAM_ROSTER_MAX &&
       !myJoin
     const canChallenge = !isUserTeam && myStaffTeams.length > 0
+
+    const w = team.statsWins ?? 0
+    const d = team.statsDraws ?? 0
+    const l = team.statsLosses ?? 0
+    const played = w + d + l
+
+    if (variant === 'ranking' && typeof rank === 'number') {
+      const rankShell =
+        rank === 1
+          ? 'border-amber-400/55 bg-gradient-to-b from-amber-400/20 via-amber-500/10 to-transparent shadow-[0_0_20px_-4px_rgba(245,158,11,0.35)]'
+          : rank === 2
+            ? 'border-slate-300/45 bg-gradient-to-b from-slate-300/15 to-slate-500/5'
+            : rank === 3
+              ? 'border-amber-700/45 bg-gradient-to-b from-amber-800/15 to-orange-950/10'
+              : 'border-border/60 bg-secondary/25'
+
+      return (
+        <Card
+          key={team.id}
+          className="group rounded-2xl border-2 border-amber-500/15 bg-gradient-to-br from-card to-secondary/[0.08] shadow-sm cursor-pointer overflow-hidden transition-all hover:border-amber-500/35 hover:shadow-md"
+          onClick={() => {
+            setSelectedTeam(team)
+            setView('detail')
+          }}
+        >
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex gap-3 items-stretch">
+              <div
+                className={`flex flex-col items-center justify-center rounded-2xl border-2 px-2.5 py-2 min-w-[3.5rem] shrink-0 ${rankShell}`}
+              >
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  #
+                </span>
+                <span className="text-2xl font-black leading-none tabular-nums text-foreground -mt-0.5">
+                  {rank}
+                </span>
+                {rank <= 3 ? (
+                  <Trophy
+                    className={`w-4 h-4 mt-1 ${
+                      rank === 1
+                        ? 'text-amber-400'
+                        : rank === 2
+                          ? 'text-slate-300'
+                          : 'text-amber-700 dark:text-amber-600'
+                    }`}
+                    aria-hidden
+                  />
+                ) : null}
+              </div>
+
+              <div className="min-w-0 flex-1 flex flex-col gap-2">
+                <div className="flex items-start gap-2">
+                  <div className="w-11 h-11 rounded-xl bg-muted overflow-hidden flex-shrink-0 ring-1 ring-amber-500/20">
+                    {team.logo ? (
+                      <img
+                        src={team.logo}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-amber-500/20 to-transparent">
+                        <Shield className="w-6 h-6 text-amber-600/80" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h3 className="font-semibold text-foreground truncate text-[15px] leading-snug">
+                        {team.name}
+                      </h3>
+                      {isPrimaryCaptain && <CaptainArmbandBadge compact />}
+                      {isViceCaptain && !isPrimaryCaptain && (
+                        <ViceCaptainArmbandBadge compact />
+                      )}
+                    </div>
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] font-medium px-1.5 py-0 h-5 mt-1 border border-amber-500/25 bg-amber-500/10 text-foreground"
+                    >
+                      {levelLabels[team.level]}
+                    </Badge>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-muted-foreground/60 shrink-0 mt-0.5" />
+                </div>
+
+                <div className="rounded-xl border border-border/70 bg-background/40 px-3 py-2">
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wide mb-1">
+                    Registro rival
+                  </p>
+                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm tabular-nums">
+                    <span>
+                      <span className="text-lg font-bold text-emerald-500">{w}</span>
+                      <span className="text-muted-foreground text-xs font-medium ml-1">
+                        victorias
+                      </span>
+                    </span>
+                    <span className="text-muted-foreground/50">·</span>
+                    <span>
+                      <span className="text-base font-semibold text-amber-500/95">
+                        {d}
+                      </span>
+                      <span className="text-muted-foreground text-xs font-medium ml-1">
+                        empates
+                      </span>
+                    </span>
+                    <span className="text-muted-foreground/50">·</span>
+                    <span>
+                      <span className="text-base font-semibold text-rose-400/95">
+                        {l}
+                      </span>
+                      <span className="text-muted-foreground text-xs font-medium ml-1">
+                        derrotas
+                      </span>
+                    </span>
+                  </div>
+                  {played === 0 ? (
+                    <p className="text-[11px] text-muted-foreground mt-1.5">
+                      Sin partidos rival cerrados aún · el ranking se mueve cuando
+                      hay resultados. Tocá la tarjeta para ver la ficha del equipo.
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground mt-1.5">
+                      {played} partido{played !== 1 ? 's' : ''} jugado
+                      {played !== 1 ? 's' : ''} · tocá la tarjeta para abrir la
+                      ficha.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )
+    }
 
     return (
       <Card
@@ -710,6 +885,22 @@ export function TeamsScreen() {
     const canAcceptDirect = challenge.mode === 'direct' && !!challenge.challengedTeamId
     const canAcceptOpen = challenge.mode === 'open' && !!selectedAcceptTeamId
     const canAccept = canAcceptDirect || canAcceptOpen
+    const opp = matchOpportunities.find((o) => o.id === challenge.opportunityId)
+    const shareUrl =
+      typeof window !== 'undefined'
+        ? revueltaInviteAbsoluteUrl(
+            challenge.opportunityId,
+            window.location.origin
+          )
+        : ''
+    const canShareAsStaff = myStaffTeams.some(
+      (t) =>
+        t.id === challenge.challengerTeamId ||
+        (challenge.challengedTeamId != null &&
+          t.id === challenge.challengedTeamId) ||
+        (challenge.acceptedTeamId != null &&
+          t.id === challenge.acceptedTeamId)
+    )
 
     return (
       <Card key={challenge.id} className="bg-card border-red-500/30">
@@ -729,6 +920,41 @@ export function TeamsScreen() {
                   : ' busca rival para partido'}
               </p>
             </div>
+            {opp ? (
+              <div className="rounded-lg border border-border/60 bg-secondary/30 px-3 py-2.5 space-y-1.5 text-sm">
+                <p className="flex items-start gap-2 text-foreground font-medium leading-snug">
+                  <span className="mt-0.5 shrink-0 text-muted-foreground" aria-hidden>
+                    <MapPinned className="w-4 h-4" />
+                  </span>
+                  <span>
+                    {format(opp.dateTime, "EEEE d MMM yyyy · HH:mm", {
+                      locale: es,
+                    })}
+                  </span>
+                </p>
+                <p className="flex items-start gap-2 text-muted-foreground leading-snug pl-7">
+                  {[opp.venue, opp.location].filter(Boolean).join(' · ') ||
+                    'Centro y dirección por confirmar'}
+                </p>
+              </div>
+            ) : null}
+            {canShareAsStaff && shareUrl ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  void navigator.clipboard.writeText(shareUrl).then(
+                    () => toast.success('Enlace copiado para compartir'),
+                    () => toast.error('No se pudo copiar')
+                  )
+                }}
+              >
+                <Share2 className="w-4 h-4 mr-2 shrink-0" />
+                Copiar enlace del partido
+              </Button>
+            ) : null}
             {challenge.mode === 'open' && (
               <>
                 {myStaffTeams.length > 0 ? (
@@ -747,7 +973,9 @@ export function TeamsScreen() {
                       className="w-full h-10 rounded-lg bg-secondary border border-border px-3 text-sm text-foreground"
                     >
                       <option value="">Selecciona tu equipo</option>
-                      {myStaffTeams.map((t) => (
+                      {myStaffTeams
+                        .filter((t) => t.id !== challenge.challengerTeamId)
+                        .map((t) => (
                         <option key={t.id} value={t.id}>
                           {t.name}
                         </option>
@@ -893,18 +1121,74 @@ export function TeamsScreen() {
           )}
         </div>
 
-        {/* Otros equipos descubribles (no los tuyos) */}
+        {/* Región: listado o ranking */}
         <div>
-          <h2 className="text-lg font-semibold text-foreground mb-3">
-            {currentUser?.regionId
-              ? 'Equipos en tu región'
-              : `Equipos en ${currentUser?.city || 'tu ciudad'}`}
-          </h2>
-          <div className="space-y-3">
-            {allTeams
-              .filter(t => !userTeams.some(ut => ut.id === t.id))
-              .map(team => renderTeamCard(team, false))}
+          <div className="flex rounded-xl border border-border p-1 bg-muted/40 mb-3">
+            <button
+              type="button"
+              className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors ${
+                discoverTab === 'region'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              onClick={() => setDiscoverTab('region')}
+            >
+              <Users className="w-4 h-4 shrink-0" />
+              Región
+            </button>
+            <button
+              type="button"
+              className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-colors ${
+                discoverTab === 'ranking'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              onClick={() => setDiscoverTab('ranking')}
+            >
+              <Trophy className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              Ranking
+            </button>
           </div>
+
+          {discoverTab === 'region' ? (
+            <>
+              <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center gap-2">
+                <MapPinned className="w-5 h-5 shrink-0 text-primary" aria-hidden />
+                {currentUser?.regionId
+                  ? 'Equipos en tu región'
+                  : `Equipos en ${currentUser?.city || 'tu ciudad'}`}
+              </h2>
+              <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+                Descubrí planteles cerca tuyo: leé la descripción, mirá el
+                fogueo y pedí unirte o mandá un desafío.
+              </p>
+              <div className="space-y-3">
+                {allTeams
+                  .filter((t) => !userTeams.some((ut) => ut.id === t.id))
+                  .map((team) => renderTeamCard(team, false))}
+              </div>
+            </>
+          ) : (
+            <>
+              <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                Ranking rival
+              </h2>
+              <p className="text-xs text-muted-foreground mb-3">
+                Orden por victorias en partidos rival confirmados; desempate:
+                más empates, menos derrotas.
+              </p>
+              <div className="space-y-3">
+                {rankedRegionTeams.map((team, index) =>
+                  renderTeamCard(
+                    team,
+                    userTeams.some((ut) => ut.id === team.id),
+                    { variant: 'ranking', rank: index + 1 }
+                  )
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -123,18 +123,6 @@ export const queryKeys = {
       [...queryKeyRoot.explore, 'publicVenues', regionId ?? 'all'] as const,
     venueAvailabilityGrid: (venueIdsKey: string, horizonDays: number) =>
       [...queryKeyRoot.explore, 'availability', venueIdsKey, horizonDays] as const,
-    publicTeamPickMatches: (
-      gender: string,
-      regionId: string | null | undefined,
-      cityId: string | null | undefined
-    ) =>
-      [
-        ...queryKeyRoot.explore,
-        'teamPickFeed',
-        gender,
-        regionId ?? '',
-        cityId ?? '',
-      ] as const,
   },
   teams: {
     all: queryKeyRoot.teams,
