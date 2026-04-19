@@ -170,6 +170,9 @@ export function usePlayerRealtimeManager({
 
     const rowEvents = ['INSERT', 'UPDATE', 'DELETE'] as const
     for (const event of rowEvents) {
+      // Solo usamos el evento como señal para volver a cargar el bundle (REST).
+      // No aplicamos `payload` al estado: join_code u otros campos sensibles no se
+      // propagan desde WAL; el bundle usa match_opportunities_masked en fetch.
       channelMatch.on(
         'postgres_changes',
         { event, schema: 'public', table: 'match_opportunities' },

@@ -139,7 +139,9 @@ export async function fetchParticipantsForOpportunity(
 
   const { data: parts } = await supabase
     .from('match_opportunity_participants')
-    .select('user_id, status, is_goalkeeper, pick_team, encounter_lineup_role')
+    .select(
+      'user_id, status, is_goalkeeper, pick_team, encounter_lineup_role, cancelled_reason'
+    )
     .eq('opportunity_id', opportunityId)
 
   const userIds = new Set<string>()
@@ -173,7 +175,8 @@ export async function fetchParticipantsForOpportunity(
       encounterLineupRole:
         (creatorPart?.encounter_lineup_role as EncounterLineupRole | undefined) ??
         undefined,
-      cancelledReason: null,
+      cancelledReason:
+        (creatorPart?.cancelled_reason as string | null | undefined) ?? null,
     })
   }
 
@@ -190,7 +193,7 @@ export async function fetchParticipantsForOpportunity(
       pickTeam: (p.pick_team as PickTeamSide | undefined) ?? undefined,
       encounterLineupRole:
         (p.encounter_lineup_role as EncounterLineupRole | undefined) ?? undefined,
-      cancelledReason: null,
+      cancelledReason: (p.cancelled_reason as string | null | undefined) ?? null,
     })
   }
 

@@ -149,6 +149,8 @@ export type MatchOpportunityRow = {
   venue_reservation_id?: string | null
   private_revuelta_team_id?: string | null
   join_code?: string | null
+  team_pick_color_a?: string | null
+  team_pick_color_b?: string | null
 }
 
 export type CreatorSnippet = {
@@ -192,6 +194,8 @@ export function mapMatchOpportunityFromDb(
     teamName: row.team_name ?? undefined,
     privateRevueltaTeamId: row.private_revuelta_team_id ?? undefined,
     joinCode: row.join_code?.trim() || undefined,
+    teamPickColorA: row.team_pick_color_a?.trim() || undefined,
+    teamPickColorB: row.team_pick_color_b?.trim() || undefined,
     playersNeeded: row.players_needed ?? undefined,
     playersJoined: row.players_joined,
     playersSeekProfile: parsePlayersSeekProfile(row.players_seek_profile),

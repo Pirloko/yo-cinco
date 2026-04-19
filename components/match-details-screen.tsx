@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useCallback, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState, type ReactNode } from 'react'
 import Image from 'next/image'
 import { toast } from 'sonner'
 import {
@@ -19,6 +19,16 @@ import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import {
   getBrowserSupabase,
   isSupabaseConfigured,
 } from '@/lib/supabase/client'
@@ -36,6 +46,8 @@ import { fetchMatchDetailRatingsBlock } from '@/lib/services/match-detail.servic
 import { MatchCompletionPanel } from '@/components/match-completion-panel'
 import { JoinRevueltaDialog } from '@/components/join-revuelta-dialog'
 import { JoinPlayersSearchDialog } from '@/components/join-players-search-dialog'
+import { JoinTeamPickDialog } from '@/components/join-team-pick-dialog'
+import { TeamPickLineupEditDialog } from '@/components/team-pick-lineup-edit-dialog'
 import { RevueltaInviteActions } from '@/components/revuelta-invite-actions'
 import { RevueltaTeamsPanel } from '@/components/revuelta-teams-panel'
 import {
@@ -48,7 +60,18 @@ import {
   Shield,
 } from 'lucide-react'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
-import type { MatchType } from '@/lib/types'
+import type { EncounterLineupRole, MatchType, PickTeamSide } from '@/lib/types'
+import {
+  canEditTeamPickLineupBeforeDeadline,
+  TEAM_PICK_MAX_FIELD_PER_SIDE,
+  TEAM_PICK_MAX_GK_PER_SIDE,
+  teamPickAccentBorderForOutline,
+  teamPickColorsForUi,
+  encounterLineupRoleLabel,
+  teamPickJerseyPresetLabel,
+  teamPickSideIsFull,
+  teamPickSlotsFromParticipants,
+} from '@/lib/team-pick-ui'
 import { playersSeekProfileLabel } from '@/lib/players-seek-profile'
 import { MatchCourtPricingBlock } from '@/components/match-court-pricing'
 import { prefetchPublicPlayerProfile } from '@/lib/public-player-prefetch'
@@ -85,6 +108,9 @@ export function MatchDetailsScreen() {
     matchOpportunities,
     participatingOpportunityIds,
     joinMatchOpportunity,
+    joinTeamPickMatchOpportunity,
+    setTeamPickParticipantLineup,
+    organizerRemoveTeamPickParticipant,
     randomizeRevueltaTeams,
     finalizeMatchOpportunity,
     suspendMatchOpportunity,
@@ -166,8 +192,9 @@ export function MatchDetailsScreen() {
     return participants.map((p) => {
       if (p.status !== 'cancelled') return { ...p, cancelledReason: null }
       const r = reasons.get(p.id)
-      if (!r) return { ...p, cancelledReason: null }
-      return { ...p, cancelledReason: r.cancelledReason }
+      const merged =
+        r?.cancelledReason?.trim() || p.cancelledReason?.trim() || null
+      return { ...p, cancelledReason: merged }
     })
   }, [participants, participantLeaveReasonsQuery.data])
 
@@ -178,6 +205,40 @@ export function MatchDetailsScreen() {
       }),
     [participantsForList, canViewParticipantLeaveReasons]
   )
+
+  const teamPickDetailSlots = useMemo(
+    () => teamPickSlotsFromParticipants(participantsForList),
+    [participantsForList]
+  )
+
+  const teamPickListSplit = useMemo(() => {
+    const active = participantsShownToViewer.filter(
+      (p) =>
+        p.status === 'creator' ||
+        p.status === 'confirmed' ||
+        p.status === 'pending'
+    )
+    const sortTeam = (list: typeof active) =>
+      [...list].sort((a, b) => {
+        if (a.status === 'creator' && b.status !== 'creator') return -1
+        if (b.status === 'creator' && a.status !== 'creator') return 1
+        return (a.name || '').localeCompare(b.name || '', 'es')
+      })
+    const rawA = active.filter((p) => p.pickTeam === 'A')
+    const rawB = active.filter((p) => p.pickTeam === 'B')
+    const unassigned = active.filter(
+      (p) => p.pickTeam !== 'A' && p.pickTeam !== 'B'
+    )
+    const cancelledOnly = participantsShownToViewer.filter(
+      (p) => p.status === 'cancelled'
+    )
+    return {
+      teamA: sortTeam(rawA),
+      teamB: sortTeam(rawB),
+      unassigned,
+      cancelledOnly,
+    }
+  }, [participantsShownToViewer])
 
   const ratingsSessionQuery = useQuery({
     queryKey: queryKeys.matchOpportunity.ratingsSession(
@@ -219,6 +280,11 @@ export function MatchDetailsScreen() {
   const loadingRating = ratingsSessionQuery.isFetching
 
   const [joinRevueltaOpen, setJoinRevueltaOpen] = useState(false)
+  const [joinTeamPickOpen, setJoinTeamPickOpen] = useState(false)
+  const [lineupEditUserId, setLineupEditUserId] = useState<string | null>(null)
+  const [kickUserId, setKickUserId] = useState<string | null>(null)
+  const [kickReason, setKickReason] = useState('')
+  const [kickSubmitting, setKickSubmitting] = useState(false)
   const [respondingId, setRespondingId] = useState<string | null>(null)
   const [joinPlayersOpen, setJoinPlayersOpen] = useState(false)
   const organizerId = opportunity?.creatorId ?? null
@@ -508,6 +574,89 @@ export function MatchDetailsScreen() {
     !isParticipant &&
     (opportunity.status === 'pending' || opportunity.status === 'confirmed')
 
+  const canJoinTeamPick =
+    (opportunity.type === 'team_pick_public' ||
+      opportunity.type === 'team_pick_private') &&
+    !isCreator &&
+    !isParticipant &&
+    (opportunity.status === 'pending' || opportunity.status === 'confirmed')
+
+  const canEditTeamPickLineup =
+    (opportunity.type === 'team_pick_public' ||
+      opportunity.type === 'team_pick_private') &&
+    (opportunity.status === 'pending' || opportunity.status === 'confirmed') &&
+    canEditTeamPickLineupBeforeDeadline(opportunity.dateTime)
+
+  const lineupEditParticipant = useMemo(() => {
+    if (!lineupEditUserId) return null
+    return participants.find((x) => x.id === lineupEditUserId) ?? null
+  }, [lineupEditUserId, participants])
+
+  const renderTeamPickParticipantRow = (p: OpportunityParticipantRow) => {
+    const isTeamPickOpp =
+      opportunity.type === 'team_pick_public' ||
+      opportunity.type === 'team_pick_private'
+    const showLineupRow =
+      isTeamPickOpp &&
+      (p.status === 'creator' ||
+        p.status === 'confirmed' ||
+        p.status === 'pending')
+    const subline = showLineupRow
+      ? encounterLineupRoleLabel(p.encounterLineupRole)
+      : null
+    const mayEditLineup =
+      canEditTeamPickLineup &&
+      showLineupRow &&
+      (currentUser.id === p.id || isCreator)
+    const mayKick =
+      canEditTeamPickLineup &&
+      isCreator &&
+      p.id !== opportunity.creatorId &&
+      (p.status === 'confirmed' || p.status === 'pending')
+    const actions =
+      mayEditLineup || mayKick ? (
+        <div className="flex flex-wrap gap-1.5 justify-end w-full">
+          {mayEditLineup ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setLineupEditUserId(p.id)}
+            >
+              {currentUser.id === p.id ? 'Mi puesto' : 'Ajustar'}
+            </Button>
+          ) : null}
+          {mayKick ? (
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => {
+                setKickUserId(p.id)
+                setKickReason('')
+              }}
+            >
+              Expulsar
+            </Button>
+          ) : null}
+        </div>
+      ) : null
+    return (
+      <ParticipantListItem
+        key={p.id}
+        participant={p}
+        opportunityType={opportunity.type}
+        avatarDisplayUrl={avatarDisplayUrl}
+        onPrefetchProfile={prefetchParticipantProfile}
+        onOpenProfile={openParticipantProfile}
+        subline={subline}
+        footer={actions}
+      />
+    )
+  }
+
   const canSelfConfirmReservation =
     isCreator &&
     !!reservationState &&
@@ -639,6 +788,28 @@ export function MatchDetailsScreen() {
             <p className="text-sm text-muted-foreground">{opportunity.description}</p>
           )}
 
+          {opportunity.type === 'team_pick_private' &&
+            (isCreator || isParticipant) &&
+            opportunity.joinCode && (
+              <div className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-2.5 space-y-1">
+                <p className="text-xs font-medium text-foreground">
+                  Código para invitar jugadores
+                </p>
+                <p className="text-2xl font-mono font-bold tracking-[0.35em] text-primary">
+                  {opportunity.joinCode}
+                </p>
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  Compartí este código por fuera de la app; quien se una debe ingresarlo
+                  al unirse.
+                  {!isCreator ? (
+                    <span className="block mt-1">
+                      Solo lo ven quienes ya están en el partido (confianza del grupo).
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+            )}
+
           <div className="grid grid-cols-1 gap-2 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-primary" />
@@ -686,6 +857,18 @@ export function MatchDetailsScreen() {
                 </p>
               </div>
             )}
+            {(opportunity.type === 'team_pick_public' ||
+              opportunity.type === 'team_pick_private') &&
+              needed > 0 && (
+                <div className="text-xs text-muted-foreground pl-6 space-y-0.5">
+                  <p>
+                    Selección de equipos (A y B). Cupos libres:{' '}
+                    <span className="text-foreground font-medium">
+                      {Math.max(0, needed - joined)}
+                    </span>
+                  </p>
+                </div>
+              )}
           </div>
 
           <MatchCourtPricingBlock opportunity={opportunity} />
@@ -795,7 +978,8 @@ export function MatchDetailsScreen() {
             </div>
           ) : null}
 
-          {opportunity.type === 'open' &&
+          {(opportunity.type === 'open' ||
+            opportunity.type === 'team_pick_public') &&
             (isCreator || isParticipant) &&
             (opportunity.status === 'pending' ||
               opportunity.status === 'confirmed') && (
@@ -804,8 +988,9 @@ export function MatchDetailsScreen() {
                   Invitar jugadores
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Cualquier participante puede invitar con el botón (compartir en apps o
-                  copiar enlace). Los cupos se ven en la página pública.
+                  {opportunity.type === 'team_pick_public'
+                    ? 'Cualquier participante puede compartir el enlace público. Los cupos y la lista se ven en la misma página que las revueltas abiertas.'
+                    : 'Cualquier participante puede invitar con el botón (compartir en apps o copiar enlace). Los cupos se ven en la página pública.'}
                 </p>
                 <RevueltaInviteActions opportunity={opportunity} />
               </div>
@@ -835,23 +1020,211 @@ export function MatchDetailsScreen() {
           )}
         </div>
 
-        <div className="bg-card rounded-2xl border border-border p-4">
+        <div className="bg-card rounded-2xl border border-border p-4 space-y-4">
+          {(opportunity.type === 'team_pick_public' ||
+            opportunity.type === 'team_pick_private') &&
+            (() => {
+              const { colorA, colorB } = teamPickColorsForUi(opportunity)
+              return (
+                <div className="rounded-xl border border-border/80 bg-secondary/35 px-3 py-2.5 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-foreground">
+                    Colores camiseta
+                  </p>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-x-6 sm:gap-y-2">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                        Equipo A
+                      </span>
+                      <span
+                        className="h-5 w-5 shrink-0 rounded-full border-2 shadow-sm"
+                        style={{
+                          backgroundColor: colorA,
+                          borderColor: teamPickAccentBorderForOutline(colorA),
+                        }}
+                        aria-hidden
+                      />
+                      <span className="text-sm font-medium text-foreground truncate">
+                        {teamPickJerseyPresetLabel(colorA)}
+                      </span>
+                    </div>
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                        Equipo B
+                      </span>
+                      <span
+                        className="h-5 w-5 shrink-0 rounded-full border-2 shadow-sm"
+                        style={{
+                          backgroundColor: colorB,
+                          borderColor: teamPickAccentBorderForOutline(colorB),
+                        }}
+                        aria-hidden
+                      />
+                      <span className="text-sm font-medium text-foreground truncate">
+                        {teamPickJerseyPresetLabel(colorB)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
           <h3 className="font-medium text-foreground mb-3">Participantes</h3>
+          {(opportunity.type === 'team_pick_public' ||
+            opportunity.type === 'team_pick_private') &&
+            isCreator && (
+              <p className="text-xs text-muted-foreground -mt-1 mb-3 leading-relaxed">
+                Como organizador podés cambiar equipo y rol de cualquier jugador y
+                expulsar con motivo hasta 2 horas antes del partido (misma ventana
+                que el ajuste de alineación).
+              </p>
+            )}
           {loadingParticipants ? (
             <p className="text-sm text-muted-foreground">Cargando participantes...</p>
           ) : participantsShownToViewer.length > 0 ? (
-            <div className="space-y-2">
-              {participantsShownToViewer.map((p) => (
-                <ParticipantListItem
-                  key={p.id}
-                  participant={p}
-                  opportunityType={opportunity.type}
-                  avatarDisplayUrl={avatarDisplayUrl}
-                  onPrefetchProfile={prefetchParticipantProfile}
-                  onOpenProfile={openParticipantProfile}
-                />
-              ))}
-            </div>
+            opportunity.type === 'team_pick_public' ||
+            opportunity.type === 'team_pick_private' ? (
+              <div className="space-y-4">
+                {(() => {
+                  const { colorA, colorB } = teamPickColorsForUi(opportunity)
+                  return (
+                    <div className="grid md:grid-cols-2 gap-4">
+                      {(['A', 'B'] as const).map((side) => {
+                        const s = teamPickDetailSlots[side]
+                        const color = side === 'A' ? colorA : colorB
+                        const list =
+                          side === 'A'
+                            ? teamPickListSplit.teamA
+                            : teamPickListSplit.teamB
+                        return (
+                          <div
+                            key={side}
+                            className="rounded-xl border border-border bg-secondary/15 p-3 space-y-3 min-w-0"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-border/60">
+                              <span className="flex items-center gap-2 text-sm font-semibold text-foreground min-w-0">
+                                <span
+                                  className="h-3 w-3 rounded-full border border-border shrink-0"
+                                  style={{ backgroundColor: color }}
+                                />
+                                Equipo {side}
+                                {teamPickSideIsFull(s) ? (
+                                  <span className="text-[10px] font-normal text-muted-foreground shrink-0">
+                                    Completo
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span className="text-[11px] text-muted-foreground tabular-nums whitespace-nowrap">
+                                Arquero {s.gk}/{TEAM_PICK_MAX_GK_PER_SIDE} · Campo{' '}
+                                {s.field}/{TEAM_PICK_MAX_FIELD_PER_SIDE}
+                              </span>
+                            </div>
+                            <div className="space-y-2">
+                              {list.length === 0 ? (
+                                <p className="text-xs text-muted-foreground">
+                                  Nadie en este bando aún.
+                                </p>
+                              ) : (
+                                list.map((p) => renderTeamPickParticipantRow(p))
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
+                {teamPickListSplit.unassigned.length > 0 ? (
+                  <div className="space-y-2 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
+                    <p className="text-xs font-medium text-amber-800 dark:text-amber-200">
+                      Sin bando asignado
+                    </p>
+                    <div className="space-y-2">
+                      {teamPickListSplit.unassigned.map((p) =>
+                        renderTeamPickParticipantRow(p)
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+                {teamPickListSplit.cancelledOnly.length > 0 ? (
+                  <div className="space-y-2 border-t border-border pt-4">
+                    <p className="text-xs font-medium text-destructive/90">
+                      Bajas / cancelados
+                    </p>
+                    <div className="space-y-2">
+                      {teamPickListSplit.cancelledOnly.map((p) =>
+                        renderTeamPickParticipantRow(p)
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {participantsShownToViewer.map((p) => {
+                  const isTeamPickOpp =
+                    opportunity.type === 'team_pick_public' ||
+                    opportunity.type === 'team_pick_private'
+                  const showLineupRow =
+                    isTeamPickOpp &&
+                    (p.status === 'creator' ||
+                      p.status === 'confirmed' ||
+                      p.status === 'pending')
+                  const subline = showLineupRow
+                    ? encounterLineupRoleLabel(p.encounterLineupRole)
+                    : null
+                  const mayEditLineup =
+                    canEditTeamPickLineup &&
+                    showLineupRow &&
+                    (currentUser.id === p.id || isCreator)
+                  const mayKick =
+                    canEditTeamPickLineup &&
+                    isCreator &&
+                    p.id !== opportunity.creatorId &&
+                    (p.status === 'confirmed' || p.status === 'pending')
+                  const actions =
+                    mayEditLineup || mayKick ? (
+                      <div className="flex flex-wrap gap-1.5 justify-end w-full">
+                        {mayEditLineup ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => setLineupEditUserId(p.id)}
+                          >
+                            {currentUser.id === p.id ? 'Mi puesto' : 'Ajustar'}
+                          </Button>
+                        ) : null}
+                        {mayKick ? (
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => {
+                              setKickUserId(p.id)
+                              setKickReason('')
+                            }}
+                          >
+                            Expulsar
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null
+                  return (
+                    <ParticipantListItem
+                      key={p.id}
+                      participant={p}
+                      opportunityType={opportunity.type}
+                      avatarDisplayUrl={avatarDisplayUrl}
+                      onPrefetchProfile={prefetchParticipantProfile}
+                      onOpenProfile={openParticipantProfile}
+                      subline={subline}
+                      footer={actions}
+                    />
+                  )
+                })}
+              </div>
+            )
           ) : (
             <p className="text-sm text-muted-foreground">Sin participantes aún.</p>
           )}
@@ -966,6 +1339,16 @@ export function MatchDetailsScreen() {
             onClick={() => setJoinPlayersOpen(true)}
           >
             Postular
+          </Button>
+        )}
+
+        {canJoinTeamPick && (
+          <Button
+            type="button"
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+            onClick={() => setJoinTeamPickOpen(true)}
+          >
+            Unirme (selección de equipos)
           </Button>
         )}
 
@@ -1097,6 +1480,146 @@ export function MatchDetailsScreen() {
         }}
       />
 
+      <JoinTeamPickDialog
+        open={joinTeamPickOpen}
+        onOpenChange={setJoinTeamPickOpen}
+        opportunity={opportunity}
+        onJoin={async (payload) => {
+          await joinTeamPickMatchOpportunity(opportunity.id, payload)
+        }}
+      />
+
+      {lineupEditUserId && lineupEditParticipant ? (
+        <TeamPickLineupEditDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setLineupEditUserId(null)
+          }}
+          title={`Alineación — ${lineupEditParticipant.name}`}
+          initialTeam={(lineupEditParticipant.pickTeam ?? 'A') as PickTeamSide}
+          initialRole={
+            (lineupEditParticipant.encounterLineupRole ??
+              'delantero') as EncounterLineupRole
+          }
+          participantsForSlots={participantsForList}
+          excludeUserId={lineupEditUserId}
+          matchType={opportunity.type}
+          teamPickColorA={opportunity.teamPickColorA}
+          teamPickColorB={opportunity.teamPickColorB}
+          onSave={async (payload) => {
+            const r = await setTeamPickParticipantLineup(
+              opportunity.id,
+              lineupEditUserId,
+              payload.pickTeam,
+              payload.encounterLineupRole
+            )
+            if (r.ok) {
+              await queryClient.invalidateQueries({
+                queryKey: queryKeys.matchOpportunity.participants(
+                  selectedMatchOpportunityId
+                ),
+              })
+            }
+            return { ok: r.ok }
+          }}
+        />
+      ) : null}
+
+      <Dialog
+        open={kickUserId !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setKickUserId(null)
+            setKickReason('')
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Expulsar jugador</DialogTitle>
+            <DialogDescription>
+              El jugador dejará de estar inscrito. Contá un motivo claro (mínimo 5
+              caracteres).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="flex flex-col gap-2">
+              {TEAM_PICK_KICK_PRESETS.map((label) => (
+                <Button
+                  key={label}
+                  type="button"
+                  variant={kickReason === label ? 'default' : 'outline'}
+                  size="sm"
+                  className="justify-start h-auto py-2 px-3 text-left text-xs"
+                  onClick={() => setKickReason(label)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="kick-reason-tp">Motivo (o elegí arriba y ajustá aquí)</Label>
+              <Textarea
+                id="kick-reason-tp"
+                value={kickReason}
+                onChange={(e) => setKickReason(e.target.value)}
+                placeholder="Mínimo 5 caracteres…"
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={kickSubmitting}
+              onClick={() => {
+                setKickUserId(null)
+                setKickReason('')
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={
+                kickSubmitting ||
+                kickReason.trim().length < 5 ||
+                !kickUserId
+              }
+              onClick={() => {
+                void (async () => {
+                  if (!kickUserId || kickReason.trim().length < 5) return
+                  setKickSubmitting(true)
+                  try {
+                    const r = await organizerRemoveTeamPickParticipant(
+                      opportunity.id,
+                      kickUserId,
+                      kickReason.trim()
+                    )
+                    if (r.ok) {
+                      setKickUserId(null)
+                      setKickReason('')
+                      await queryClient.invalidateQueries({
+                        queryKey: queryKeys.matchOpportunity.participants(
+                          selectedMatchOpportunityId
+                        ),
+                      })
+                    }
+                  } finally {
+                    setKickSubmitting(false)
+                  }
+                })()
+              }}
+            >
+              {kickSubmitting ? 'Procesando…' : 'Confirmar expulsión'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <MatchCompletionPanel
         opportunity={opportunity}
         rivalChallenge={rivalChallengeForOpp}
@@ -1121,6 +1644,12 @@ export function MatchDetailsScreen() {
   )
 }
 
+const TEAM_PICK_KICK_PRESETS = [
+  'Cupos completos o rol duplicado',
+  'Conducta o conflicto en el grupo',
+  'No cumple lo acordado para este partido',
+] as const
+
 const StatBox = memo(function StatBox({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-border bg-secondary/40 p-2">
@@ -1136,66 +1665,78 @@ const ParticipantListItem = memo(function ParticipantListItem({
   avatarDisplayUrl,
   onPrefetchProfile,
   onOpenProfile,
+  subline,
+  footer,
 }: {
   participant: OpportunityParticipantRow
   opportunityType: MatchType
   avatarDisplayUrl: (photo?: string, userId?: string) => string
   onPrefetchProfile?: (userId: string) => void
   onOpenProfile: (userId: string) => void
+  subline?: string | null
+  footer?: ReactNode
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2 min-w-0">
-        <button
-          type="button"
-          onMouseEnter={() => {
-            onPrefetchProfile?.(participant.id)
-          }}
-          onFocus={() => {
-            onPrefetchProfile?.(participant.id)
-          }}
-          onClick={() => onOpenProfile(participant.id)}
-          className="flex items-center gap-2 min-w-0 text-left"
-        >
-          <img
-            src={avatarDisplayUrl(participant.photo, participant.id)}
-            alt={participant.name}
-            className="w-8 h-8 rounded-full object-cover border border-border"
-          />
-          <span className="text-sm text-foreground truncate hover:underline">
-            {participant.name}
-            {(opportunityType === 'open' ||
-              opportunityType === 'players' ||
-              opportunityType === 'team_pick_public' ||
-              opportunityType === 'team_pick_private') &&
-            participant.isGoalkeeper
-              ? ' 🧤'
-              : ''}
-          </span>
-        </button>
-      </div>
-      <div className="shrink-0 text-right max-w-[min(200px,45%)]">
-        <Badge variant="secondary" className="capitalize text-xs">
-          {participant.status === 'creator'
-            ? 'Organizador'
-            : participant.status === 'confirmed'
-              ? 'Confirmado'
-              : participant.status === 'pending'
-                ? 'Pendiente'
-                : participant.status === 'invited'
-                  ? 'Invitado'
-                  : 'Cancelado'}
-        </Badge>
-        {participant.status === 'cancelled' &&
-        participant.cancelledReason ? (
-          <p
-            className="text-[10px] text-muted-foreground mt-1 leading-snug line-clamp-2"
-            title={participant.cancelledReason}
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <button
+            type="button"
+            onMouseEnter={() => {
+              onPrefetchProfile?.(participant.id)
+            }}
+            onFocus={() => {
+              onPrefetchProfile?.(participant.id)
+            }}
+            onClick={() => onOpenProfile(participant.id)}
+            className="flex items-center gap-2 min-w-0 text-left"
           >
-            {participant.cancelledReason}
-          </p>
-        ) : null}
+            <img
+              src={avatarDisplayUrl(participant.photo, participant.id)}
+              alt={participant.name}
+              className="w-8 h-8 rounded-full object-cover border border-border"
+            />
+            <span className="text-sm text-foreground truncate hover:underline">
+              {participant.name}
+              {(opportunityType === 'open' ||
+                opportunityType === 'players' ||
+                opportunityType === 'team_pick_public' ||
+                opportunityType === 'team_pick_private') &&
+              participant.isGoalkeeper
+                ? ' 🧤'
+                : ''}
+            </span>
+          </button>
+        </div>
+        <div className="shrink-0 text-right max-w-[min(200px,45%)]">
+          <Badge variant="secondary" className="capitalize text-xs">
+            {participant.status === 'creator'
+              ? 'Organizador'
+              : participant.status === 'confirmed'
+                ? 'Confirmado'
+                : participant.status === 'pending'
+                  ? 'Pendiente'
+                  : participant.status === 'invited'
+                    ? 'Invitado'
+                    : 'Cancelado'}
+          </Badge>
+          {participant.status === 'cancelled' &&
+          participant.cancelledReason ? (
+            <p
+              className="text-[10px] text-muted-foreground mt-1 leading-snug line-clamp-2"
+              title={participant.cancelledReason}
+            >
+              {participant.cancelledReason}
+            </p>
+          ) : null}
+        </div>
       </div>
+      {subline ? (
+        <p className="text-[11px] text-muted-foreground pl-10 leading-snug">
+          {subline}
+        </p>
+      ) : null}
+      {footer}
     </div>
   )
 })

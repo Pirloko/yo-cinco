@@ -29,11 +29,23 @@ import {
   MatchType,
   Level,
   Team,
+  type EncounterLineupRole,
   type PlayersSeekProfile,
   type SportsVenue,
   type VenueCourt,
 } from '@/lib/types'
 import { venueCourtPricingHint } from '@/lib/court-pricing'
+import {
+  DEFAULT_TEAM_PICK_COLOR_A,
+  DEFAULT_TEAM_PICK_COLOR_B,
+  coerceTeamPickJerseyPresetHex,
+} from '@/lib/team-pick-ui'
+import {
+  buildCreateMatchSuccessShareText,
+  formatCreateMatchWhenLine,
+} from '@/lib/create-match-share'
+import { revueltaInviteAbsoluteUrl } from '@/lib/match-invite-url'
+import { TeamPickJerseyColorPicker } from '@/components/team-pick-jersey-color-picker'
 import { TIME_SLOT_OPTIONS } from '@/lib/time-slot-options'
 import {
   getBrowserSupabase,
@@ -79,6 +91,9 @@ import {
   Search,
   Info,
   Loader2,
+  Copy,
+  MessageCircle,
+  Share2,
 } from 'lucide-react'
 
 const CREATE_MATCH_GUIDELINES: string[] = [
@@ -102,6 +117,32 @@ const levelLabels: Record<Level, string> = {
   intermedio: 'Intermedio',
   avanzado: 'Avanzado',
   competitivo: 'Competitivo',
+}
+
+function publishedTitleForShare(args: {
+  matchType: MatchType | 'reserve' | null
+  formData: { title: string; playersNeeded: number }
+  rivalMode: 'direct' | 'open'
+  selectedTeam: Team | null
+  selectedRivalTeam: Team | null
+}): string {
+  const t = args.formData.title.trim()
+  if (t) return t
+  if (args.matchType === 'players') {
+    const n = args.formData.playersNeeded
+    return `Faltan ${n} ${n === 1 ? 'jugador' : 'jugadores'}`
+  }
+  if (args.matchType === 'open') return 'Revuelta'
+  if (args.matchType === 'team_pick_public') return 'Selección de equipos públicos'
+  if (args.matchType === 'team_pick_private') return 'Selección de equipos privado'
+  if (args.matchType === 'rival' && args.selectedTeam) {
+    if (args.rivalMode === 'direct' && args.selectedRivalTeam) {
+      return `${args.selectedTeam.name} vs ${args.selectedRivalTeam.name}`
+    }
+    return `${args.selectedTeam.name} busca rival`
+  }
+  if (args.matchType === 'reserve') return 'Reserva de cancha'
+  return 'Partido'
 }
 
 export function CreateScreen() {
@@ -136,6 +177,18 @@ export function CreateScreen() {
   const submitLockRef = useRef(false)
   /** Revuelta: organizador cuenta como un cupo y elige arquero o campo. */
   const [creatorIsGoalkeeper, setCreatorIsGoalkeeper] = useState(false)
+  /** 6vs6 team_pick: rol del organizador (equipo A). */
+  const [teamPickCreatorRole, setTeamPickCreatorRole] =
+    useState<EncounterLineupRole>('delantero')
+  const [teamPickColorA, setTeamPickColorA] = useState(DEFAULT_TEAM_PICK_COLOR_A)
+  const [teamPickColorB, setTeamPickColorB] = useState(DEFAULT_TEAM_PICK_COLOR_B)
+  const [createdTeamPickJoinCode, setCreatedTeamPickJoinCode] = useState<
+    string | null
+  >(null)
+  /** Para armar enlace público en la pantalla de éxito (revuelta / detalle). */
+  const [publishedOpportunityId, setPublishedOpportunityId] = useState<
+    string | null
+  >(null)
   /** Buscar jugadores: qué cupos ofrece (paso 3). */
   const [playersSeekProfile, setPlayersSeekProfile] =
     useState<PlayersSeekProfile | null>(null)
@@ -149,6 +202,10 @@ export function CreateScreen() {
 
   useEffect(() => {
     if (matchType !== 'open') setPrivateRevueltaTeamId(null)
+  }, [matchType])
+
+  useEffect(() => {
+    if (matchType !== 'team_pick_private') setCreatedTeamPickJoinCode(null)
   }, [matchType])
 
   const venueCourtsQuery = useQuery({
@@ -436,6 +493,11 @@ export function CreateScreen() {
         setPlayersSeekProfile(null)
       } else if (matchType === 'open' && step === 2) {
         setStep(1)
+      } else if (
+        (matchType === 'team_pick_public' || matchType === 'team_pick_private') &&
+        step === 2
+      ) {
+        setStep(1)
       } else if (matchType === 'reserve' && step === 2) {
         setStep(1)
       } else {
@@ -453,6 +515,8 @@ export function CreateScreen() {
     if (submitLockRef.current) return
     submitLockRef.current = true
     setIsPublishing(true)
+    setPublishedOpportunityId(null)
+    setCreatedTeamPickJoinCode(null)
 
     try {
       const dateTime = new Date(`${formData.date}T${formData.time}`)
@@ -479,7 +543,7 @@ export function CreateScreen() {
       // Rival challenge flow (direct or open)
       if (matchType === 'rival' && selectedTeam) {
         if (rivalMode === 'direct' && !selectedRivalTeam) return
-        await createRivalChallenge({
+        const rivalOppId = await createRivalChallenge({
           challengerTeam: selectedTeam,
           mode: rivalMode,
           challengedTeam: rivalMode === 'direct' ? selectedRivalTeam ?? undefined : undefined,
@@ -489,6 +553,8 @@ export function CreateScreen() {
           dateTime,
           level: formData.level,
         })
+        if (!rivalOppId) return
+        setPublishedOpportunityId(rivalOppId)
       } else {
         const linked =
           sportsVenuesFromDb.find((x) => x.id === linkedVenueId) ??
@@ -514,7 +580,11 @@ export function CreateScreen() {
               }`
             : matchType === 'open'
               ? 'Revuelta'
-              : 'Partido'
+              : matchType === 'team_pick_public'
+                ? 'Selección de equipos públicos'
+                : matchType === 'team_pick_private'
+                  ? 'Selección de equipos privado'
+                  : 'Partido'
         const res = await addMatchOpportunity({
           type: matchType,
           title: formData.title.trim() || autoTitle,
@@ -528,8 +598,18 @@ export function CreateScreen() {
           creatorId: currentUser.id,
           creatorName: currentUser.name,
           creatorPhoto: currentUser.photo,
-          playersNeeded: matchType === 'rival' ? undefined : formData.playersNeeded,
-          playersJoined: matchType === 'rival' ? undefined : 0,
+          playersNeeded:
+            matchType === 'rival' ||
+            matchType === 'team_pick_public' ||
+            matchType === 'team_pick_private'
+              ? undefined
+              : formData.playersNeeded,
+          playersJoined:
+            matchType === 'rival' ||
+            matchType === 'team_pick_public' ||
+            matchType === 'team_pick_private'
+              ? undefined
+              : 0,
           gender: currentUser.gender,
           status: 'pending',
           creatorIsGoalkeeper:
@@ -546,6 +626,20 @@ export function CreateScreen() {
             matchType === 'open' && privateRevueltaTeamId
               ? privateRevueltaTeamId
               : undefined,
+          creatorEncounterLineupRole:
+            matchType === 'team_pick_public' || matchType === 'team_pick_private'
+              ? teamPickCreatorRole
+              : undefined,
+          teamPickColorA:
+            matchType === 'team_pick_public' || matchType === 'team_pick_private'
+              ? coerceTeamPickJerseyPresetHex(teamPickColorA) ??
+                DEFAULT_TEAM_PICK_COLOR_A
+              : undefined,
+          teamPickColorB:
+            matchType === 'team_pick_public' || matchType === 'team_pick_private'
+              ? coerceTeamPickJerseyPresetHex(teamPickColorB) ??
+                DEFAULT_TEAM_PICK_COLOR_B
+              : undefined,
         })
         if (!res.ok) {
           if (res.code === 'no_court') {
@@ -553,6 +647,16 @@ export function CreateScreen() {
             setVenueTimesRefreshKey((k) => k + 1)
           }
           return
+        }
+        if (res.opportunityId) {
+          setPublishedOpportunityId(res.opportunityId)
+        }
+        if (
+          matchType === 'team_pick_private' &&
+          typeof res.joinCode === 'string' &&
+          res.joinCode.trim()
+        ) {
+          setCreatedTeamPickJoinCode(res.joinCode.trim())
         }
       }
 
@@ -564,9 +668,72 @@ export function CreateScreen() {
   }
 
   if (isSubmitted) {
+    const whenLine =
+      formData.date && formData.time
+        ? formatCreateMatchWhenLine(formData.date, formData.time)
+        : ''
+    const shareTitle = publishedTitleForShare({
+      matchType,
+      formData,
+      rivalMode,
+      selectedTeam,
+      selectedRivalTeam,
+    })
+    const pageUrl =
+      typeof window !== 'undefined' && publishedOpportunityId
+        ? revueltaInviteAbsoluteUrl(
+            publishedOpportunityId,
+            window.location.origin
+          )
+        : null
+    const shareMessage = buildCreateMatchSuccessShareText({
+      title: shareTitle,
+      venue: formData.venue,
+      location: formData.location,
+      whenLine,
+      publicPageUrl: pageUrl,
+      matchType: matchType ?? null,
+      joinCode:
+        matchType === 'team_pick_private' ? createdTeamPickJoinCode : null,
+    })
+
+    const copyShareMessage = async () => {
+      try {
+        await navigator.clipboard.writeText(shareMessage)
+        toast.success('Mensaje copiado')
+      } catch {
+        toast.error('No se pudo copiar')
+      }
+    }
+
+    const shareNativeOrCopy = async () => {
+      try {
+        if (navigator.share) {
+          await navigator.share({
+            title: shareTitle,
+            text: shareMessage,
+            url: pageUrl ?? undefined,
+          })
+          return
+        }
+        await copyShareMessage()
+      } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') return
+        await copyShareMessage()
+      }
+    }
+
+    const shareWhatsApp = () => {
+      window.open(
+        `https://wa.me/?text=${encodeURIComponent(shareMessage)}`,
+        '_blank',
+        'noopener,noreferrer'
+      )
+    }
+
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
-        <div className="text-center space-y-6">
+        <div className="text-center space-y-6 max-w-md w-full">
           <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center mx-auto">
             <CheckCircle className="w-10 h-10 text-primary" />
           </div>
@@ -579,13 +746,74 @@ export function CreateScreen() {
                 ? `Tu desafio a ${selectedRivalTeam.name} ha sido enviado` 
                 : matchType === 'rival' ? 'Tu busqueda de rival ya esta visible'
                 : matchType === 'players' ? 'Tu busqueda de jugadores ya esta visible' 
-                : matchType === 'reserve' ? 'Tu solicitud de reserva quedó pendiente de confirmación.'
-                : 'Tu revuelta ya esta visible'}
+                : matchType === 'reserve'
+                  ? 'Tu solicitud de reserva quedó pendiente de confirmación.'
+                  : matchType === 'team_pick_public'
+                    ? 'Tu selección de equipos pública ya está visible.'
+                    : matchType === 'team_pick_private'
+                      ? 'Tu selección de equipos privada ya está creada.'
+                      : 'Tu revuelta ya esta visible'}
             </p>
+            {matchType === 'team_pick_private' && createdTeamPickJoinCode ? (
+              <div className="mt-4 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-left space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  Código para invitar
+                </p>
+                <p className="text-3xl font-mono font-bold tracking-[0.35em] text-primary text-center">
+                  {createdTeamPickJoinCode}
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Compartilo con quienes quieras que se sumen; lo van a necesitar al
+                  unirse en la app.
+                </p>
+              </div>
+            ) : null}
           </div>
+
+          <div className="rounded-xl border border-border bg-secondary/30 px-3 py-4 text-left space-y-3">
+            <p className="text-xs font-semibold text-foreground text-center uppercase tracking-wide">
+              Compartir invitación
+            </p>
+            <p className="text-[11px] text-muted-foreground text-center leading-snug">
+              El texto incluye lugar, fecha y enlace cuando aplica.
+              {matchType === 'team_pick_private'
+                ? ' En selección privada también va el código de unión.'
+                : null}
+            </p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-center gap-2 h-11"
+                onClick={() => void copyShareMessage()}
+              >
+                <Copy className="h-4 w-4 shrink-0" aria-hidden />
+                Copiar
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-center gap-2 h-11"
+                onClick={() => void shareNativeOrCopy()}
+              >
+                <Share2 className="h-4 w-4 shrink-0" aria-hidden />
+                Compartir
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-center gap-2 h-11 border-green-700/50 bg-green-950/30 hover:bg-green-950/50"
+                onClick={() => shareWhatsApp()}
+              >
+                <MessageCircle className="h-4 w-4 shrink-0" aria-hidden />
+                WhatsApp
+              </Button>
+            </div>
+          </div>
+
           <Button
             onClick={() => setCurrentScreen('home')}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            className="w-full max-w-sm bg-primary text-primary-foreground hover:bg-primary/90"
           >
             Volver al inicio
           </Button>
@@ -599,7 +827,9 @@ export function CreateScreen() {
 
   const showCasualForm =
     (matchType === 'open' && step === 2) ||
-    (matchType === 'players' && step === 4)
+    (matchType === 'players' && step === 4) ||
+    ((matchType === 'team_pick_public' || matchType === 'team_pick_private') &&
+      step === 2)
 
   const showReserveForm = matchType === 'reserve' && step === 2
 
@@ -692,6 +922,22 @@ export function CreateScreen() {
                   }))
                 }}
                 color="gold"
+              />
+              <TypeCard
+                icon={<Swords className="w-8 h-8" />}
+                title="Selección de equipos públicos"
+                description="Equipos A y B: cualquier usuario puede unirse."
+                selected={matchType === 'team_pick_public'}
+                onClick={() => setMatchType('team_pick_public')}
+                color="green"
+              />
+              <TypeCard
+                icon={<Swords className="w-8 h-8" />}
+                title="Selección de equipos privado"
+                description="Equipos A y B: solo pueden unirse usuarios con el código."
+                selected={matchType === 'team_pick_private'}
+                onClick={() => setMatchType('team_pick_private')}
+                color="red"
               />
               <TypeCard
                 icon={<CalendarCheck2 className="w-8 h-8" />}
@@ -1265,6 +1511,9 @@ export function CreateScreen() {
               <h2 className="text-xl font-bold text-foreground">
                 {matchType === 'players' && 'Detalles de la busqueda'}
                 {matchType === 'open' && 'Detalles de la revuelta'}
+                {(matchType === 'team_pick_public' ||
+                  matchType === 'team_pick_private') &&
+                  'Selección de equipos — detalles del partido'}
               </h2>
             </div>
 
@@ -1339,6 +1588,83 @@ export function CreateScreen() {
                       ) : null}
                     </div>
                   )}
+                </>
+              )}
+
+              {(matchType === 'team_pick_public' ||
+                matchType === 'team_pick_private') && (
+                <>
+                  <p className="text-sm text-muted-foreground text-center leading-relaxed">
+                    {matchType === 'team_pick_public'
+                      ? 'Los jugadores eligen equipo A o B y su rol (arquero o línea). Máximo 6 por equipo.'
+                      : 'Solo quien tenga el código de 4 dígitos podrá unirse. Te lo mostraremos al publicar.'}
+                  </p>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Título (opcional)</Label>
+                    <Input
+                      placeholder="Ej: 6vs6 sábado en la tarde"
+                      value={formData.title}
+                      onChange={(e) =>
+                        setFormData({ ...formData, title: e.target.value })
+                      }
+                      className="h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Descripción (opcional)</Label>
+                    <Textarea
+                      placeholder="Reglas, pelota, vestimenta…"
+                      value={formData.description}
+                      onChange={(e) =>
+                        setFormData({ ...formData, description: e.target.value })
+                      }
+                      className="bg-secondary border-border text-foreground placeholder:text-muted-foreground resize-none"
+                      rows={2}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-primary" />
+                      Tu rol (organizás en equipo A)
+                    </Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(
+                        [
+                          ['gk', 'Arquero'],
+                          ['defensa', 'Defensa'],
+                          ['mediocampista', 'Mediocampista'],
+                          ['delantero', 'Delantero'],
+                        ] as const
+                      ).map(([value, label]) => (
+                        <Button
+                          key={value}
+                          type="button"
+                          variant={teamPickCreatorRole === value ? 'default' : 'outline'}
+                          className="h-11 text-sm"
+                          onClick={() => setTeamPickCreatorRole(value)}
+                        >
+                          {label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-foreground">Color de equipo</Label>
+                    <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                      <TeamPickJerseyColorPicker
+                        label="Equipo A"
+                        value={teamPickColorA}
+                        fallbackHex={DEFAULT_TEAM_PICK_COLOR_A}
+                        onChange={setTeamPickColorA}
+                      />
+                      <TeamPickJerseyColorPicker
+                        label="Equipo B"
+                        value={teamPickColorB}
+                        fallbackHex={DEFAULT_TEAM_PICK_COLOR_B}
+                        onChange={setTeamPickColorB}
+                      />
+                    </div>
+                  </div>
                 </>
               )}
 
@@ -1549,7 +1875,9 @@ export function CreateScreen() {
                 </div>
               ) : null}
 
-              {matchType === 'open' && (
+              {(matchType === 'open' ||
+                matchType === 'team_pick_public' ||
+                matchType === 'team_pick_private') && (
                 <div className="space-y-2">
                   <Label className="text-foreground flex items-center gap-2">
                     <Star className="w-4 h-4 text-primary" />
@@ -1599,6 +1927,8 @@ export function CreateScreen() {
                 </>
               ) : matchType === 'players' ? (
                 'Publicar búsqueda rápida'
+              ) : matchType === 'team_pick_public' || matchType === 'team_pick_private' ? (
+                'Publicar selección de equipos'
               ) : (
                 'Publicar'
               )}

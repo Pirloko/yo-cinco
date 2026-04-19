@@ -24,8 +24,10 @@ import {
   MatchesHubTab,
   OnboardingData,
   VenueOnboardingData,
+  type EncounterLineupRole,
   Gender,
   Level,
+  type PickTeamSide,
   RivalChallenge,
   RevueltaResult,
   RivalResult,
@@ -35,6 +37,10 @@ import {
   TeamPrivateSettings,
   User,
 } from './types'
+import {
+  resolveTeamPickPrivateJoinCode as resolveTeamPickPrivateJoinCodeQuery,
+  type TeamPickPrivateResolveResult,
+} from '@/lib/supabase/team-pick-queries'
 import { getBrowserSupabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import { getPublicSiteOrigin } from '@/lib/site-url'
 import {
@@ -63,6 +69,12 @@ import {
 } from '@/lib/create-prefill'
 import { buildRandomRevueltaLineup } from '@/lib/revuelta-lineup'
 import { playersJoinRules } from '@/lib/players-seek-profile'
+import {
+  DEFAULT_TEAM_PICK_COLOR_A,
+  DEFAULT_TEAM_PICK_COLOR_B,
+  coerceTeamPickJerseyPresetHex,
+  normalizeTeamPickHexColor,
+} from '@/lib/team-pick-ui'
 import {
   uploadProfileAvatarFile,
   cacheBustPublicUrl,
@@ -566,8 +578,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       creatorIsGoalkeeper?: boolean
       bookCourtSlot?: boolean
       courtSlotMinutes?: number
+      creatorEncounterLineupRole?: EncounterLineupRole
+      teamPickColorA?: string
+      teamPickColorB?: string
     }
-  ): Promise<{ ok: true } | { ok: false; code?: 'no_court'; error: string }> => {
+  ): Promise<
+    | { ok: true; joinCode?: string | null; opportunityId?: string | null }
+    | { ok: false; code?: 'no_court'; error: string }
+  > => {
     if (!currentUser || !isSupabaseConfigured()) {
       return { ok: false as const, error: 'Sesión no disponible.' }
     }
@@ -597,6 +615,99 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { ok: false as const, error: 'Cliente no disponible.' }
     }
     const cityId = m.cityId || currentUser.cityId
+
+    if (m.type === 'team_pick_public' || m.type === 'team_pick_private') {
+      const role = m.creatorEncounterLineupRole
+      if (!role) {
+        return { ok: false as const, error: 'Elegí tu rol en el encuentro.' }
+      }
+      const ca =
+        coerceTeamPickJerseyPresetHex(m.teamPickColorA) ?? DEFAULT_TEAM_PICK_COLOR_A
+      const cb =
+        coerceTeamPickJerseyPresetHex(m.teamPickColorB) ?? DEFAULT_TEAM_PICK_COLOR_B
+      if (ca === cb) {
+        toast.error(
+          'Elegí dos colores distintos para la camiseta del equipo A y del equipo B.'
+        )
+        return {
+          ok: false as const,
+          error: 'Colores iguales.',
+        }
+      }
+      const { data: tpData, error: tpError } = await supabase.rpc(
+        'create_team_pick_match_opportunity',
+        {
+          p_type: m.type,
+          p_title: m.title,
+          p_description: m.description ?? null,
+          p_location: m.location,
+          p_venue: m.venue,
+          p_city_id: cityId,
+          p_date_time: m.dateTime.toISOString(),
+          p_level: m.level,
+          p_gender: m.gender,
+          p_status: m.status,
+          p_sports_venue_id: m.sportsVenueId ?? null,
+          p_book_court_slot: m.bookCourtSlot === true,
+          p_court_slot_minutes: m.courtSlotMinutes ?? 60,
+          p_creator_encounter_role: role,
+          p_team_pick_color_a: ca,
+          p_team_pick_color_b: cb,
+        }
+      )
+      if (tpError) {
+        toast.error(tpError.message)
+        return { ok: false as const, error: tpError.message }
+      }
+      const tpPayload = tpData as
+        | {
+            ok?: boolean
+            error?: string
+            message?: string
+            joinCode?: string | null
+            matchId?: string
+          }
+        | null
+        | undefined
+      if (!tpPayload?.ok) {
+        const code = tpPayload?.error ?? 'unknown'
+        if (code === 'no_court') {
+          toast.error('No hay cancha libre en ese horario en este centro.')
+          return {
+            ok: false as const,
+            code: 'no_court',
+            error: 'No hay cancha libre en ese horario en este centro.',
+          }
+        }
+        if (code === 'invalid_team_colors') {
+          toast.error('Los colores de equipo deben ser válidos (#RRGGBB).')
+          return {
+            ok: false as const,
+            error: 'Colores de equipo inválidos.',
+          }
+        }
+        const msg =
+          typeof tpPayload?.message === 'string' && tpPayload.message.trim()
+            ? tpPayload.message
+            : 'No se pudo crear el partido.'
+        toast.error(msg)
+        return { ok: false as const, error: msg }
+      }
+      const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
+      setMatchOpportunities(matchBundle.matchOpportunities)
+      setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+      void updateLastSeen(supabase, currentUser.id, { force: true })
+      const jc =
+        typeof tpPayload.joinCode === 'string' && tpPayload.joinCode.trim()
+          ? tpPayload.joinCode.trim()
+          : null
+      const oid =
+        typeof tpPayload.matchId === 'string' && tpPayload.matchId.trim()
+          ? tpPayload.matchId.trim()
+          : null
+      return { ok: true as const, joinCode: jc, opportunityId: oid }
+    }
+
     const { data, error } = await supabase.rpc(
       'create_match_opportunity_with_optional_reservation',
       {
@@ -627,7 +738,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { ok: false as const, error: error.message }
     }
     const payload = data as
-      | { ok?: boolean; error?: string; message?: string }
+      | { ok?: boolean; error?: string; message?: string; matchId?: string }
       | null
       | undefined
     if (!payload?.ok) {
@@ -652,8 +763,308 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setMatchOpportunities(matchBundle.matchOpportunities)
     setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
     void updateLastSeen(supabase, currentUser.id, { force: true })
-    return { ok: true as const }
+    const oid =
+      typeof payload.matchId === 'string' && payload.matchId.trim()
+        ? payload.matchId.trim()
+        : null
+    return { ok: true as const, joinCode: null, opportunityId: oid }
   })
+
+  const joinTeamPickMatchOpportunity = useStableCallback(async (
+    opportunityId: string,
+    payload: {
+      pickTeam: 'A' | 'B'
+      encounterLineupRole: EncounterLineupRole
+      joinCode?: string
+    }
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
+    const opp = matchOpportunities.find((m) => m.id === opportunityId)
+    if (opp && opp.creatorId === currentUser.id) {
+      toast.info('Sos el organizador de este partido.')
+      return
+    }
+    if (participatingOpportunityIds.includes(opportunityId)) {
+      toast.info('Ya estás en este partido.')
+      return
+    }
+    const codeTrim = (payload.joinCode ?? '').trim()
+    const joinByCodeOnly = !opp && codeTrim.length === 4
+
+    if (!opp && !joinByCodeOnly) {
+      toast.error('No encontramos este partido.')
+      return
+    }
+    if (
+      opp &&
+      opp.type !== 'team_pick_public' &&
+      opp.type !== 'team_pick_private'
+    ) {
+      toast.error('Este partido no es modo selección de equipos.')
+      return
+    }
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
+
+    const codeArg =
+      joinByCodeOnly || opp?.type === 'team_pick_private' ? codeTrim : null
+
+    const { data, error } = await supabase.rpc('join_team_pick_match_opportunity', {
+      p_opportunity_id: opportunityId,
+      p_pick_team: payload.pickTeam,
+      p_encounter_lineup_role: payload.encounterLineupRole,
+      p_join_code: codeArg,
+    })
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    const res = data as
+      | { ok?: boolean; error?: string; message?: string }
+      | null
+      | undefined
+    if (!res?.ok) {
+      const code = res?.error ?? 'unknown'
+      if (code === 'invalid_join_code') {
+        toast.error('Código incorrecto. Pedile el código al organizador.')
+        return
+      }
+      if (code === 'invalid_pick_team') {
+        toast.error('Equipo inválido. Elegí Equipo A o Equipo B.')
+        return
+      }
+      if (code === 'invalid_encounter_role') {
+        toast.error('Rol inválido. Elegí arquero, defensa, mediocampista o delantero.')
+        return
+      }
+      if (code === 'past') {
+        toast.error('Este partido ya pasó. Ya no se puede unir.')
+        return
+      }
+      if (code === 'is_creator') {
+        toast.info('Sos el organizador de este partido.')
+        return
+      }
+      if (code === 'rule') {
+        const msg =
+          typeof res?.message === 'string' && res.message.trim()
+            ? res.message
+            : 'No hay cupo para esa posición o equipo.'
+        toast.error(msg)
+        return
+      }
+      const msg =
+        typeof res?.message === 'string' && res.message.trim()
+          ? res.message
+          : 'No se pudo unir al partido.'
+      toast.error(msg)
+      return
+    }
+    const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
+    setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+    setMatchOpportunities(matchBundle.matchOpportunities)
+    setSelectedChatOpportunityId(opportunityId)
+    setCurrentScreen('chat')
+    const joinedFresh = matchBundle.matchOpportunities.find((m) => m.id === opportunityId)
+    const payLine = joinedFresh ? payOrganizerToastMessage(joinedFresh) : null
+    toast.success(
+      payLine
+        ? `¡Te uniste al partido! Coordina en el chat. ${payLine}`
+        : '¡Te uniste al partido! Coordiná en el chat con el grupo.'
+    )
+    void updateLastSeen(supabase, currentUser.id, { force: true })
+  })
+
+  const resolveTeamPickPrivateJoinCode = useStableCallback(
+    async (code: string): Promise<TeamPickPrivateResolveResult> => {
+      if (!currentUser || !isSupabaseConfigured()) {
+        return { ok: false, error: 'Sesión no disponible.' }
+      }
+      const supabase = getBrowserSupabase()
+      if (!supabase) {
+        return { ok: false, error: 'Cliente no disponible.' }
+      }
+      return resolveTeamPickPrivateJoinCodeQuery(supabase, code)
+    }
+  )
+
+  const setTeamPickParticipantLineup = useStableCallback(
+    async (
+      opportunityId: string,
+      targetUserId: string,
+      pickTeam: PickTeamSide,
+      encounterLineupRole: EncounterLineupRole
+    ): Promise<{ ok: true } | { ok: false; error: string }> => {
+      if (!currentUser || !isSupabaseConfigured()) {
+        return { ok: false, error: 'Sesión no disponible.' }
+      }
+      const ro = isUserReadOnly(currentUser)
+      if (ro.readonly) {
+        toastReadOnly(ro.reason)
+        return { ok: false, error: ro.reason || 'Cuenta restringida.' }
+      }
+      const supabase = getBrowserSupabase()
+      if (!supabase) {
+        return { ok: false, error: 'Cliente no disponible.' }
+      }
+      const { data, error } = await supabase.rpc('set_team_pick_participant_lineup', {
+        p_opportunity_id: opportunityId,
+        p_target_user_id: targetUserId,
+        p_pick_team: pickTeam,
+        p_encounter_lineup_role: encounterLineupRole,
+      })
+      if (error) {
+        toast.error(error.message)
+        return { ok: false, error: error.message }
+      }
+      const res = data as
+        | { ok?: boolean; error?: string; message?: string }
+        | null
+        | undefined
+      if (!res?.ok) {
+        const code = res?.error ?? 'unknown'
+        if (code === 'invalid_pick_team') {
+          toast.error('Equipo inválido. Elegí Equipo A o Equipo B.')
+          return { ok: false, error: code }
+        }
+        if (code === 'invalid_encounter_role') {
+          toast.error('Rol inválido. Elegí arquero, defensa, mediocampista o delantero.')
+          return { ok: false, error: code }
+        }
+        if (code === 'forbidden') {
+          toast.error('No tenés permiso para cambiar esta alineación.')
+          return { ok: false, error: 'forbidden' }
+        }
+        if (code === 'too_late_lineup') {
+          toast.error(
+            'Ya no se puede cambiar la alineación (menos de 2 horas para el partido).'
+          )
+          return { ok: false, error: code }
+        }
+        if (code === 'already_closed') {
+          toast.error(
+            'Este partido ya está finalizado o cancelado. No se puede cambiar la alineación.'
+          )
+          return { ok: false, error: code }
+        }
+        if (code === 'not_participant') {
+          toast.error('Ese jugador ya no figura como inscripto en este partido.')
+          return { ok: false, error: code }
+        }
+        if (code === 'not_found') {
+          toast.error('No encontramos este partido.')
+          return { ok: false, error: code }
+        }
+        if (code === 'not_team_pick') {
+          toast.error('Esta acción solo aplica a partidos modo 6vs6.')
+          return { ok: false, error: code }
+        }
+        if (code === 'rule') {
+          const msg =
+            typeof res?.message === 'string' && res.message.trim()
+              ? res.message
+              : 'No hay cupo para esa posición o equipo.'
+          toast.error(msg)
+          return { ok: false, error: msg }
+        }
+        const msg =
+          typeof res?.message === 'string' && res.message.trim()
+            ? res.message
+            : 'No se pudo actualizar la alineación.'
+        toast.error(msg)
+        return { ok: false, error: msg }
+      }
+      const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
+      setMatchOpportunities(matchBundle.matchOpportunities)
+      setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+      void updateLastSeen(supabase, currentUser.id, { force: true })
+      toast.success('Alineación actualizada.')
+      return { ok: true }
+    }
+  )
+
+  const organizerRemoveTeamPickParticipant = useStableCallback(
+    async (
+      opportunityId: string,
+      targetUserId: string,
+      reason: string
+    ): Promise<{ ok: true } | { ok: false; error: string }> => {
+      if (!currentUser || !isSupabaseConfigured()) {
+        return { ok: false, error: 'Sesión no disponible.' }
+      }
+      const ro = isUserReadOnly(currentUser)
+      if (ro.readonly) {
+        toastReadOnly(ro.reason)
+        return { ok: false, error: ro.reason || 'Cuenta restringida.' }
+      }
+      const supabase = getBrowserSupabase()
+      if (!supabase) {
+        return { ok: false, error: 'Cliente no disponible.' }
+      }
+      const { data, error } = await supabase.rpc('organizer_remove_team_pick_participant', {
+        p_opportunity_id: opportunityId,
+        p_target_user_id: targetUserId,
+        p_reason: reason.trim(),
+      })
+      if (error) {
+        toast.error(error.message)
+        return { ok: false, error: error.message }
+      }
+      const res = data as { ok?: boolean; error?: string } | null | undefined
+      if (!res?.ok) {
+        const code = res?.error ?? 'unknown'
+        if (code === 'forbidden') {
+          toast.error('Solo el organizador puede expulsar jugadores.')
+          return { ok: false, error: code }
+        }
+        if (code === 'cannot_remove_creator') {
+          toast.error('No podés expulsar al organizador.')
+          return { ok: false, error: code }
+        }
+        if (code === 'too_late_remove') {
+          toast.error(
+            'Ya no podés expulsar jugadores (menos de 2 horas para el partido).'
+          )
+          return { ok: false, error: code }
+        }
+        if (code === 'reason_required') {
+          toast.error('Indicá un motivo de al menos 5 caracteres.')
+          return { ok: false, error: code }
+        }
+        if (code === 'already_closed') {
+          toast.error(
+            'Este partido ya está finalizado o cancelado. No se pueden retirar jugadores.'
+          )
+          return { ok: false, error: code }
+        }
+        if (code === 'not_participant') {
+          toast.error('Ese jugador ya no figura como inscripto en este partido.')
+          return { ok: false, error: code }
+        }
+        if (code === 'not_found') {
+          toast.error('No encontramos este partido.')
+          return { ok: false, error: code }
+        }
+        if (code === 'not_team_pick') {
+          toast.error('Esta acción solo aplica a partidos modo 6vs6.')
+          return { ok: false, error: code }
+        }
+        toast.error('No se pudo expulsar al jugador.')
+        return { ok: false, error: code }
+      }
+      const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
+      setMatchOpportunities(matchBundle.matchOpportunities)
+      setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+      void updateLastSeen(supabase, currentUser.id, { force: true })
+      toast.success('Jugador retirado del partido.')
+      return { ok: true }
+    }
+  )
 
   const reserveVenueOnly = useStableCallback(async ({
     sportsVenueId,
@@ -722,6 +1133,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.error('No encontramos este partido.')
       return
     }
+    if (opp.type === 'team_pick_public' || opp.type === 'team_pick_private') {
+      toast.info(
+        'En este modo elegís equipo (A o B) y rol. Usá «Unirme (selección de equipos)» en el detalle del partido.'
+      )
+      return
+    }
 
     const supabase = getBrowserSupabase()
     if (!supabase) return
@@ -740,6 +1157,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       | undefined
     if (!payload?.ok) {
       const code = payload?.error ?? 'unknown'
+      if (code === 'use_team_pick_join_rpc') {
+        toast.info(
+          'Elegí equipo y rol. Abrí el detalle del partido y usá «Unirme (selección de equipos)».'
+        )
+        return
+      }
       if (code === 'private_revuelta_requires_request') {
         toast.error(
           'Revuelta privada de equipo: pedí ingreso con «Solicitar» y el organizador del partido te aceptará.'
@@ -1060,7 +1483,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.info('Este partido ya está finalizado.')
       return false
     }
-    if (opp.type === 'players' && outcome.kind !== 'casual') {
+    if (
+      (opp.type === 'players' ||
+        opp.type === 'team_pick_public' ||
+        opp.type === 'team_pick_private') &&
+      outcome.kind !== 'casual'
+    ) {
       toast.error('Indica el cierre como partido casual.')
       return false
     }
@@ -1586,20 +2014,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     location: string
     dateTime: Date
     level: Level
-  }) => {
-    if (!currentUser || !isSupabaseConfigured()) return
+  }): Promise<string | null> => {
+    if (!currentUser || !isSupabaseConfigured()) return null
     const ro = isUserReadOnly(currentUser)
     if (ro.readonly) {
       toastReadOnly(ro.reason)
-      return
+      return null
     }
     const supabase = getBrowserSupabase()
-    if (!supabase) return
+    if (!supabase) return null
     if (!userIsTeamStaffCaptain(payload.challengerTeam, currentUser.id)) {
       toast.error(
         'Solo el capitán o el vicecapitán del equipo pueden crear un desafío.'
       )
-      return
+      return null
     }
 
     const title =
@@ -1631,7 +2059,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
     if (error) {
       toast.error(error.message)
-      return
+      return null
     }
     const rpcPayload = data as
       | { ok?: boolean; error?: string; message?: string; opportunityId?: string }
@@ -1642,7 +2070,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         (typeof rpcPayload?.message === 'string' && rpcPayload.message) ||
           'No se pudo crear el desafío'
       )
-      return
+      return null
     }
 
     // Estado fuente: refrescar desde DB para mantener consistencia (evita duplicar lógica de mapeo).
@@ -1654,6 +2082,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? `Desafío enviado a ${payload.challengedTeam?.name ?? 'equipo rival'}`
         : 'Búsqueda de rival publicada'
     )
+    const oppId =
+      typeof rpcPayload.opportunityId === 'string' && rpcPayload.opportunityId.trim()
+        ? rpcPayload.opportunityId.trim()
+        : null
+    return oppId
   })
 
   const respondToRivalChallenge = useStableCallback(async (
@@ -2421,6 +2854,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addMatchOpportunity,
       reserveVenueOnly,
       joinMatchOpportunity,
+      joinTeamPickMatchOpportunity,
+      resolveTeamPickPrivateJoinCode,
+      setTeamPickParticipantLineup,
+      organizerRemoveTeamPickParticipant,
       requestJoinPrivateRevuelta,
       respondToRevueltaExternalRequest,
       randomizeRevueltaTeams,

@@ -1,0 +1,267 @@
+================================================================================
+MODO 6vs6 / TEAM_PICK — ESTADO DE IMPLEMENTACIÓN (referencia de producto)
+Última revisión: 2026-04-19
+================================================================================
+
+Este archivo contrasta la definición por bloques con lo que hay hoy en código y
+base de datos. “Listo” = cubierto de forma usable en producción con lo actual;
+“Parcial” = backend o parte de UX sí, falta pulir o visibilidad distinta a la
+especificación literal; “Pendiente” = no implementado o solo en papel.
+
+--------------------------------------------------------------------------------
+RESUMEN — Qué se hizo (trabajo conjunto sobre modo 6vs6 / team_pick_*)
+--------------------------------------------------------------------------------
+
+• UX unión y cupos: helpers de cupos por bando (incl. exclusión al editar), modal de
+  unión y diálogo de alineación alineados al 6vs6 (contadores GK/campo, colores A/B,
+  bloqueos). Detalle del partido en dos columnas Equipo A | B con contadores.
+
+• Mensajes y organizador: toasts claros para errores RPC (código, rol, cupo, partido
+  cerrado); texto de ayuda para el organizador; mismo criterio en cambio de alineación
+  y expulsión.
+
+• Privado visible en feeds: los partidos team_pick_private aparecen en Inicio y
+  Explorar como los públicos; el código de 4 dígitos no sale en listados REST
+  (vista match_opportunities_masked + REVOKE SELECT(join_code) en la tabla para
+  anon/authenticated). Unión sigue validando el código en el servidor.
+
+• Chat / invitación: código y enlaces coherentes para privado (sin prometer página
+  /revuelta que no existe); participantes con estados en español.
+
+• Seguridad y realtime: documentado que Realtime solo dispara recarga del bundle, no
+  aplica el payload WAL al estado. Comentario en código en realtime-manager.
+
+• Bloque 7: checklist QA manual (ANEXO A), tests Vitest en lib/team-pick-ui (npm run test).
+
+--------------------------------------------------------------------------------
+BLOQUE 1 — Definición de producto y tipos
+--------------------------------------------------------------------------------
+
+[LISTO] Modo nuevo independiente en el flujo “Crear”
+        En create-screen hay opciones explícitas “6vs6 público” y “6vs6 privado”
+        (no están anidadas dentro de “revuelta abierta”).
+
+[LISTO] Público “en Explorar” (+ privado listado)
+        explore-screen incluye carrusel 6vs6 públicos y privados (mismo género del
+        jugador, filtros región/ciudad): el privado muestra badge “Privado · código”.
+        Listados globales en inicio/hub cargan desde la vista match_opportunities_masked.
+
+[LISTO] Privado 6vs6 visible en feeds; código oculto en cliente
+        RLS permite ver filas team_pick_private activas como el público. Lecturas REST al
+        listado usan la vista match_opportunities_masked (security_invoker=false + CASE).
+        REVOKE SELECT(join_code) sobre match_opportunities para anon/authenticated; la
+        columna sigue disponible para service_role y para el motor al evaluar la vista.
+        Unión solo por RPC join_team_pick_match_opportunity con código.
+
+[LISTO] Filtro de género
+        Se mantiene la lógica global de la app (perfiles, listados, RLS según
+        corresponda); el partido lleva gender y el ecosistema actual aplica.
+
+--------------------------------------------------------------------------------
+BLOQUE 2 — Reglas del partido (fijas)
+--------------------------------------------------------------------------------
+
+[LISTO] 6vs6 fijo: por equipo 1 arquero + 5 de campo (máx. 1 GK por equipo)
+        Trigger / función enforce_team_pick_lineup_slots en BD.
+
+[LISTO] Dos equipos fijos A y B para el encuentro
+        Columna pick_team (A/B) en participantes.
+
+[LISTO] Roles de cancha solo para este partido
+        Columna encounter_lineup_role; no alteran el perfil global del jugador.
+
+--------------------------------------------------------------------------------
+BLOQUE 3 — Creación (organizador)
+--------------------------------------------------------------------------------
+
+[LISTO] Organizador en Equipo A con rol obligatorio al crear
+        RPC create_team_pick_match_opportunity exige p_creator_encounter_role
+        (gk, defensa, mediocampista, delantero). La UI de creación incluye
+        selección de ese rol para el organizador.
+
+[LISTO] “Materializar” Equipo A y Equipo B (modelo de datos)
+        No son tablas aparte `equipo_a` / `equipo_b`: cada jugador lleva `pick_team`
+        (A o B) y `encounter_lineup_role` en `match_opportunity_participants`. Es la
+        materialización acordada en producto; comportamiento y reglas 6vs6 cubiertos.
+
+[LISTO] Público en “Explorar”
+        Sección dedicada en explore-screen + resto de listados de partidos.
+
+[LISTO] Privado: código obligatorio de 4 dígitos
+        Generación en RPC; unicidad entre partidos team_pick_private en estado
+        pending/confirmed (reintentos si colisión).
+
+[LISTO] Acceso privado típico enlace + código
+        join_team_pick_match_opportunity valida p_join_code en privado; el
+        enlace solo no alcanza sin código correcto.
+
+[LISTO] Colores de camiseta por equipo (A y B)
+        Columnas team_pick_color_a / team_pick_color_b (#RRGGBB), validación en RPC,
+        selectores en create-screen, mappers + detalle / tarjeta / modal de unión /
+        Explorar / página pública /revuelta/[id].
+
+--------------------------------------------------------------------------------
+BLOQUE 4 — Unión de jugadores (UX + validaciones)
+--------------------------------------------------------------------------------
+
+[LISTO] Al unirse: elegir equipo A o B + rol del encuentro
+        JoinTeamPickDialog + RPC join_team_pick_match_opportunity.
+
+[LISTO] Indicadores en vivo por bando (GK y campo)
+        JoinTeamPickDialog carga participantes, muestra Arquero x/1 · Campo y/5 por
+        equipo, deshabilita bando completo, rol arquero si ya hay GK en el equipo
+        elegido y roles de campo si el cupo de campo está lleno; mensajes de ayuda.
+
+[LISTO] Cambios de alineación con ventana −2 h antes del partido
+        set_team_pick_participant_lineup (y coherencia en app con
+        canEditTeamPickLineupBeforeDeadline).
+
+[LISTO] Partido finalizado / cancelado: sin cambios de alineación
+        Comprobaciones de status en RPCs.
+
+[LISTO] Salir del partido solo hasta 2 h antes
+        leave_match_opportunity_with_reason incluye team_pick_* y corta con
+        error too_late_leave tras el umbral.
+
+[LISTO] Mensajes ante cupo lleno / reglas 6vs6
+        Prevención en modal (JoinTeamPickDialog / edición de alineación) antes de
+        confirmar; si el cupo se llena entre tanto o hay choque de reglas, el RPC
+        devuelve error rule con el mensaje del trigger (toast en app-context).
+        Códigos invalid_pick_team / invalid_encounter_role muestran toasts claros.
+
+--------------------------------------------------------------------------------
+BLOQUE 5 — Organizador (gestión)
+--------------------------------------------------------------------------------
+
+[LISTO] Mover jugadores entre A y B (reajustar bando y rol)
+        Flujo de edición de alineación (organizador o el propio jugador en
+        ventana permitida) vía set_team_pick_participant_lineup.
+
+[LISTO] Expulsar participante
+        RPC organizer_remove_team_pick_participant + UI en detalle del partido.
+
+[LISTO] Pulido organizador (Bloque 5)
+        Texto de ayuda bajo “Participantes” para el creador en team_pick_*; toasts
+        específicos en app-context para códigos already_closed, not_found,
+        not_participant, not_team_pick (expulsión y cambio de alineación).
+
+--------------------------------------------------------------------------------
+BLOQUE 6 — Visibilidad y chat
+--------------------------------------------------------------------------------
+
+[LISTO] Posición / bando visibles en detalle para quien corresponde
+        Lista de participantes con resumen Equipo + rol (y chat con misma info).
+
+[LISTO] Chat: solo participantes del partido
+        Misma línea conceptual que partidos abiertos; acceso acotado por
+        participación / organizador según políticas actuales.
+
+[LISTO] Página pública de invitación para team_pick_public
+        Misma ruta /revuelta/[id] reutilizada con snapshot extendido (cupos,
+        copy 6vs6, alineación resumida).
+
+[LISTO] Pulido Bloque 6 (privado + chat)
+        team_pick_private: detalle muestra código de unión a inscriptos (no solo al
+        organizador); panel «Invitar más jugadores» en chat con copiar código / enlace
+        app (sin sugerir URL /revuelta que no existe para privados). Lista de
+        participantes en chat con estado legible en español (Confirmado, Pendiente,
+        Baja).
+
+--------------------------------------------------------------------------------
+BLOQUE 7 — Orden sugerido de implementación (checklist técnica)
+--------------------------------------------------------------------------------
+
+[LISTO] Modelo de datos: tipos team_pick_public / team_pick_private, join_code,
+        pick_team, encounter_lineup_role, límites 1+5.
+
+[LISTO] Extensión modelo: colores equipo A y B (team_pick_color_a / b).
+
+[LISTO] RLS + vista cliente: listados team_pick_* y privado descubrible; join_code en
+        tabla con REVOKE a roles API; lecturas masivas vía match_opportunities_masked.
+
+[LISTO] RPCs principales: crear con rol organizador; unirse; cambiar alineación;
+        salir con límite temporal; expulsar.
+
+[LISTO] Crear (UI): flujo 6vs6 con rol organizador y colores A/B.
+
+[LISTO] Explorar / Mis partidos: 6vs6 público en explore-screen + feeds; privado
+        acorde a RLS + código.
+
+[LISTO] Detalle: layout en dos columnas A | B con contadores Arquero x/1 · Campo
+        y/5 por bando (team_pick_*), más bloques opcionales sin bando y bajas.
+
+[LISTO] Modal unirse: colores por bando + contadores GK/campo + bloqueos y textos.
+
+[LISTO] Chat conceptualmente sin cambio de reglas; alineación visible en lista.
+
+[LISTO] Pruebas automatizadas (base 6vs6)
+        Vitest: `npm run test` — `lib/team-pick-ui.test.ts` (cupos por bando, equipo
+        lleno 1+5, exclusión al editar, ventana −2 h, helpers de UI).
+
+[LISTO] Checklist QA formal (manual)
+        Tabla en ANEXO A (abajo): escenarios creación, unión, cupos, ventanas, privado,
+        organizador. Marcar casillas al validar cada release.
+
+[LISTO] Realtime vs join_code (app cliente)
+        `usePlayerRealtimeManager` solo usa postgres_changes como disparador de
+        `loadPlayerMatchBundle` (REST vía vista enmascarada); no fusiona payload WAL al
+        estado. Riesgo residual: otro cliente que sí leyera `payload` del canal (no es
+        el caso del bundle actual).
+
+--------------------------------------------------------------------------------
+FLUJO 6vs6 PRIVADO (referencia rápida)
+--------------------------------------------------------------------------------
+
+[LISTO] Listados globales vía vista match_opportunities_masked + REVOKE join_code en tabla.
+[LISTO] Inicio → «Unirme» en tarjeta 6vs6 privado → JoinTeamPickDialog → campo código (4
+        dígitos) si no sos organizador / no tenés código en estado → RPC con código.
+[LISTO] Detalle → «Unirme» mismo modal; apartado «Código para invitar» si organizador o
+        inscripto (datos vienen enmascarados desde la vista según sesión).
+
+--------------------------------------------------------------------------------
+ANEXO A — Checklist QA manual (6vs6 / team_pick_*)
+--------------------------------------------------------------------------------
+Marcar [ ] → [x] según validación en staging/producción.
+
+Creación y datos
+ [ ] Crear 6vs6 público: organizador con rol; colores A/B guardados; aparece en Inicio y Explorar.
+ [ ] Crear 6vs6 privado: código 4 dígitos generado; mismo código no colisiona con otro privado activo.
+
+Listados y código
+ [ ] Privado visible en feed sin revelar código en JSON de listado (inspector red / vista enmascarada).
+ [ ] Organizador y jugador inscripto ven código donde corresponde (detalle / chat); extra no.
+
+Unión (join_team_pick_match_opportunity)
+ [ ] Público: unir sin código; elegir A/B y rol; cupos se actualizan.
+ [ ] Privado: código incorrecto → toast; código correcto → entra al chat.
+ [ ] Cupo lleno en un bando / segundo GK / sexto jugador campo → trigger rule + mensaje usable.
+ [ ] Partido pasado / cerrado → no permite unirse.
+
+Alineación (−2 h)
+ [ ] Dentro de la ventana: jugador u organizador cambian equipo/rol acorde a cupos.
+ [ ] Fuera de la ventana (<2 h): RPC rechaza; toast coherente.
+
+Salida y organizador
+ [ ] Salir voluntario hasta 2 h antes; después too_late_leave.
+ [ ] Organizador expulsa con motivo ≥5 caracteres hasta 2 h antes; no puede expulsarse.
+
+Chat y detalle
+ [ ] Lista participantes en detalle en dos columnas A|B con contadores GK/campo.
+ [ ] Chat muestra resumen cupos + filas con equipo/rol.
+
+Automatizado local
+ [ ] `npm run test` pasa (Vitest team-pick-ui).
+
+Opcional siguiente fase
+ [ ] E2E Playwright sobre flujo unión privado + un caso de cupo lleno.
+
+--------------------------------------------------------------------------------
+PRÓXIMOS PASOS SUGERIDOS (prioridad)
+--------------------------------------------------------------------------------
+
+1. Ejecutar ANEXO A antes de cada release mayor de modo 6vs6.
+2. Opcional: suite E2E cuando haya entorno estable.
+
+================================================================================
+Fin del documento
+================================================================================

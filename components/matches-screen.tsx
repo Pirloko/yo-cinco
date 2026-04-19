@@ -92,13 +92,13 @@ const MATCH_TYPE_META: Record<
   },
   team_pick_public: {
     icon: <Users className="w-4 h-4" />,
-    label: 'Selección de equipos (público)',
+    label: 'Selección de equipos públicos',
     color: 'bg-emerald-500/20 text-emerald-300',
     headerBg: 'bg-emerald-500/10 border-emerald-500/30',
   },
   team_pick_private: {
     icon: <Users className="w-4 h-4" />,
-    label: 'Selección de equipos (privado)',
+    label: 'Selección de equipos privado',
     color: 'bg-slate-500/25 text-slate-200',
     headerBg: 'bg-slate-500/10 border-slate-500/30',
   },

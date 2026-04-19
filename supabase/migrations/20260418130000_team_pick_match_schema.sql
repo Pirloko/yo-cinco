@@ -1,30 +1,8 @@
--- Modo "selección de equipos" (6vs6): tipos nuevos, join_code privado, alineación por encuentro.
--- Bloque 1: esquema, triggers de cupos, RLS para partidos privados, RPC de creación.
+-- Modo "selección de equipos" (6vs6): join_code, alineación por encuentro, RLS, RPC de creación.
+-- Requiere migración previa 20260418125950_team_pick_match_type_enum_values.sql (valores enum en otra transacción).
 
 -- ---------------------------------------------------------------------------
--- 1) Enum match_type: team_pick_public | team_pick_private
--- ---------------------------------------------------------------------------
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_enum e
-    JOIN pg_type t ON t.oid = e.enumtypid
-    WHERE t.typname = 'match_type' AND e.enumlabel = 'team_pick_public'
-  ) THEN
-    ALTER TYPE public.match_type ADD VALUE 'team_pick_public';
-  END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_enum e
-    JOIN pg_type t ON t.oid = e.enumtypid
-    WHERE t.typname = 'match_type' AND e.enumlabel = 'team_pick_private'
-  ) THEN
-    ALTER TYPE public.match_type ADD VALUE 'team_pick_private';
-  END IF;
-END
-$$;
-
--- ---------------------------------------------------------------------------
--- 2) match_opportunities: código 4 dígitos (obligatorio solo en team_pick_private)
+-- 1) match_opportunities: código 4 dígitos (obligatorio solo en team_pick_private)
 -- ---------------------------------------------------------------------------
 ALTER TABLE public.match_opportunities
   ADD COLUMN IF NOT EXISTS join_code text;

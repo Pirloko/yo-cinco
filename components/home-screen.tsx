@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
+import { toast } from 'sonner'
 
 import {
   useAppAuth,
@@ -12,17 +13,21 @@ import {
 import { BottomNav } from '@/components/bottom-nav'
 import { MatchCard } from '@/components/match-card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Target,
   Users,
   Shuffle,
   Sparkles,
   Bell,
+  Swords,
+  Loader2,
 } from 'lucide-react'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import { MatchOpportunity, MatchType } from '@/lib/types'
 import { JoinRevueltaDialog } from '@/components/join-revuelta-dialog'
 import { JoinPlayersSearchDialog } from '@/components/join-players-search-dialog'
+import { JoinTeamPickDialog } from '@/components/join-team-pick-dialog'
 import { RegionCityFilterSelect } from '@/components/region-city-filter'
 import { useGeoCitiesWithVenuesInRegion } from '@/lib/hooks/use-geo-cities-with-venues'
 import { compareMatchOpportunitiesByFillUrgency } from '@/lib/match-spots'
@@ -31,8 +36,10 @@ import {
   userIsConfirmedMemberOfTeam,
   userIsTeamStaffCaptain,
 } from '@/lib/team-membership'
+import type { TeamPickPrivateResolveSuccess } from '@/lib/supabase/team-pick-queries'
+import { minimalMatchOpportunityForTeamPickPreview } from '@/lib/team-pick-ui'
 
-type FilterType = 'all' | MatchType
+type FilterType = 'all' | MatchType | 'team_pick'
 
 export function HomeScreen() {
   const {
@@ -44,6 +51,8 @@ export function HomeScreen() {
   const {
     getFilteredMatches,
     joinMatchOpportunity,
+    joinTeamPickMatchOpportunity,
+    resolveTeamPickPrivateJoinCode,
     participatingOpportunityIds,
     requestJoinPrivateRevuelta,
   } = useAppMatch()
@@ -55,6 +64,15 @@ export function HomeScreen() {
   const [playersJoinOpp, setPlayersJoinOpp] = useState<MatchOpportunity | null>(
     null
   )
+  const [teamPickJoinOpp, setTeamPickJoinOpp] = useState<MatchOpportunity | null>(
+    null
+  )
+  const [teamPickCodeInput, setTeamPickCodeInput] = useState('')
+  const [teamPickByCodePreview, setTeamPickByCodePreview] =
+    useState<TeamPickPrivateResolveSuccess | null>(null)
+  const [teamPickByCodeOpen, setTeamPickByCodeOpen] = useState(false)
+  const [teamPickByCodeBusy, setTeamPickByCodeBusy] = useState(false)
+  const [teamPickFixedCode, setTeamPickFixedCode] = useState('')
   const [rivalPickOppId, setRivalPickOppId] = useState<string | null>(null)
   const [activeFilter, setActiveFilter] = useState<FilterType>('all')
   const [cityFilter, setCityFilter] = useState('')
@@ -87,7 +105,12 @@ export function HomeScreen() {
   const filteredMatches =
     activeFilter === 'all'
       ? byCity
-      : byCity.filter((m) => m.type === activeFilter)
+      : activeFilter === 'team_pick'
+        ? byCity.filter(
+            (m) =>
+              m.type === 'team_pick_public' || m.type === 'team_pick_private'
+          )
+        : byCity.filter((m) => m.type === activeFilter)
 
   const sortedFeedMatches = useMemo(
     () => [...filteredMatches].sort(compareMatchOpportunitiesByFillUrgency),
@@ -134,6 +157,12 @@ export function HomeScreen() {
     if (type === 'players') {
       const m = sortedFeedMatches.find((x) => x.id === opportunityId)
       if (m) setPlayersJoinOpp(m)
+      return
+    }
+
+    if (type === 'team_pick_public' || type === 'team_pick_private') {
+      const m = sortedFeedMatches.find((x) => x.id === opportunityId)
+      if (m) setTeamPickJoinOpp(m)
       return
     }
 
@@ -213,7 +242,7 @@ export function HomeScreen() {
 
       {/* Quick Actions */}
       <div className="p-4">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           <QuickActionCard
             icon={<Sparkles className="w-6 h-6" />}
             label="Todos"
@@ -246,6 +275,76 @@ export function HomeScreen() {
             color="bg-accent/10 text-accent border-accent/30"
             onClick={() => setActiveFilter('open')}
           />
+          <QuickActionCard
+            icon={<Swords className="w-6 h-6" />}
+            label="Selección de equipos"
+            cta="Elegí equipo A o B y tu posición."
+            selected={activeFilter === 'team_pick'}
+            color="bg-primary/10 text-primary border-primary/30"
+            onClick={() => setActiveFilter('team_pick')}
+          />
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-border bg-card/60 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Swords className="w-5 h-5 text-primary shrink-0" aria-hidden />
+            <h3 className="text-sm font-semibold text-foreground">
+              Selección de equipos privado: ¿tenés el código?
+            </h3>
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Ingresá los 4 dígitos que te pasó el organizador. Podés unirte aunque el
+            partido no aparezca en tu listado.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+            <Input
+              inputMode="numeric"
+              maxLength={4}
+              autoComplete="one-time-code"
+              placeholder="0000"
+              value={teamPickCodeInput}
+              onChange={(e) =>
+                setTeamPickCodeInput(e.target.value.replace(/\D/g, '').slice(0, 4))
+              }
+              className="h-11 sm:max-w-[140px] font-mono tracking-widest text-center text-lg"
+              aria-label="Código de partido selección de equipos privado"
+            />
+            <Button
+              type="button"
+              className="sm:w-auto"
+              disabled={
+                teamPickByCodeBusy || teamPickCodeInput.replace(/\D/g, '').length !== 4
+              }
+              onClick={() => {
+                void (async () => {
+                  const digits = teamPickCodeInput.replace(/\D/g, '').slice(0, 4)
+                  if (digits.length !== 4) return
+                  setTeamPickByCodeBusy(true)
+                  try {
+                    const r = await resolveTeamPickPrivateJoinCode(digits)
+                    if (!r.ok) {
+                      toast.error(r.error)
+                      return
+                    }
+                    setTeamPickByCodePreview(r)
+                    setTeamPickFixedCode(digits)
+                    setTeamPickByCodeOpen(true)
+                  } finally {
+                    setTeamPickByCodeBusy(false)
+                  }
+                })()
+              }}
+            >
+              {teamPickByCodeBusy ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin shrink-0" aria-hidden />
+                  Buscando…
+                </>
+              ) : (
+                'Buscar partido'
+              )}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -359,6 +458,57 @@ export function HomeScreen() {
           await joinMatchOpportunity(playersJoinOpp.id, {
             isGoalkeeper: isGk,
           })
+        }}
+      />
+
+      <JoinTeamPickDialog
+        open={teamPickJoinOpp !== null}
+        onOpenChange={(open) => {
+          if (!open) setTeamPickJoinOpp(null)
+        }}
+        opportunity={teamPickJoinOpp}
+        onJoin={async (payload) => {
+          if (!teamPickJoinOpp) return
+          await joinTeamPickMatchOpportunity(teamPickJoinOpp.id, payload)
+        }}
+      />
+
+      <JoinTeamPickDialog
+        open={teamPickByCodeOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTeamPickByCodeOpen(false)
+            setTeamPickByCodePreview(null)
+            setTeamPickFixedCode('')
+          }
+        }}
+        opportunity={
+          teamPickByCodePreview
+            ? minimalMatchOpportunityForTeamPickPreview({
+                id: teamPickByCodePreview.matchId,
+                title: teamPickByCodePreview.title,
+                venue: teamPickByCodePreview.venue,
+                location: teamPickByCodePreview.location,
+                dateTime: new Date(teamPickByCodePreview.dateTime),
+                level: teamPickByCodePreview.level,
+                gender: teamPickByCodePreview.gender,
+                type: 'team_pick_private',
+                playersNeeded: teamPickByCodePreview.playersNeeded,
+                playersJoined: teamPickByCodePreview.playersJoined,
+              })
+            : null
+        }
+        fixedJoinCode={teamPickFixedCode.length === 4 ? teamPickFixedCode : null}
+        onJoin={async (payload) => {
+          if (!teamPickByCodePreview) return
+          await joinTeamPickMatchOpportunity(teamPickByCodePreview.matchId, {
+            ...payload,
+            joinCode: teamPickFixedCode,
+          })
+          setTeamPickByCodeOpen(false)
+          setTeamPickByCodePreview(null)
+          setTeamPickFixedCode('')
+          setTeamPickCodeInput('')
         }}
       />
 

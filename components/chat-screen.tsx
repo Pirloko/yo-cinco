@@ -33,6 +33,13 @@ import {
 } from '@/lib/supabase/rating-queries'
 import { MatchCompletionPanel } from '@/components/match-completion-panel'
 import { RevueltaInviteActions } from '@/components/revuelta-invite-actions'
+import {
+  TEAM_PICK_MAX_FIELD_PER_SIDE,
+  TEAM_PICK_MAX_GK_PER_SIDE,
+  teamPickColorsForUi,
+  teamPickLineupSummary,
+  teamPickSlotsFromParticipants,
+} from '@/lib/team-pick-ui'
 import { RevueltaTeamsPanel } from '@/components/revuelta-teams-panel'
 import { ArrowLeft, Send, Calendar, MapPin, Info } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
@@ -46,6 +53,25 @@ import { toast } from 'sonner'
 import type { MatchType } from '@/lib/types'
 
 type UiMessage = ChatMessageRow & { isMe: boolean }
+
+function participantRowStatusLabel(
+  status: OpportunityParticipantRow['status']
+): string {
+  switch (status) {
+    case 'creator':
+      return 'Organizador'
+    case 'confirmed':
+      return 'Confirmado'
+    case 'pending':
+      return 'Pendiente'
+    case 'invited':
+      return 'Invitado'
+    case 'cancelled':
+      return 'Baja'
+    default:
+      return String(status)
+  }
+}
 
 export function ChatScreen() {
   const {
@@ -141,6 +167,17 @@ export function ChatScreen() {
   })
   const participants: OpportunityParticipantRow[] = participantsQuery.data ?? []
   const loadingParticipants = participantsQuery.isFetching
+
+  const teamPickChatSlots = useMemo(() => {
+    if (
+      !opportunity ||
+      (opportunity.type !== 'team_pick_public' &&
+        opportunity.type !== 'team_pick_private')
+    ) {
+      return null
+    }
+    return teamPickSlotsFromParticipants(participants)
+  }, [opportunity, participants])
 
   const canViewParticipantLeaveReasons = Boolean(
     opportunity &&
@@ -382,6 +419,28 @@ export function ChatScreen() {
     setShowInfo((prev) => !prev)
   }, [])
 
+  const copyTeamPickPrivateJoinCode = useCallback(async () => {
+    if (!opportunity?.joinCode) return
+    try {
+      await navigator.clipboard.writeText(opportunity.joinCode)
+      toast.success('Código copiado')
+    } catch {
+      toast.error('No se pudo copiar el código')
+    }
+  }, [opportunity?.joinCode])
+
+  const copyAppOpenLinkForMatch = useCallback(async () => {
+    if (!opportunity) return
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    const url = `${origin.replace(/\/$/, '')}/?joinMatch=${encodeURIComponent(opportunity.id)}`
+    try {
+      await navigator.clipboard.writeText(url)
+      toast.success('Enlace copiado; abre SPORTMATCH y seguí el flujo de unión.')
+    } catch {
+      toast.error('No se pudo copiar')
+    }
+  }, [opportunity])
+
   if (!currentUser) {
     return null
   }
@@ -481,20 +540,68 @@ export function ChatScreen() {
             <p className="text-sm text-muted-foreground">
               Organiza: {opportunity.creatorName}
             </p>
-            {opportunity.type === 'open' &&
-              currentUser &&
+            {currentUser &&
               (opportunity.creatorId === currentUser.id ||
                 participatingOpportunityIds.includes(opportunity.id)) &&
               (opportunity.status === 'pending' ||
-                opportunity.status === 'confirmed') && (
+                opportunity.status === 'confirmed') &&
+              (opportunity.type === 'open' ||
+                opportunity.type === 'team_pick_public' ||
+                opportunity.type === 'team_pick_private') && (
                 <div className="rounded-lg border border-border bg-card/60 p-3 space-y-2">
                   <p className="text-xs font-medium text-foreground">
                     Invitar más jugadores
                   </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Cualquier participante puede compartir el enlace.
-                  </p>
-                  <RevueltaInviteActions opportunity={opportunity} />
+                  {opportunity.type === 'team_pick_private' ? (
+                    <>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        6vs6 privado: no hay página web pública. Compartí el código de 4
+                        dígitos; quien entre en la app puede unirse con «Unirme con
+                        código».
+                      </p>
+                      {opportunity.joinCode ? (
+                        <div className="flex flex-col gap-2">
+                          <span className="font-mono text-xl font-semibold tracking-[0.35em] text-foreground">
+                            {opportunity.joinCode}
+                          </span>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              className="h-9"
+                              onClick={() => void copyTeamPickPrivateJoinCode()}
+                            >
+                              Copiar código
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-9"
+                              onClick={() => void copyAppOpenLinkForMatch()}
+                            >
+                              Copiar enlace a la app
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          Si no ves el código, abrí «Ver detalle» del partido o pedilo al
+                          organizador.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[11px] text-muted-foreground">
+                        {opportunity.type === 'team_pick_public'
+                          ? 'Comparte el enlace público del partido (misma página que una revuelta abierta).'
+                          : 'Cualquier participante puede compartir el enlace.'}
+                      </p>
+                      <RevueltaInviteActions opportunity={opportunity} />
+                    </>
+                  )}
                 </div>
               )}
             {opportunity.type === 'open' && currentUser && (
@@ -515,6 +622,37 @@ export function ChatScreen() {
               </div>
             )}
             <div className="pt-2 border-t border-border/60">
+              {teamPickChatSlots && opportunity ? (
+                <div className="mb-3 rounded-lg border border-border/80 bg-secondary/30 px-2.5 py-2">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
+                    {(() => {
+                      const { colorA, colorB } = teamPickColorsForUi(opportunity)
+                      return (['A', 'B'] as const).map((side) => {
+                        const s = teamPickChatSlots[side]
+                        const color = side === 'A' ? colorA : colorB
+                        return (
+                          <span
+                            key={side}
+                            className="inline-flex items-center gap-1.5 tabular-nums"
+                          >
+                            <span
+                              className="h-2 w-2 rounded-full border border-border shrink-0"
+                              style={{ backgroundColor: color }}
+                            />
+                            <span className="text-foreground font-medium">
+                              Equipo {side}
+                            </span>
+                            <span>
+                              {s.gk}/{TEAM_PICK_MAX_GK_PER_SIDE} GK · {s.field}/
+                              {TEAM_PICK_MAX_FIELD_PER_SIDE} campo
+                            </span>
+                          </span>
+                        )
+                      })
+                    })()}
+                  </div>
+                </div>
+              ) : null}
               <p className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
                 Participantes
               </p>
@@ -697,9 +835,21 @@ const ParticipantRow = memo(function ParticipantRow({
         </button>
       </div>
       <div className="shrink-0 text-right max-w-[min(180px,42%)]">
-        <span className="text-[11px] text-muted-foreground capitalize block">
-          {participant.status === 'creator' ? 'Organizador' : participant.status}
+        <span className="text-[11px] text-muted-foreground block">
+          {participantRowStatusLabel(participant.status)}
         </span>
+        {(opportunityType === 'team_pick_public' ||
+          opportunityType === 'team_pick_private') &&
+        (participant.status === 'creator' ||
+          participant.status === 'confirmed' ||
+          participant.status === 'pending') ? (
+          <span className="text-[10px] text-muted-foreground block mt-0.5 leading-snug">
+            {teamPickLineupSummary(
+              participant.pickTeam,
+              participant.encounterLineupRole
+            ) || '—'}
+          </span>
+        ) : null}
         {participant.status === 'cancelled' &&
         participant.cancelledReason ? (
           <p

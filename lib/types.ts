@@ -314,6 +314,10 @@ export interface MatchOpportunity {
   privateRevueltaTeamId?: string
   /** Código 4 dígitos para unirse (solo `team_pick_private`). */
   joinCode?: string
+  /** Color equipo A (#RRGGBB), solo `team_pick_*`. */
+  teamPickColorA?: string
+  /** Color equipo B (#RRGGBB), solo `team_pick_*`. */
+  teamPickColorB?: string
   playersNeeded?: number
   playersJoined?: number
   /** Solo type players: cupos (arquero / campo / ambos). */

@@ -220,6 +220,8 @@ export function MatchCompletionPanel({
     opportunity.status !== 'cancelled' &&
     (opportunity.type === 'players' ||
       opportunity.type === 'open' ||
+      opportunity.type === 'team_pick_public' ||
+      opportunity.type === 'team_pick_private' ||
       (opportunity.type === 'rival' && rivalChallenge?.status === 'accepted'))
 
   const canCancelRivalAsCaptain =
@@ -316,7 +318,10 @@ export function MatchCompletionPanel({
     isConfirmedParticipant &&
     !completed &&
     opportunity.status !== 'cancelled' &&
-    (opportunity.type === 'players' || opportunity.type === 'open')
+    (opportunity.type === 'players' ||
+      opportunity.type === 'open' ||
+      opportunity.type === 'team_pick_public' ||
+      opportunity.type === 'team_pick_private')
 
   const handleLeave = async () => {
     const reason = resolvedLeaveReason()
@@ -688,7 +693,9 @@ export function MatchCompletionPanel({
                 </DialogTitle>
                 <DialogDescription>
                   Se abrirá la ventana de 48 h para que los jugadores califiquen.
-                  {opportunity.type === 'players'
+                  {opportunity.type === 'players' ||
+                  opportunity.type === 'team_pick_public' ||
+                  opportunity.type === 'team_pick_private'
                     ? ' Se registrará como partido jugado (sin marcador por equipos).'
                     : null}
                 </DialogDescription>

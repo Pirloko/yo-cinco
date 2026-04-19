@@ -1,9 +1,16 @@
 import { createClient } from '@supabase/supabase-js'
 import { unstable_cache } from 'next/cache'
-import type { Gender, Level, MatchType } from '@/lib/types'
+import type {
+  EncounterLineupRole,
+  Gender,
+  Level,
+  MatchType,
+  PickTeamSide,
+} from '@/lib/types'
 import { CACHE_REVALIDATE_SECONDS } from '@/lib/cache-policy'
 import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
 import { isValidOpportunityInviteId } from '@/lib/match-invite-url'
+import { teamPickColorsForUi } from '@/lib/team-pick-ui'
 
 export type PublicRevueltaParticipant = {
   id: string
@@ -11,6 +18,8 @@ export type PublicRevueltaParticipant = {
   photo: string
   isGoalkeeper: boolean
   isCreator: boolean
+  pickTeam?: PickTeamSide
+  encounterLineupRole?: EncounterLineupRole
 }
 
 export type PublicRevueltaSnapshot = {
@@ -28,9 +37,21 @@ export type PublicRevueltaSnapshot = {
   playersJoined: number
   goalkeeperCount: number
   participants: PublicRevueltaParticipant[]
+  /** Solo `team_pick_public` en página pública. */
+  teamPickColorA?: string
+  teamPickColorB?: string
 }
 
-type PartRow = { user_id: string; is_goalkeeper?: boolean | null }
+type PartRow = {
+  user_id: string
+  is_goalkeeper?: boolean | null
+  pick_team?: string | null
+  encounter_lineup_role?: string | null
+}
+
+function isPublicSeoMatchType(t: unknown): t is 'open' | 'team_pick_public' {
+  return t === 'open' || t === 'team_pick_public'
+}
 
 function buildSnapshot(
   row: Record<string, unknown>,
@@ -38,15 +59,32 @@ function buildSnapshot(
   profileById: Map<string, { name: string; photo: string }>,
   creatorId: string
 ): PublicRevueltaSnapshot {
-  const gk = parts.filter((p) => p.is_goalkeeper === true).length
+  const matchType = row.type as MatchType
+  const gk = parts.filter((p) => {
+    if (p.is_goalkeeper === true) return true
+    if (
+      (matchType === 'team_pick_public' || matchType === 'team_pick_private') &&
+      p.encounter_lineup_role === 'gk'
+    ) {
+      return true
+    }
+    return false
+  }).length
   const participants: PublicRevueltaParticipant[] = []
   const cr = profileById.get(creatorId)
+  const creatorPart = parts.find((p) => p.user_id === creatorId)
+  const creatorPick = creatorPart?.pick_team as PickTeamSide | undefined
+  const creatorRole = creatorPart?.encounter_lineup_role as
+    | EncounterLineupRole
+    | undefined
   participants.push({
     id: creatorId,
     name: cr?.name ?? 'Organizador',
     photo: cr?.photo ?? DEFAULT_AVATAR,
-    isGoalkeeper: false,
+    isGoalkeeper: creatorPart ? creatorPart.is_goalkeeper === true : false,
     isCreator: true,
+    pickTeam: creatorPick,
+    encounterLineupRole: creatorRole,
   })
   for (const p of parts) {
     const uid = p.user_id as string
@@ -58,10 +96,22 @@ function buildSnapshot(
       photo: pr?.photo ?? DEFAULT_AVATAR,
       isGoalkeeper: p.is_goalkeeper === true,
       isCreator: false,
+      pickTeam: (p.pick_team as PickTeamSide | undefined) ?? undefined,
+      encounterLineupRole:
+        (p.encounter_lineup_role as EncounterLineupRole | undefined) ?? undefined,
     })
   }
 
   const needed = (row.players_needed as number | null) ?? 12
+
+  const colorExtras =
+    matchType === 'team_pick_public'
+      ? teamPickColorsForUi({
+          type: matchType,
+          teamPickColorA: row.team_pick_color_a as string | undefined,
+          teamPickColorB: row.team_pick_color_b as string | undefined,
+        })
+      : null
 
   return {
     id: row.id as string,
@@ -78,6 +128,9 @@ function buildSnapshot(
     playersJoined: (row.players_joined as number) ?? 0,
     goalkeeperCount: gk,
     participants,
+    ...(colorExtras
+      ? { teamPickColorA: colorExtras.colorA, teamPickColorB: colorExtras.colorB }
+      : {}),
   }
 }
 
@@ -99,18 +152,18 @@ async function fetchPublicRevueltaSnapshotUncached(
     const { data: row, error } = await admin
       .from('match_opportunities')
       .select(
-        'id, type, title, description, location, venue, date_time, level, gender, creator_id, players_needed, players_joined'
+        'id, type, title, description, location, venue, date_time, level, gender, creator_id, players_needed, players_joined, team_pick_color_a, team_pick_color_b'
       )
       .eq('id', opportunityId)
       .maybeSingle()
     if (error || !row) return null
     const r = row as Record<string, unknown>
-    if (r.type !== 'open') return null
+    if (!isPublicSeoMatchType(r.type)) return null
     const creatorId = r.creator_id as string
 
     const { data: partRows } = await admin
       .from('match_opportunity_participants')
-      .select('user_id, is_goalkeeper')
+      .select('user_id, is_goalkeeper, pick_team, encounter_lineup_role')
       .eq('opportunity_id', opportunityId)
 
     const parts = (partRows ?? []) as PartRow[]
@@ -144,19 +197,19 @@ async function fetchPublicRevueltaSnapshotUncached(
   const { data: row, error } = await supabase
     .from('match_opportunities')
     .select(
-      'id, type, title, description, location, venue, date_time, level, gender, creator_id, players_needed, players_joined'
+      'id, type, title, description, location, venue, date_time, level, gender, creator_id, players_needed, players_joined, team_pick_color_a, team_pick_color_b'
     )
     .eq('id', opportunityId)
     .maybeSingle()
 
   if (error || !row) return null
   const r = row as Record<string, unknown>
-  if (r.type !== 'open') return null
+  if (!isPublicSeoMatchType(r.type)) return null
   const creatorId = r.creator_id as string
 
   const { data: partRows } = await supabase
     .from('match_opportunity_participants')
-    .select('user_id, is_goalkeeper')
+    .select('user_id, is_goalkeeper, pick_team, encounter_lineup_role')
     .eq('opportunity_id', opportunityId)
 
   const parts = (partRows ?? []) as PartRow[]
@@ -173,7 +226,7 @@ async function fetchPublicRevueltaSnapshotUncached(
 
 const fetchPublicRevueltaSnapshotCached = unstable_cache(
   async (opportunityId: string) => fetchPublicRevueltaSnapshotUncached(opportunityId),
-  ['public-revuelta-snapshot-v1'],
+  ['public-revuelta-snapshot-v3'],
   { revalidate: CACHE_REVALIDATE_SECONDS.publicDynamic }
 )
 

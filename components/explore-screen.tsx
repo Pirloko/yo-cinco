@@ -4,12 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useAppAuth, useAppUI } from '@/lib/app-context'
+import { fetchPublicTeamPickMatchesForExplore } from '@/lib/supabase/explore-team-pick-queries'
 import { useGeoCitiesWithVenuesInRegion } from '@/lib/hooks/use-geo-cities-with-venues'
 import { queryKeys, stableIdsKey } from '@/lib/query-keys'
 import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
@@ -27,7 +29,15 @@ import {
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { MATCH_CARD_SHELL, TABLE_OUTLINE } from '@/lib/card-shell'
 import { cn } from '@/lib/utils'
-import { Search, X, MapPin, Building2, CalendarRange, Clock } from 'lucide-react'
+import {
+  Search,
+  X,
+  MapPin,
+  Building2,
+  CalendarRange,
+  Clock,
+  Swords,
+} from 'lucide-react'
 import { RegionCityFilterSelect } from '@/components/region-city-filter'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { writeCreatePrefill } from '@/lib/create-prefill'
@@ -44,7 +54,7 @@ const HORIZON_OPTIONS = [
 type AvailabilityRow = ExploreAvailabilityRow
 
 export function ExploreScreen() {
-  const { setCurrentScreen } = useAppUI()
+  const { setCurrentScreen, setSelectedMatchOpportunityId } = useAppUI()
   const { currentUser } = useAppAuth()
   const [searchQuery, setSearchQuery] = useState('')
   const [cityFilter, setCityFilter] = useState('')
@@ -75,6 +85,28 @@ export function ExploreScreen() {
   })
 
   const publicVenues = publicVenuesQuery.data ?? []
+
+  const teamPickPublicQuery = useQuery({
+    queryKey: queryKeys.explore.publicTeamPickMatches(
+      currentUser?.gender ?? '',
+      currentUser?.regionId,
+      cityFilter || null
+    ),
+    staleTime: 60_000,
+    enabled:
+      sessionQueryEnabled(currentUser?.id) && Boolean(currentUser?.gender),
+    queryFn: async () => {
+      const supabase = getBrowserSupabase()
+      if (!supabase || !currentUser?.gender) return []
+      return fetchPublicTeamPickMatchesForExplore(supabase, {
+        gender: currentUser.gender,
+        regionId: currentUser.regionId,
+        cityId: cityFilter || null,
+      })
+    },
+  })
+
+  const teamPickPublicRows = teamPickPublicQuery.data ?? []
 
   const displayedVenues = useMemo(() => {
     let v = publicVenues
@@ -136,7 +168,10 @@ export function ExploreScreen() {
   return (
     <div className="min-h-screen bg-background pb-20">
       <header className="sticky top-0 z-10 space-y-4 border-b border-border bg-background/95 p-4 backdrop-blur-sm">
-        <AppScreenBrandHeading title="Explorar" subtitle="Centros deportivos y próximos horarios libres" />
+        <AppScreenBrandHeading
+          title="Explorar"
+          subtitle="6vs6 públicos, centros deportivos y horarios libres"
+        />
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
           <div className="flex-1 relative min-w-[200px]">
@@ -183,6 +218,89 @@ export function ExploreScreen() {
           </div>
         </div>
       </header>
+
+      <section className="px-4 pt-3 pb-2 space-y-2 border-b border-border/60">
+        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Swords className="w-4 h-4 text-emerald-400" />
+          Selección de equipos (públicos y con código)
+        </h2>
+        <p className="text-xs text-muted-foreground leading-snug">
+          Partidos selección de equipos visibles para tu género
+          {currentUser?.regionId ? ', priorizando tu región' : ''}
+          {cityFilter ? ' y la ciudad seleccionada' : ''}. Los marcados como privado siguen
+          exigiendo el código de 4 dígitos para unirse.
+        </p>
+        {!currentUser?.gender ? (
+          <p className="text-sm text-muted-foreground">
+            Completa tu perfil con género para ver partidos acordes.
+          </p>
+        ) : teamPickPublicQuery.isLoading ? (
+          <p className="text-sm text-muted-foreground">Cargando partidos…</p>
+        ) : teamPickPublicRows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No hay 6vs6 próximos con estos filtros.
+          </p>
+        ) : (
+          <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+            {teamPickPublicRows.map((row) => (
+              <Card
+                key={row.id}
+                className={cn(
+                  MATCH_CARD_SHELL,
+                  'shrink-0 w-[min(100%,280px)] gap-0 py-0'
+                )}
+              >
+                <CardContent className="p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="font-medium text-sm text-foreground line-clamp-2">
+                        {row.title}
+                      </p>
+                      {row.listingKind === 'team_pick_private' ? (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] font-normal border-amber-500/40 text-amber-700 dark:text-amber-300"
+                        >
+                          Privado · código al unirse
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <span className="flex shrink-0 items-center gap-1 pt-0.5" aria-hidden>
+                      <span
+                        className="h-3 w-3 rounded-full border border-border"
+                        style={{ backgroundColor: row.teamPickColorA }}
+                      />
+                      <span
+                        className="h-3 w-3 rounded-full border border-border"
+                        style={{ backgroundColor: row.teamPickColorB }}
+                      />
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {formatMatchInTimezone(row.dateTime, "EEE d MMM · HH:mm")} ·{' '}
+                    {row.playersJoined}/{row.playersNeeded}
+                  </p>
+                  <p className="text-xs text-muted-foreground line-clamp-2">
+                    {row.venue}
+                    {row.location ? ` · ${row.location}` : ''}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      setSelectedMatchOpportunityId(row.id)
+                      setCurrentScreen('matchDetails')
+                    }}
+                  >
+                    Ver partido
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
 
       {displayedVenues.length > 0 ? (
         <section className="px-4 pt-4 pb-2 space-y-2">

@@ -10,6 +10,7 @@ import {
 } from '@/lib/supabase/mappers'
 import {
   MATCH_OPPORTUNITY_SELECT_WITH_GEO,
+  MATCH_OPPORTUNITIES_CLIENT_VIEW,
   PROFILE_SELECT_WITH_GEO,
 } from '@/lib/supabase/geo-queries'
 
@@ -84,7 +85,7 @@ export async function fetchMatchOpportunities(
   supabase: SupabaseClient
 ): Promise<MatchOpportunity[]> {
   const { data: opps, error } = await supabase
-    .from('match_opportunities')
+    .from(MATCH_OPPORTUNITIES_CLIENT_VIEW)
     .select(MATCH_OPPORTUNITY_SELECT_WITH_GEO)
     .order('date_time', { ascending: true })
 

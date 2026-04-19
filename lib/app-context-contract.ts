@@ -1,10 +1,12 @@
 import type {
+  EncounterLineupRole,
   Gender,
   Level,
   MatchOpportunity,
   MatchesHubTab,
   OnboardingData,
   VenueOnboardingData,
+  PickTeamSide,
   RevueltaResult,
   RivalChallenge,
   RivalResult,
@@ -14,6 +16,7 @@ import type {
   TeamPrivateSettings,
   User,
 } from './types'
+import type { TeamPickPrivateResolveResult } from './supabase/team-pick-queries'
 
 export type AppScreen =
   | 'landing'
@@ -81,8 +84,17 @@ export interface AppContextType {
       creatorIsGoalkeeper?: boolean
       bookCourtSlot?: boolean
       courtSlotMinutes?: number
+      /** Solo modos `team_pick_*`: rol del organizador en equipo A. */
+      creatorEncounterLineupRole?: EncounterLineupRole
     }
-  ) => Promise<{ ok: true } | { ok: false; code?: 'no_court'; error: string }>
+  ) => Promise<
+    | {
+        ok: true
+        joinCode?: string | null
+        opportunityId?: string | null
+      }
+    | { ok: false; code?: 'no_court'; error: string }
+  >
   reserveVenueOnly: (payload: {
     sportsVenueId: string
     startsAt: Date
@@ -92,6 +104,32 @@ export interface AppContextType {
     opportunityId: string,
     options?: { isGoalkeeper?: boolean }
   ) => Promise<void>
+  joinTeamPickMatchOpportunity: (
+    opportunityId: string,
+    payload: {
+      pickTeam: PickTeamSide
+      encounterLineupRole: EncounterLineupRole
+      /** Obligatorio si el partido es `team_pick_private`. */
+      joinCode?: string
+    }
+  ) => Promise<void>
+  /** Busca un 6vs6 privado activo por código (para unirse sin verlo en el feed). */
+  resolveTeamPickPrivateJoinCode: (
+    code: string
+  ) => Promise<TeamPickPrivateResolveResult>
+  /** Cambiar equipo/rol (vos o el organizador sobre cualquier jugador). */
+  setTeamPickParticipantLineup: (
+    opportunityId: string,
+    targetUserId: string,
+    pickTeam: PickTeamSide,
+    encounterLineupRole: EncounterLineupRole
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  /** Expulsar jugador (solo organizador). */
+  organizerRemoveTeamPickParticipant: (
+    opportunityId: string,
+    targetUserId: string,
+    reason: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
   requestJoinPrivateRevuelta: (
     opportunityId: string,
     isGoalkeeper: boolean
@@ -176,7 +214,7 @@ export interface AppContextType {
     location: string
     dateTime: Date
     level: Level
-  }) => Promise<void>
+  }) => Promise<string | null>
   respondToRivalChallenge: (
     challengeId: string,
     accept: boolean,

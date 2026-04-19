@@ -20,9 +20,15 @@ import {
   Clock,
   Loader2,
   Flame,
+  Swords,
 } from 'lucide-react'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { MATCH_CARD_SHELL } from '@/lib/card-shell'
+import {
+  teamPickAccentBorderForOutline,
+  teamPickColorsForUi,
+  teamPickJerseyPresetLabel,
+} from '@/lib/team-pick-ui'
 
 interface MatchCardProps {
   match: MatchOpportunity
@@ -63,6 +69,9 @@ export function MatchCard({
         return <Users className="w-4 h-4" />
       case 'open':
         return <Shuffle className="w-4 h-4" />
+      case 'team_pick_public':
+      case 'team_pick_private':
+        return <Swords className="w-4 h-4" />
     }
   }
 
@@ -74,6 +83,10 @@ export function MatchCard({
         return 'Faltan jugadores'
       case 'open':
         return match.privateRevueltaTeamId ? 'Revuelta privada' : 'Revuelta abierta'
+      case 'team_pick_public':
+        return 'Selección de equipos públicos'
+      case 'team_pick_private':
+        return 'Selección de equipos privado'
     }
   }
 
@@ -85,6 +98,9 @@ export function MatchCard({
         return 'Postular'
       case 'open':
         return isPrivateRevueltaExternal ? 'Solicitar' : 'Unirse'
+      case 'team_pick_public':
+      case 'team_pick_private':
+        return 'Unirme'
     }
   }
 
@@ -109,6 +125,10 @@ export function MatchCard({
         return 'bg-primary/10 border-primary/30'
       case 'open':
         return 'bg-accent/10 border-accent/30'
+      case 'team_pick_public':
+        return 'bg-primary/10 border-primary/30'
+      case 'team_pick_private':
+        return 'bg-red-500/10 border-red-500/30'
     }
   }
 
@@ -137,6 +157,11 @@ export function MatchCard({
       ? 'Te uniste'
       : getActionLabel()
 
+  const teamPickChipColors =
+    match.type === 'team_pick_public' || match.type === 'team_pick_private'
+      ? teamPickColorsForUi(match)
+      : null
+
   return (
     <div className={MATCH_CARD_SHELL}>
       {/* Header with type badge */}
@@ -146,15 +171,21 @@ export function MatchCard({
             <div className={`p-1.5 rounded-lg ${
               match.type === 'rival' ? 'bg-red-500/20 text-red-400' :
               match.type === 'players' ? 'bg-primary/20 text-primary' :
+              match.type === 'team_pick_public' ? 'bg-primary/20 text-primary' :
+              match.type === 'team_pick_private' ? 'bg-red-500/20 text-red-400' :
               'bg-accent/20 text-accent'
             }`}>
               {getTypeIcon()}
             </div>
-            <span className={`text-sm font-medium ${
+            <span
+              className={`text-sm font-medium flex items-center gap-2 min-w-0 ${
               match.type === 'rival' ? 'text-red-400' :
               match.type === 'players' ? 'text-primary' :
+              match.type === 'team_pick_public' ? 'text-primary' :
+              match.type === 'team_pick_private' ? 'text-red-400' :
               'text-accent'
-            }`}>
+            }`}
+            >
               {getTypeLabel()}
             </span>
           </div>
@@ -162,6 +193,11 @@ export function MatchCard({
             {match.level}
           </Badge>
         </div>
+        {match.type === 'team_pick_private' && !isOwn ? (
+          <p className="mt-2 text-[10px] text-muted-foreground leading-snug">
+            Para unirte necesitás el código de 4 dígitos (no se muestra en el listado).
+          </p>
+        ) : null}
       </div>
 
       {urgencyMsg ? (
@@ -198,6 +234,49 @@ export function MatchCard({
               {match.description}
             </p>
           )}
+          {teamPickChipColors ? (
+            <div className="rounded-xl border border-border/80 bg-secondary/35 px-3 py-2.5 space-y-2">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">
+                Colores camiseta
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    Equipo A
+                  </span>
+                  <span
+                    className="h-5 w-5 shrink-0 rounded-full border-2 shadow-sm"
+                    style={{
+                      backgroundColor: teamPickChipColors.colorA,
+                      borderColor:
+                        teamPickAccentBorderForOutline(teamPickChipColors.colorA),
+                    }}
+                    aria-hidden
+                  />
+                  <span className="text-sm font-medium text-foreground truncate">
+                    {teamPickJerseyPresetLabel(teamPickChipColors.colorA)}
+                  </span>
+                </div>
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    Equipo B
+                  </span>
+                  <span
+                    className="h-5 w-5 shrink-0 rounded-full border-2 shadow-sm"
+                    style={{
+                      backgroundColor: teamPickChipColors.colorB,
+                      borderColor:
+                        teamPickAccentBorderForOutline(teamPickChipColors.colorB),
+                    }}
+                    aria-hidden
+                  />
+                  <span className="text-sm font-medium text-foreground truncate">
+                    {teamPickJerseyPresetLabel(teamPickChipColors.colorB)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {/* Cuándo y dónde: bloque único, menos filas sueltas */}
@@ -279,7 +358,7 @@ export function MatchCard({
           </div>
         ) : null}
 
-        {match.type === 'open' &&
+        {(match.type === 'open' || match.type === 'team_pick_public') &&
           currentUserId &&
           (match.creatorId === currentUserId || isJoined) && (
             <RevueltaInviteActions opportunity={match} className="pt-0.5" />
