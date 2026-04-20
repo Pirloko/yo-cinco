@@ -20,7 +20,7 @@ export async function generateMetadata(): Promise<Metadata> {
     openGraph: {
       title: 'Canchas en San Damián Rancagua | Sportmatch',
       description:
-        'Jugá en canchas en Rancagua zona San Damián: futbolito, fútbol 7 y coordinación de equipos con Sportmatch.',
+        'Juega en canchas en Rancagua zona San Damián: futbolito, fútbol 7 y coordinación de equipos con Sportmatch.',
       url: canonical,
     },
   }

@@ -29,7 +29,7 @@ export function buildCreateMatchSuccessShareText(args: {
 }): string {
   const t = args.title.trim() || 'Partido'
   const lines: string[] = []
-  lines.push(`¡Sumate a «${t}» en SPORTMATCH!`)
+  lines.push(`¡Únete a «${t}» en SPORTMATCH!`)
   const place = [args.venue.trim(), args.location.trim()].filter(Boolean).join(' · ')
   if (place) lines.push(`📍 ${place}`)
   if (args.whenLine.trim()) lines.push(`🗓 ${args.whenLine}`)

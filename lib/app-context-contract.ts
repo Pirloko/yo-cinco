@@ -117,7 +117,7 @@ export interface AppContextType {
   resolveTeamPickPrivateJoinCode: (
     code: string
   ) => Promise<TeamPickPrivateResolveResult>
-  /** Cambiar equipo/rol (vos o el organizador sobre cualquier jugador). */
+  /** Cambiar equipo/rol (tú o el organizador sobre cualquier jugador). */
   setTeamPickParticipantLineup: (
     opportunityId: string,
     targetUserId: string,

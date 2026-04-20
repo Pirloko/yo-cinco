@@ -355,7 +355,7 @@ export function ChatScreen() {
     }
     if (!canAccessThread) {
       toast.error(
-        'No tenés acceso al chat de este partido. Solo participantes o el organizador pueden escribir.'
+        'No tienes acceso al chat de este partido. Solo participantes o el organizador pueden escribir.'
       )
       return
     }
@@ -435,7 +435,7 @@ export function ChatScreen() {
     const url = `${origin.replace(/\/$/, '')}/?joinMatch=${encodeURIComponent(opportunity.id)}`
     try {
       await navigator.clipboard.writeText(url)
-      toast.success('Enlace copiado; abre SPORTMATCH y seguí el flujo de unión.')
+      toast.success('Enlace copiado; abre SPORTMATCH y sigue el flujo de unión.')
     } catch {
       toast.error('No se pudo copiar')
     }
@@ -460,7 +460,7 @@ export function ChatScreen() {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 gap-4">
         <p className="text-muted-foreground text-center text-sm max-w-sm">
-          No tenés acceso al chat de este partido. Solo el organizador y los
+          No tienes acceso al chat de este partido. Solo el organizador y los
           jugadores inscritos pueden usarlo.
         </p>
         <Button onClick={goBack}>Volver a partidos</Button>
@@ -555,7 +555,7 @@ export function ChatScreen() {
                   {opportunity.type === 'team_pick_private' ? (
                     <>
                       <p className="text-[11px] text-muted-foreground leading-relaxed">
-                        6vs6 privado: no hay página web pública. Compartí el código de 4
+                        6vs6 privado: no hay página web pública. Comparte el código de 4
                         dígitos; quien entre en la app puede unirse con «Unirme con
                         código».
                       </p>
@@ -587,7 +587,7 @@ export function ChatScreen() {
                         </div>
                       ) : (
                         <p className="text-[11px] text-muted-foreground leading-relaxed">
-                          Si no ves el código, abrí «Ver detalle» del partido o pedilo al
+                          Si no ves el código, abre «Ver detalle» del partido o pídelo al
                           organizador.
                         </p>
                       )}

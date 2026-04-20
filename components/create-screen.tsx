@@ -152,6 +152,10 @@ export function CreateScreen() {
   const { createRivalChallenge, getUserTeams, getFilteredTeams } = useAppTeam()
   const [step, setStep] = useState(1)
   const [matchType, setMatchType] = useState<MatchType | 'reserve' | null>(null)
+  /** Paso 1: tras elegir «Selección de equipos», elegir público vs privado. */
+  const [step1TeamPickSubstep, setStep1TeamPickSubstep] = useState<
+    'menu' | 'visibility'
+  >('menu')
   /** Revuelta (open): si se define, solo el plantel entra directo; externos solicitan al organizador. */
   const [privateRevueltaTeamId, setPrivateRevueltaTeamId] = useState<string | null>(
     null
@@ -320,7 +324,7 @@ export function CreateScreen() {
     toast.success(
       staffTeams.length > 0
         ? `Desafío listo contra ${target.name}. Completa fecha y publica.`
-        : 'Para desafiar, debés ser capitán o vicecapitán de un equipo.'
+        : 'Para desafiar, debes ser capitán o vicecapitán de un equipo.'
     )
   }, [currentUser, getFilteredTeams, getUserTeams])
 
@@ -475,6 +479,16 @@ export function CreateScreen() {
     .filter((t) => t.name.toLowerCase().includes(rivalSearch.toLowerCase()))
 
   const handleBack = () => {
+    if (step === 1 && step1TeamPickSubstep === 'visibility') {
+      setStep1TeamPickSubstep('menu')
+      if (
+        matchType === 'team_pick_public' ||
+        matchType === 'team_pick_private'
+      ) {
+        setMatchType(null)
+      }
+      return
+    }
     if (step > 1) {
       if (matchType === 'rival' && step === 4) {
         setStep(3)
@@ -483,6 +497,7 @@ export function CreateScreen() {
         setStep(2)
       } else if (matchType === 'rival' && step === 2) {
         setStep(1)
+        setStep1TeamPickSubstep('menu')
         setSelectedTeam(null)
       } else if (matchType === 'players' && step === 4) {
         setStep(3)
@@ -490,16 +505,20 @@ export function CreateScreen() {
         setStep(2)
       } else if (matchType === 'players' && step === 2) {
         setStep(1)
+        setStep1TeamPickSubstep('menu')
         setPlayersSeekProfile(null)
       } else if (matchType === 'open' && step === 2) {
         setStep(1)
+        setStep1TeamPickSubstep('menu')
       } else if (
         (matchType === 'team_pick_public' || matchType === 'team_pick_private') &&
         step === 2
       ) {
         setStep(1)
+        setStep1TeamPickSubstep('menu')
       } else if (matchType === 'reserve' && step === 2) {
         setStep(1)
+        setStep1TeamPickSubstep('menu')
       } else {
         setStep(step - 1)
       }
@@ -863,91 +882,154 @@ export function CreateScreen() {
       <main className="p-4">
         {step === 1 && (
           <div className="space-y-6">
-            <Card className="border-primary/35 bg-primary/5">
-              <CardContent className="p-4">
-                <div className="flex gap-3">
-                  <Info
-                    className="w-5 h-5 text-primary shrink-0 mt-0.5"
-                    aria-hidden
-                  />
-                  <div className="min-w-0 space-y-2">
-                    <p className="text-sm font-semibold text-foreground">
-                      Antes de publicar
-                    </p>
-                    <ul className="space-y-2 text-xs text-muted-foreground leading-relaxed">
-                      {CREATE_MATCH_GUIDELINES.map((line, i) => (
-                        <li key={i} className="flex gap-2">
-                          <span className="text-primary shrink-0 select-none">•</span>
-                          <span>{line}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+            {step1TeamPickSubstep === 'menu' ? (
+              <>
+                <Card className="border-primary/35 bg-primary/5">
+                  <CardContent className="p-4">
+                    <div className="flex gap-3">
+                      <Info
+                        className="w-5 h-5 text-primary shrink-0 mt-0.5"
+                        aria-hidden
+                      />
+                      <div className="min-w-0 space-y-2">
+                        <p className="text-sm font-semibold text-foreground">
+                          Antes de publicar
+                        </p>
+                        <ul className="space-y-2 text-xs text-muted-foreground leading-relaxed">
+                          {CREATE_MATCH_GUIDELINES.map((line, i) => (
+                            <li key={i} className="flex gap-2">
+                              <span className="text-primary shrink-0 select-none">•</span>
+                              <span>{line}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="text-center space-y-2">
+                  <h2 className="text-2xl font-bold text-foreground">
+                    Qué quieres hacer?
+                  </h2>
+                  <p className="text-muted-foreground">
+                    Elige una opción para comenzar
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
 
-            <div className="text-center space-y-2">
-              <h2 className="text-2xl font-bold text-foreground">Que quieres hacer?</h2>
-              <p className="text-muted-foreground">Elige una opcion para comenzar</p>
-            </div>
-
-            <div className="space-y-4 mt-8">
-              <TypeCard
-                icon={<Target className="w-8 h-8" />}
-                title="Buscar rival"
-                description="Tu equipo vs otro equipo"
-                selected={matchType === 'rival'}
-                onClick={() => setMatchType('rival')}
-                color="red"
-              />
-              <TypeCard
-                icon={<Users className="w-8 h-8" />}
-                title="Buscar jugadores"
-                description="Te faltan jugadores para completar"
-                selected={matchType === 'players'}
-                onClick={() => setMatchType('players')}
-                color="green"
-              />
-              <TypeCard
-                icon={<Shuffle className="w-8 h-8" />}
-                title="Crear revuelta"
-                description="Partido abierto para todos"
-                selected={matchType === 'open'}
-                onClick={() => {
-                  setMatchType('open')
-                  setFormData((f) => ({
-                    ...f,
-                    playersNeeded: Math.min(12, Math.max(10, f.playersNeeded)),
-                  }))
-                }}
-                color="gold"
-              />
-              <TypeCard
-                icon={<Swords className="w-8 h-8" />}
-                title="Selección de equipos públicos"
-                description="Equipos A y B: cualquier usuario puede unirse."
-                selected={matchType === 'team_pick_public'}
-                onClick={() => setMatchType('team_pick_public')}
-                color="green"
-              />
-              <TypeCard
-                icon={<Swords className="w-8 h-8" />}
-                title="Selección de equipos privado"
-                description="Equipos A y B: solo pueden unirse usuarios con el código."
-                selected={matchType === 'team_pick_private'}
-                onClick={() => setMatchType('team_pick_private')}
-                color="red"
-              />
-              <TypeCard
-                icon={<CalendarCheck2 className="w-8 h-8" />}
-                title="Solo reservar cancha"
-                description="Reserva rápida sin crear partido"
-                selected={matchType === 'reserve'}
-                onClick={() => setMatchType('reserve')}
-                color="green"
-              />
-            </div>
+                <div className="space-y-4 mt-8">
+                  <TypeCard
+                    icon={<Target className="w-8 h-8" />}
+                    title="Buscar rival"
+                    description="Tu equipo vs otro equipo"
+                    selected={matchType === 'rival'}
+                    onClick={() => {
+                      setStep1TeamPickSubstep('menu')
+                      setMatchType('rival')
+                    }}
+                    color="red"
+                  />
+                  <TypeCard
+                    icon={<Users className="w-8 h-8" />}
+                    title="Buscar jugadores"
+                    description="Te faltan jugadores para completar"
+                    selected={matchType === 'players'}
+                    onClick={() => {
+                      setStep1TeamPickSubstep('menu')
+                      setMatchType('players')
+                    }}
+                    color="green"
+                  />
+                  <TypeCard
+                    icon={<Shuffle className="w-8 h-8" />}
+                    title="Crear revuelta"
+                    description="Partido abierto para todos"
+                    selected={matchType === 'open'}
+                    onClick={() => {
+                      setStep1TeamPickSubstep('menu')
+                      setMatchType('open')
+                      setFormData((f) => ({
+                        ...f,
+                        playersNeeded: Math.min(12, Math.max(10, f.playersNeeded)),
+                      }))
+                    }}
+                    color="gold"
+                  />
+                  <TypeCard
+                    icon={<Swords className="w-8 h-8" />}
+                    title="Selección de equipos"
+                    description="Únete al equipo A o B y prepárate para jugar."
+                    selected={
+                      matchType === 'team_pick_public' ||
+                      matchType === 'team_pick_private'
+                    }
+                    onClick={() => {
+                      setStep1TeamPickSubstep('visibility')
+                      setMatchType(null)
+                    }}
+                    color="gold"
+                  />
+                  <TypeCard
+                    icon={<CalendarCheck2 className="w-8 h-8" />}
+                    title="Solo reservar cancha"
+                    description="Reserva rápida sin crear partido"
+                    selected={matchType === 'reserve'}
+                    onClick={() => {
+                      setStep1TeamPickSubstep('menu')
+                      setMatchType('reserve')
+                    }}
+                    color="green"
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="-ml-2 gap-2 text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setStep1TeamPickSubstep('menu')
+                    if (
+                      matchType === 'team_pick_public' ||
+                      matchType === 'team_pick_private'
+                    ) {
+                      setMatchType(null)
+                    }
+                  }}
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Otras opciones
+                </Button>
+                <div className="text-center space-y-2">
+                  <h2 className="text-2xl font-bold text-foreground">
+                    Tipo de partido
+                  </h2>
+                  <p className="text-sm text-muted-foreground leading-relaxed px-1">
+                    Elige si cualquiera puede sumarse o solo quien tenga el código
+                    de unión.
+                  </p>
+                </div>
+                <div className="space-y-4">
+                  <TypeCard
+                    icon={<Swords className="w-8 h-8" />}
+                    title="Público"
+                    description="Aparece en el listado: cualquier jugador puede unirse al equipo A o B."
+                    selected={matchType === 'team_pick_public'}
+                    onClick={() => setMatchType('team_pick_public')}
+                    color="green"
+                  />
+                  <TypeCard
+                    icon={<Swords className="w-8 h-8" />}
+                    title="Privado"
+                    description="No aparece como los demás: solo entra quien tenga el código de 4 dígitos que compartes."
+                    selected={matchType === 'team_pick_private'}
+                    onClick={() => setMatchType('team_pick_private')}
+                    color="red"
+                  />
+                </div>
+              </div>
+            )}
 
             <Button
               onClick={() => {
@@ -961,7 +1043,12 @@ export function CreateScreen() {
                   setStep(2)
                 }
               }}
-              disabled={!matchType}
+              disabled={
+                step1TeamPickSubstep === 'visibility'
+                  ? matchType !== 'team_pick_public' &&
+                    matchType !== 'team_pick_private'
+                  : !matchType
+              }
               className="w-full h-14 mt-8 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               {matchType === 'rival' && rivalChallengerTeams.length === 0
@@ -972,7 +1059,7 @@ export function CreateScreen() {
             
             {matchType === 'rival' && rivalChallengerTeams.length === 0 && (
               <p className="text-center text-sm text-muted-foreground mt-3">
-                Necesitás ser capitán o vicecapitán de un equipo para buscar rival
+                Necesitas ser capitán o vicecapitán de un equipo para buscar rival
               </p>
             )}
           </div>
@@ -1548,10 +1635,10 @@ export function CreateScreen() {
                             Juega una Revuelta con los integrantes de tu equipo (partido privado)
                           </Label>
                           <p className="text-xs text-muted-foreground mt-1">
-                            Jugá junto a tus amigos miembros de tu equipo un partido
+                            Juega junto a tus amigos miembros de tu equipo un partido
                             amistoso tipo revuelta. Si faltan jugadores, jugadores externos
-                            podrán solicitar unirse al partido y vos, como organizador,
-                            serás quien decida si aceptás o rechazás a estos jugadores.
+                            podrán solicitar unirse al partido y tú, como organizador,
+                            serás quien decida si aceptas o rechazas a estos jugadores.
                           </p>
                         </div>
                         <Switch
@@ -1574,7 +1661,7 @@ export function CreateScreen() {
                             onValueChange={(v) => setPrivateRevueltaTeamId(v)}
                           >
                             <SelectTrigger className="h-12 bg-secondary border-border">
-                              <SelectValue placeholder="Elegí equipo" />
+                              <SelectValue placeholder="Elige equipo" />
                             </SelectTrigger>
                             <SelectContent>
                               {getUserTeams().map((t) => (

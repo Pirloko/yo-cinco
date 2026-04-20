@@ -603,7 +603,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       const tm = teams.find((t) => t.id === m.privateRevueltaTeamId)
       if (!userIsConfirmedMemberOfTeam(tm, currentUser.id)) {
-        toast.error('Debés ser miembro del equipo para crear una revuelta privada.')
+        toast.error('Debes ser miembro del equipo para crear una revuelta privada.')
         return {
           ok: false as const,
           error: 'No eres miembro del equipo seleccionado.',
@@ -619,7 +619,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (m.type === 'team_pick_public' || m.type === 'team_pick_private') {
       const role = m.creatorEncounterLineupRole
       if (!role) {
-        return { ok: false as const, error: 'Elegí tu rol en el encuentro.' }
+        return { ok: false as const, error: 'Elige tu rol en el encuentro.' }
       }
       const ca =
         coerceTeamPickJerseyPresetHex(m.teamPickColorA) ?? DEFAULT_TEAM_PICK_COLOR_A
@@ -627,7 +627,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         coerceTeamPickJerseyPresetHex(m.teamPickColorB) ?? DEFAULT_TEAM_PICK_COLOR_B
       if (ca === cb) {
         toast.error(
-          'Elegí dos colores distintos para la camiseta del equipo A y del equipo B.'
+          'Elige dos colores distintos para la camiseta del equipo A y del equipo B.'
         )
         return {
           ok: false as const,
@@ -786,7 +786,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     const opp = matchOpportunities.find((m) => m.id === opportunityId)
     if (opp && opp.creatorId === currentUser.id) {
-      toast.info('Sos el organizador de este partido.')
+      toast.info('Eres el organizador de este partido.')
       return
     }
     if (participatingOpportunityIds.includes(opportunityId)) {
@@ -835,11 +835,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return
       }
       if (code === 'invalid_pick_team') {
-        toast.error('Equipo inválido. Elegí Equipo A o Equipo B.')
+        toast.error('Equipo inválido. Elige Equipo A o Equipo B.')
         return
       }
       if (code === 'invalid_encounter_role') {
-        toast.error('Rol inválido. Elegí arquero, defensa, mediocampista o delantero.')
+        toast.error('Rol inválido. Elige arquero, defensa, mediocampista o delantero.')
         return
       }
       if (code === 'past') {
@@ -847,7 +847,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return
       }
       if (code === 'is_creator') {
-        toast.info('Sos el organizador de este partido.')
+        toast.info('Eres el organizador de este partido.')
         return
       }
       if (code === 'rule') {
@@ -875,7 +875,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast.success(
       payLine
         ? `¡Te uniste al partido! Coordina en el chat. ${payLine}`
-        : '¡Te uniste al partido! Coordiná en el chat con el grupo.'
+        : '¡Te uniste al partido! Coordina en el chat con el grupo.'
     )
     void updateLastSeen(supabase, currentUser.id, { force: true })
   })
@@ -929,15 +929,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!res?.ok) {
         const code = res?.error ?? 'unknown'
         if (code === 'invalid_pick_team') {
-          toast.error('Equipo inválido. Elegí Equipo A o Equipo B.')
+          toast.error('Equipo inválido. Elige Equipo A o Equipo B.')
           return { ok: false, error: code }
         }
         if (code === 'invalid_encounter_role') {
-          toast.error('Rol inválido. Elegí arquero, defensa, mediocampista o delantero.')
+          toast.error('Rol inválido. Elige arquero, defensa, mediocampista o delantero.')
           return { ok: false, error: code }
         }
         if (code === 'forbidden') {
-          toast.error('No tenés permiso para cambiar esta alineación.')
+          toast.error('No tienes permiso para cambiar esta alineación.')
           return { ok: false, error: 'forbidden' }
         }
         if (code === 'too_late_lineup') {
@@ -1023,17 +1023,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return { ok: false, error: code }
         }
         if (code === 'cannot_remove_creator') {
-          toast.error('No podés expulsar al organizador.')
+          toast.error('No puedes expulsar al organizador.')
           return { ok: false, error: code }
         }
         if (code === 'too_late_remove') {
           toast.error(
-            'Ya no podés expulsar jugadores (menos de 2 horas para el partido).'
+            'Ya no puedes expulsar jugadores (menos de 2 horas para el partido).'
           )
           return { ok: false, error: code }
         }
         if (code === 'reason_required') {
-          toast.error('Indicá un motivo de al menos 5 caracteres.')
+          toast.error('Indica un motivo de al menos 5 caracteres.')
           return { ok: false, error: code }
         }
         if (code === 'already_closed') {
@@ -1135,7 +1135,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     if (opp.type === 'team_pick_public' || opp.type === 'team_pick_private') {
       toast.info(
-        'En este modo elegís equipo (A o B) y rol. Usá «Unirme (selección de equipos)» en el detalle del partido.'
+        'En este modo eliges equipo (A o B) y rol. Usa «Unirme (selección de equipos)» en el detalle del partido.'
       )
       return
     }
@@ -1159,13 +1159,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const code = payload?.error ?? 'unknown'
       if (code === 'use_team_pick_join_rpc') {
         toast.info(
-          'Elegí equipo y rol. Abrí el detalle del partido y usá «Unirme (selección de equipos)».'
+          'Elige equipo y rol. Abre el detalle del partido y usa «Unirme (selección de equipos)».'
         )
         return
       }
       if (code === 'private_revuelta_requires_request') {
         toast.error(
-          'Revuelta privada de equipo: pedí ingreso con «Solicitar» y el organizador del partido te aceptará.'
+          'Revuelta privada de equipo: pide ingreso con «Solicitar» y el organizador del partido te aceptará.'
         )
         return
       }
@@ -1216,7 +1216,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     const privTeam = teams.find((t) => t.id === opp.privateRevueltaTeamId)
     if (userIsConfirmedMemberOfTeam(privTeam, currentUser.id)) {
-      toast.info('Sos del equipo: unite con el flujo normal.')
+      toast.info('Eres del equipo: únete con el flujo normal.')
       return { ok: false, error: 'Miembro del equipo.' }
     }
     const supabase = getBrowserSupabase()
@@ -1238,7 +1238,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!payload?.ok) {
       const code = payload?.error ?? 'unknown'
       if (code === 'duplicate') {
-        toast.info('Ya tenés una solicitud pendiente para este partido.')
+        toast.info('Ya tienes una solicitud pendiente para este partido.')
         return { ok: false, error: 'duplicate' }
       }
       if (code === 'past') {
@@ -1514,7 +1514,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const msg = error.message
         if (msg.includes('disputed_use_override')) {
           toast.error(
-            'Hay desacuerdo entre capitanes: usa el desempate tras 72 h o resolvé el conflicto desde la app.'
+            'Hay desacuerdo entre capitanes: usa el desempate tras 72 h o resuelve el conflicto desde la app.'
           )
         } else if (msg.includes('challenge_not_accepted')) {
           toast.error('El desafío debe estar aceptado para registrar el resultado.')
@@ -2327,15 +2327,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     const team = teams.find((t) => t.id === teamId)
     if (!team || !userIsTeamStaffCaptain(team, currentUser.id)) {
-      toast.error('No tenés permiso para quitar jugadores de este equipo.')
+      toast.error('No tienes permiso para quitar jugadores de este equipo.')
       return
     }
     if (memberUserId === team.captainId) {
-      toast.error('No podés quitar al capitán del equipo.')
+      toast.error('No puedes quitar al capitán del equipo.')
       return
     }
     if (memberUserId === currentUser.id) {
-      toast.error('Para salir del equipo usá «Salir».')
+      toast.error('Para salir del equipo usa «Salir».')
       return
     }
     const ok = confirm('¿Retirar a este jugador del plantel?')

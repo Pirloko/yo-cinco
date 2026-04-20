@@ -15,12 +15,12 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: 'Canchas de futbolito en Santa Helena Rancagua | Sportmatch',
     description:
-      'Futbolito y fútbol 7 cerca de Santa Helena, Rancagua: encontrá partidos, rivales y reservá canchas. Listado en Sportmatch con enlaces a la app.',
+      'Futbolito y fútbol 7 cerca de Santa Helena, Rancagua: encuentra partidos, rivales y reserva canchas. Listado en Sportmatch con enlaces a la app.',
     alternates: { canonical },
     openGraph: {
       title: 'Canchas de futbolito en Santa Helena Rancagua | Sportmatch',
       description:
-        'Jugá futbolito o fútbol 7 en canchas en Rancagua zona Santa Helena. Partidos publicados y guía para sumarte desde Sportmatch.',
+        'Juega futbolito o fútbol 7 en canchas en Rancagua zona Santa Helena. Partidos publicados y guía para sumarte desde Sportmatch.',
       url: canonical,
     },
   }
@@ -43,13 +43,13 @@ export default async function SantaHelenaCanchasPage() {
             de amigos buscan{' '}
             <strong>futbolito</strong> y <strong>fútbol 7</strong> en la
             región: partidos rápidos, canchas más chicas y el ritmo típico de
-            las <strong>canchas en Rancagua</strong>. En Sportmatch podés ver
+            las <strong>canchas en Rancagua</strong>. En Sportmatch puedes ver
             publicaciones con fecha y lugar, sumarte a una revuelta o armar un
-            desafío cuando necesitás completar nómina o reservar hora en un
+            desafío cuando necesitas completar nómina o reservar hora en un
             recinto cercano.
           </p>
           <p>
-            Si querés una vista general de partidos amateur en la ciudad, entrá
+            Si quieres una vista general de partidos amateur en la ciudad, entra
             a{' '}
             <Link
               href="/rancagua/futbolito"

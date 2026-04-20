@@ -58,6 +58,7 @@ import {
   Users,
   MessageCircle,
   Shield,
+  TicketCheck,
 } from 'lucide-react'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import type { EncounterLineupRole, MatchType, PickTeamSide } from '@/lib/types'
@@ -93,6 +94,7 @@ import { queryKeys } from '@/lib/query-keys'
 import { sessionQueryEnabled } from '@/lib/query-session-enabled'
 import { QUERY_STALE_TIME_STATIC_MS } from '@/lib/query-defaults'
 import { replaceParticipantsCacheFromServer } from '@/lib/realtime/match-opportunity-participants-realtime'
+import { cn } from '@/lib/utils'
 import { useMatchOpportunityParticipantsRealtime } from '@/lib/hooks/use-match-opportunity-participants-realtime'
 
 export function MatchDetailsScreen() {
@@ -799,7 +801,7 @@ export function MatchDetailsScreen() {
                   {opportunity.joinCode}
                 </p>
                 <p className="text-[11px] text-muted-foreground leading-snug">
-                  Compartí este código por fuera de la app; quien se una debe ingresarlo
+                  Comparte este código por fuera de la app; quien se una debe ingresarlo
                   al unirse.
                   {!isCreator ? (
                     <span className="block mt-1">
@@ -874,63 +876,108 @@ export function MatchDetailsScreen() {
           <MatchCourtPricingBlock opportunity={opportunity} />
 
           {reservationState ? (
-            <div className="rounded-xl border border-border bg-secondary/30 p-3 space-y-2">
-              <p className="text-xs font-medium text-foreground">
-                Estado de reserva de cancha: {reservationState.status === 'pending'
-                  ? 'Pendiente'
-                  : reservationState.status === 'confirmed'
-                    ? 'Confirmada'
-                    : 'Cancelada'}
-              </p>
-              {canSelfConfirmReservation ? (
+            <div
+              className={cn(
+                'rounded-xl border p-3 space-y-3',
+                reservationState.status === 'confirmed' &&
+                  'border-primary/50 bg-primary/10 shadow-sm',
+                reservationState.status === 'pending' &&
+                  'border-border bg-secondary/30',
+                reservationState.status === 'cancelled' &&
+                  'border-destructive/35 bg-destructive/[0.07]',
+              )}
+            >
+              {reservationState.status === 'confirmed' ? (
                 <>
-                  <p className="text-xs text-muted-foreground">
-                    Paso a paso: 1) contacta al centro, 2) valida horario y pago, 3) al cerrar
-                    con el centro, marca esta reserva como confirmada. Queda registrada como
-                    autoconfirmada por el organizador.
-                  </p>
-                  {contactWaHref ? (
-                    <Button
-                      asChild
-                      variant="outline"
-                      size="sm"
-                      className="border-green-500/40 text-green-400 hover:bg-green-500/10"
+                  <div className="flex gap-3 items-start">
+                    <div
+                      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/20 text-primary ring-1 ring-inset ring-primary/25"
+                      aria-hidden
                     >
-                      <a href={contactWaHref} target="_blank" rel="noreferrer">
-                        <MessageCircle className="w-4 h-4 mr-1.5" />
-                        Contactar por WhatsApp al centro
-                      </a>
-                    </Button>
+                      <TicketCheck className="h-6 w-6" strokeWidth={2} />
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <p className="text-sm font-semibold text-foreground leading-tight">
+                        Cancha confirmada
+                      </p>
+                      <p className="text-xs text-muted-foreground leading-snug">
+                        La reserva está confirmada en la app: la cancha queda lista para
+                        jugarse en la fecha y hora del partido (revisa el costo arriba si
+                        aplica).
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground border-t border-primary/15 pt-2.5">
+                    <span className="text-foreground/80 font-medium">
+                      Fuente de confirmación:{' '}
+                    </span>
+                    <span className="text-foreground font-medium">
+                      {reservationState.confirmationSource === 'booker_self'
+                        ? 'Organizador (autoconfirmada)'
+                        : reservationState.confirmationSource === 'venue_owner'
+                          ? 'Centro deportivo'
+                          : reservationState.confirmationSource === 'admin'
+                            ? 'Administrador'
+                            : 'No registrada'}
+                    </span>
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs font-medium text-foreground">
+                    Estado de reserva de cancha:{' '}
+                    {reservationState.status === 'pending'
+                      ? 'Pendiente'
+                      : 'Cancelada'}
+                  </p>
+                  {canSelfConfirmReservation ? (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Paso a paso: 1) contacta al centro, 2) valida horario y pago, 3) al
+                        cerrar con el centro, marca esta reserva como confirmada. Queda
+                        registrada como autoconfirmada por el organizador.
+                      </p>
+                      {contactWaHref ? (
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          className="border-green-500/40 text-green-400 hover:bg-green-500/10"
+                        >
+                          <a href={contactWaHref} target="_blank" rel="noreferrer">
+                            <MessageCircle className="w-4 h-4 mr-1.5" />
+                            Contactar por WhatsApp al centro
+                          </a>
+                        </Button>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Este centro aún no tiene WhatsApp/teléfono cargado.
+                        </p>
+                      )}
+                      <Button
+                        size="sm"
+                        onClick={() => void handleSelfConfirmReservation()}
+                        disabled={selfConfirmReservationMutation.isPending}
+                        className="bg-primary text-primary-foreground hover:bg-primary/90"
+                      >
+                        {selfConfirmReservationMutation.isPending
+                          ? 'Confirmando...'
+                          : 'Ya coordiné con el centro, confirmar reserva'}
+                      </Button>
+                    </>
+                  ) : reservationState.status === 'pending' ? (
+                    <p className="text-xs text-muted-foreground">
+                      Cuando el organizador confirme la reserva en la app, aquí verás el
+                      aviso de cancha lista con el ícono de ticket.
+                    </p>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      Este centro aún no tiene WhatsApp/teléfono cargado.
+                      Esta reserva figura como cancelada. Coordina con el organizador o el
+                      centro si el partido sigue en pie.
                     </p>
                   )}
-                  <Button
-                    size="sm"
-                    onClick={() => void handleSelfConfirmReservation()}
-                    disabled={selfConfirmReservationMutation.isPending}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90"
-                  >
-                    {selfConfirmReservationMutation.isPending
-                      ? 'Confirmando...'
-                      : 'Ya coordiné con el centro, confirmar reserva'}
-                  </Button>
                 </>
-              ) : reservationState.status === 'confirmed' ? (
-                <p className="text-xs text-muted-foreground">
-                  Fuente de confirmación:{' '}
-                  <span className="text-foreground font-medium">
-                    {reservationState.confirmationSource === 'booker_self'
-                      ? 'Organizador (autoconfirmada)'
-                      : reservationState.confirmationSource === 'venue_owner'
-                        ? 'Centro deportivo'
-                        : reservationState.confirmationSource === 'admin'
-                          ? 'Administrador'
-                          : 'No registrada'}
-                  </span>
-                </p>
-              ) : null}
+              )}
             </div>
           ) : (opportunity.status === 'pending' ||
               opportunity.status === 'confirmed') &&
@@ -1072,7 +1119,7 @@ export function MatchDetailsScreen() {
             opportunity.type === 'team_pick_private') &&
             isCreator && (
               <p className="text-xs text-muted-foreground -mt-1 mb-3 leading-relaxed">
-                Como organizador podés cambiar equipo y rol de cualquier jugador y
+                Como organizador puedes cambiar equipo y rol de cualquier jugador y
                 expulsar con motivo hasta 2 horas antes del partido (misma ventana
                 que el ajuste de alineación).
               </p>
@@ -1239,7 +1286,7 @@ export function MatchDetailsScreen() {
                 Solicitudes de jugadores externos
               </h3>
               <p className="text-xs text-muted-foreground">
-                Como organizador del partido podés aceptar o rechazar quién se suma desde afuera del plantel. Si aceptás, juegan solo este encuentro; no ingresan al equipo.
+                Como organizador del partido puedes aceptar o rechazar quién se suma desde afuera del plantel. Si aceptas, juegan solo este encuentro; no ingresan al equipo.
               </p>
               {loadingExtRequests ? (
                 <p className="text-sm text-muted-foreground">Cargando…</p>
@@ -1538,7 +1585,7 @@ export function MatchDetailsScreen() {
           <DialogHeader>
             <DialogTitle>Expulsar jugador</DialogTitle>
             <DialogDescription>
-              El jugador dejará de estar inscrito. Contá un motivo claro (mínimo 5
+              El jugador dejará de estar inscrito. Cuenta un motivo claro (mínimo 5
               caracteres).
             </DialogDescription>
           </DialogHeader>
@@ -1558,7 +1605,7 @@ export function MatchDetailsScreen() {
               ))}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="kick-reason-tp">Motivo (o elegí arriba y ajustá aquí)</Label>
+              <Label htmlFor="kick-reason-tp">Motivo (o elige arriba y ajusta aquí)</Label>
               <Textarea
                 id="kick-reason-tp"
                 value={kickReason}

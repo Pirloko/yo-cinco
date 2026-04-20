@@ -8,7 +8,7 @@ type AppScreenBrandHeadingProps = {
   eyebrow?: string
   title: string
   subtitle?: string
-  /** Por defecto `h1`; usá `p` si la pantalla define su propio `h1` principal. */
+  /** Por defecto `h1`; usa `p` si la pantalla define su propio `h1` principal. */
   titleAs?: 'h1' | 'p'
   /** Ej.: botón atrás a la izquierda del logo */
   before?: ReactNode

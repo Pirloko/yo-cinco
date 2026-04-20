@@ -15,7 +15,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: 'Canchas de fútbol 7 y futbolito en San Lorenzo Rancagua | Sportmatch',
     description:
-      'San Lorenzo, Rancagua: futbolito, fútbol 7 y canchas para jugar con equipo o revuelta. Encontrá partidos y reservá cancha con Sportmatch.',
+      'San Lorenzo, Rancagua: futbolito, fútbol 7 y canchas para jugar con equipo o revuelta. Encuentra partidos y reserva cancha con Sportmatch.',
     alternates: { canonical },
     openGraph: {
       title: 'Canchas en San Lorenzo Rancagua | Sportmatch',
@@ -49,7 +49,7 @@ export default async function SanLorenzoCanchasPage() {
             veas el detalle y coordines pago y confirmación con el grupo.
           </p>
           <p>
-            Para más opciones en toda la ciudad, visitá{' '}
+            Para más opciones en toda la ciudad, visita{' '}
             <Link
               href="/rancagua/futbolito"
               className="font-medium text-primary underline-offset-4 hover:underline"

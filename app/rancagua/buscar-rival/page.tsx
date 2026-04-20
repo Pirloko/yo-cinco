@@ -14,12 +14,12 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: 'Buscar rival en Rancagua | Sportmatch',
     description:
-      'Desafía a otro equipo: partidos tipo rival en Rancagua. En Sportmatch ves oportunidades confirmadas o pendientes y entrás a la app para coordinar.',
+      'Desafía a otro equipo: partidos tipo rival en Rancagua. En Sportmatch ves oportunidades confirmadas o pendientes y entras a la app para coordinar.',
     alternates: { canonical },
     openGraph: {
       title: 'Buscar rival en Rancagua | Sportmatch',
       description:
-        'Listado de partidos busca rival en Rancagua. Encontrá equipos para jugar fútbol amateur.',
+        'Listado de partidos busca rival en Rancagua. Encuentra equipos para jugar fútbol amateur.',
       url: canonical,
     },
   }
@@ -34,7 +34,7 @@ export default async function BuscarRivalRancaguaPage() {
       h1="Buscar rival para partido en Rancagua"
       intro={
         <p>
-          Si tu equipo busca rival en Rancagua, acá ves publicaciones activas
+          Si tu equipo busca rival en Rancagua, aquí ves publicaciones activas
           donde otro grupo ya dejó la pichanga armada o está buscando
           contrincante. Sportmatch concentra el tipo de partido &quot;rival&quot;
           para que capitanes y jugadores entren a la app, revisen fecha, nivel y

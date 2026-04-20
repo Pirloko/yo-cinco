@@ -12,7 +12,7 @@ export function isTeamLimitReached(err: unknown): boolean {
 
 export function toastTeamLimitReached() {
   toast.error(
-    `Llegaste al maximo de ${TEAM_USER_MAX_MEMBERSHIPS} equipos en los que podes participar.`
+    `Llegaste al máximo de ${TEAM_USER_MAX_MEMBERSHIPS} equipos en los que puedes participar.`
   )
 }
 

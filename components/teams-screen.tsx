@@ -688,12 +688,12 @@ export function TeamsScreen() {
                   {played === 0 ? (
                     <p className="text-[11px] text-muted-foreground mt-1.5">
                       Sin partidos rival cerrados aún · el ranking se mueve cuando
-                      hay resultados. Tocá la tarjeta para ver la ficha del equipo.
+                      hay resultados. Toca la tarjeta para ver la ficha del equipo.
                     </p>
                   ) : (
                     <p className="text-[11px] text-muted-foreground mt-1.5">
                       {played} partido{played !== 1 ? 's' : ''} jugado
-                      {played !== 1 ? 's' : ''} · tocá la tarjeta para abrir la
+                      {played !== 1 ? 's' : ''} · toca la tarjeta para abrir la
                       ficha.
                     </p>
                   )}
@@ -791,7 +791,7 @@ export function TeamsScreen() {
                   e.stopPropagation()
                   if (!canChallenge) {
                     toast.error(
-                      'Debés ser capitán o vicecapitán de un equipo para desafiar.'
+                      'Debes ser capitán o vicecapitán de un equipo para desafiar.'
                     )
                     return
                   }
@@ -984,7 +984,7 @@ export function TeamsScreen() {
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    No podés aceptar: necesitás ser capitán o vicecapitán de un
+                    No puedes aceptar: necesitas ser capitán o vicecapitán de un
                     equipo.
                   </p>
                 )}
@@ -1087,7 +1087,7 @@ export function TeamsScreen() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground mb-3">
-            Podés ser parte de hasta{' '}
+            Puedes ser parte de hasta{' '}
             <span className="text-foreground font-medium">
               {TEAM_USER_MAX_MEMBERSHIPS}
             </span>{' '}
@@ -1159,8 +1159,8 @@ export function TeamsScreen() {
                   : `Equipos en ${currentUser?.city || 'tu ciudad'}`}
               </h2>
               <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-                Descubrí planteles cerca tuyo: leé la descripción, mirá el
-                fogueo y pedí unirte o mandá un desafío.
+                Descubre planteles cerca tuyo: lee la descripción, mira el
+                fogueo y pide unirte o manda un desafío.
               </p>
               <div className="space-y-3">
                 {allTeams
@@ -1562,8 +1562,8 @@ export function TeamsScreen() {
             <div className="mb-6 rounded-xl border border-border bg-card/50 p-4 space-y-2">
               <Label className="text-foreground">Vicecapitán</Label>
               <p className="text-xs text-muted-foreground">
-                Designá a un miembro confirmado para que gestione plantilla,
-                solicitudes y desafíos. Solo vos podés editar nombre, escudo,
+                Designa a un miembro confirmado para que gestione plantilla,
+                solicitudes y desafíos. Solo tú puedes editar nombre, escudo,
                 descripción, WhatsApp y reglas.
               </p>
               <select

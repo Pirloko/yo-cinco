@@ -20,7 +20,7 @@ export async function generateMetadata(): Promise<Metadata> {
     openGraph: {
       title: 'Canchas Energy en Rancagua | Sportmatch',
       description:
-        'Encontrá futbolito y fútbol 7 en canchas en Rancagua vinculadas a Energy. Sumate a partidos desde la app.',
+        'Encuentra futbolito y fútbol 7 en canchas en Rancagua vinculadas a Energy. Únete a partidos desde la app.',
       url: canonical,
     },
   }
@@ -39,17 +39,17 @@ export default async function EnergyCanchasPage() {
       intro={
         <>
           <p>
-            Cuando buscás <strong>futbolito</strong> o <strong>fútbol 7</strong>{' '}
+            Cuando buscas <strong>futbolito</strong> o <strong>fútbol 7</strong>{' '}
             y el nombre del recinto o la ubicación incluye{' '}
             <strong>Energy</strong>, conviene tener un solo lugar donde ver
             quién arma partido y cuándo rueda la pelota en las{' '}
             <strong>canchas en Rancagua</strong>. Sportmatch muestra títulos y
-            lugares publicados por organizadores reales: desde ahí abrís la
-            aplicación, te sumás como jugador o arquero y seguís el hilo con el
+            lugares publicados por organizadores reales: desde ahí abres la
+            aplicación, te sumas como jugador o arquero y sigues el hilo con el
             grupo para la reserva y el pago de la cancha.
           </p>
           <p>
-            Explorá también la guía general de{' '}
+            Explora también la guía general de{' '}
             <Link
               href="/rancagua/futbolito"
               className="font-medium text-primary underline-offset-4 hover:underline"

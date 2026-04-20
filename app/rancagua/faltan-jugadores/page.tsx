@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: 'Faltan jugadores en Rancagua | Sportmatch',
     description:
-      'Partidos que buscan jugadores o arquero en Rancagua. Sumate desde la app Sportmatch y completá la pichanga.',
+      'Partidos que buscan jugadores o arquero en Rancagua. Únete desde la app Sportmatch y completa la pichanga.',
     alternates: { canonical },
     openGraph: {
       title: 'Faltan jugadores en Rancagua | Sportmatch',
@@ -36,10 +36,10 @@ export default async function FaltanJugadoresRancaguaPage() {
         <p>
           Cuando a la pichanga le faltan jugadores o arquero, los organizadores
           la publican en Sportmatch para que completes el cupo en Rancagua. Este
-          listado muestra partidos activos con fecha futura: entrás con el
-          enlace, abrís la app y te ofrecés según lo que busque el creador
-          (arco, campo o ambos). Así evitás quedarte a las malas con equipos
-          incompletos y mantenés el juego parejo para todos los que van al
+          listado muestra partidos activos con fecha futura: entras con el
+          enlace, abres la app y te ofreces según lo que busque el creador
+          (arco, campo o ambos). Así evitas quedarte a las malas con equipos
+          incompletos y mantienes el juego parejo para todos los que van al
           encuentro.
         </p>
       }

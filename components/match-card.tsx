@@ -195,7 +195,7 @@ export function MatchCard({
         </div>
         {match.type === 'team_pick_private' && !isOwn ? (
           <p className="mt-2 text-[10px] text-muted-foreground leading-snug">
-            Para unirte necesitás el código de 4 dígitos (no se muestra en el listado).
+            Para unirte necesitas el código de 4 dígitos (no se muestra en el listado).
           </p>
         ) : null}
       </div>

@@ -149,7 +149,7 @@ export default async function RevueltaPublicPage({
           ) : (
             <div className="space-y-2">
               <p className="text-muted-foreground">
-                En la app elegís equipo (A o B) y rol para este encuentro.
+                En la app eliges equipo (A o B) y rol para este encuentro.
               </p>
               <p className="text-xs text-foreground/90 flex flex-wrap gap-x-4 gap-y-1">
                 {(() => {

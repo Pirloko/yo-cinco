@@ -65,10 +65,10 @@ export function RancaguaSeoPage({
             id="cta-sportmatch-heading"
             className="text-lg font-semibold tracking-tight text-foreground md:text-xl"
           >
-            Sumate a Sportmatch
+            Únete a Sportmatch
           </h2>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground md:text-base">
-            Creá tu perfil gratis, publicá o unite a partidos y coordiná la cancha
+            Crea tu perfil gratis, publica o únete a partidos y coordina la cancha
             desde el celular. En segundos estás adentro.
           </p>
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
@@ -114,7 +114,7 @@ export function RancaguaSeoPage({
                 href="/?register=1"
                 className="font-medium text-primary underline-offset-4 hover:underline"
               >
-                Creá tu perfil
+                Crea tu perfil
               </a>{' '}
               para publicar el primero o buscar rivales y cupos en la app.
             </p>

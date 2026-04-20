@@ -269,7 +269,7 @@ export function HomeScreen() {
           <QuickActionCard
             icon={<Swords className="w-6 h-6" />}
             label="Selección de equipos"
-            cta="Elegí equipo A o B y tu posición."
+            cta="Elige equipo A o B y tu posición."
             selected={activeFilter === 'team_pick'}
             color="bg-primary/10 text-primary border-primary/30"
             onClick={() => setActiveFilter('team_pick')}
@@ -280,11 +280,11 @@ export function HomeScreen() {
           <div className="flex items-center gap-2">
             <Swords className="w-5 h-5 text-primary shrink-0" aria-hidden />
             <h3 className="text-sm font-semibold text-foreground">
-              Selección de equipos privado: ¿tenés el código?
+              Selección de equipos privado: ¿tienes el código?
             </h3>
           </div>
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Ingresá los 4 dígitos que te pasó el organizador. Podés unirte aunque el
+            Ingresa los 4 dígitos que te pasó el organizador. Puedes unirte aunque el
             partido no aparezca en tu listado.
           </p>
           <div className="flex flex-col sm:flex-row gap-2 sm:items-center">

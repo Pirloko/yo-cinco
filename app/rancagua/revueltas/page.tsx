@@ -14,12 +14,12 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: 'Revueltas de fútbol en Rancagua | Sportmatch',
     description:
-      'Revueltas abiertas en Rancagua: armá equipos al azar y jugá. Listado de partidos tipo open en Sportmatch.',
+      'Revueltas abiertas en Rancagua: arma equipos al azar y juega. Listado de partidos tipo open en Sportmatch.',
     alternates: { canonical },
     openGraph: {
       title: 'Revueltas de fútbol en Rancagua | Sportmatch',
       description:
-        'Encontrá revueltas y partidos abiertos en Rancagua para sumarte desde la app.',
+        'Encuentra revueltas y partidos abiertos en Rancagua para sumarte desde la app.',
       url: canonical,
     },
   }
@@ -35,8 +35,8 @@ export default async function RevueltasRancaguaPage() {
       intro={
         <p>
           Las revueltas son partidos abiertos donde se arman equipos al voleo y
-          se completa la lista de jugadores en Rancagua. En Sportmatch podés ver
-          cuándo y dónde se juega, y desde el enlace entrás a la aplicación para
+          se completa la lista de jugadores en Rancagua. En Sportmatch puedes ver
+          cuándo y dónde se juega, y desde el enlace entras a la aplicación para
           sumarte con tu rol (incluido arquero cuando corresponde). Es la
           forma más directa de meterse a una pichanga mixta sin equipo fijo,
           manteniendo la organización y la comunicación en un solo lugar.

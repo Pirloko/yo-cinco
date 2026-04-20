@@ -229,7 +229,7 @@ export function TeamPickLineupEditDialog({
             </div>
             {sideFull ? (
               <p className="text-xs text-destructive">
-                Este equipo está completo. Elegí el otro bando.
+                Este equipo está completo. Elige el otro bando.
               </p>
             ) : null}
           </div>
@@ -256,13 +256,13 @@ export function TeamPickLineupEditDialog({
             </div>
             {gkTakenOnSide ? (
               <p className="text-xs text-muted-foreground leading-snug">
-                Ya hay arquero en el equipo {pickTeam}. Elegí otra posición u otro bando
+                Ya hay arquero en el equipo {pickTeam}. Elige otra posición u otro bando
                 con cupo de arquero.
               </p>
             ) : null}
             {fieldFullOnSide && !gkTakenOnSide ? (
               <p className="text-xs text-muted-foreground leading-snug">
-                Cupo de campo lleno en el equipo {pickTeam}. Podés ir de arquero si hay
+                Cupo de campo lleno en el equipo {pickTeam}. Puedes ir de arquero si hay
                 cupo.
               </p>
             ) : null}

@@ -37,7 +37,7 @@ export default async function FutbolitoRancaguaPage() {
       intro={
         <>
           <p>
-            En Sportmatch podés encontrar partidos de futbolito y fútbol amateur
+            En Sportmatch puedes encontrar partidos de futbolito y fútbol amateur
             en Rancagua: rivales para tu equipo, cupos cuando faltan jugadores y
             revueltas abiertas para completar equipos. Publicamos listados
             actualizados con fecha y lugar para que entres a la app, te sumes al

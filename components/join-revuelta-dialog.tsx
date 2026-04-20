@@ -117,7 +117,7 @@ export function JoinRevueltaDialog({
           </DialogTitle>
           <DialogDescription>
             {mode === 'request'
-              ? `${opportunity.title} — revuelta privada de equipo. Elegí rol; el organizador del partido aceptará o rechazará tu solicitud. No pasás a ser miembro del plantel.`
+              ? `${opportunity.title} — revuelta privada de equipo. Elige rol; el organizador del partido aceptará o rechazará tu solicitud. No pasas a ser miembro del plantel.`
               : `${opportunity.title} — selecciona tu rol.`}
           </DialogDescription>
         </DialogHeader>
