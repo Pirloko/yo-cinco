@@ -27,7 +27,6 @@ import {
 import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
 import {
   fetchMyRatingForOpportunity,
-  getRatingDeadline,
   isMatchChatMessagingOpen,
   type MatchOpportunityRatingRow,
 } from '@/lib/supabase/rating-queries'
@@ -42,7 +41,7 @@ import {
 } from '@/lib/team-pick-ui'
 import { RevueltaTeamsPanel } from '@/components/revuelta-teams-panel'
 import { ArrowLeft, Send, Calendar, MapPin, Info } from 'lucide-react'
-import { format, formatDistanceToNow } from 'date-fns'
+import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { prefetchPublicPlayerProfile } from '@/lib/public-player-prefetch'
@@ -740,27 +739,17 @@ export function ChatScreen() {
           <div className="rounded-xl border border-border bg-secondary/50 px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
             {opportunity.status === 'cancelled' ? (
               <span>Este partido fue cancelado; el chat no admite nuevos mensajes.</span>
-            ) : opportunity.status === 'completed' && opportunity.finalizedAt ? (
+            ) : opportunity.status === 'completed' ? (
               <span>
-                Chat cerrado: pasaron las 48 h tras finalizar el partido (la misma
-                ventana que las reseñas). Puedes leer el historial arriba.
+                Partido finalizado: el chat del grupo es solo lectura. Puedes
+                leer el historial arriba y dejar tu calificación desde el detalle
+                del partido cuando quieras.
               </span>
             ) : (
               <span>No se pueden enviar mensajes en este chat.</span>
             )}
           </div>
         )}
-        {chatMessagingOpen &&
-          opportunity?.status === 'completed' &&
-          opportunity.finalizedAt && (
-            <p className="text-[11px] text-muted-foreground text-center">
-              El chat se cierra{' '}
-              {formatDistanceToNow(getRatingDeadline(opportunity.finalizedAt), {
-                locale: es,
-                addSuffix: true,
-              })}
-            </p>
-          )}
         <div className="flex items-center gap-2">
           <Input
             placeholder={

@@ -18,11 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  getRatingDeadline,
-  isRatingWindowOpen,
-  type MatchOpportunityRatingRow,
-} from '@/lib/supabase/rating-queries'
+import type { MatchOpportunityRatingRow } from '@/lib/supabase/rating-queries'
 import { Trophy, ClipboardCheck, Star, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -166,11 +162,9 @@ export function MatchCompletionPanel({
     return opportunity.dateTime.getTime() < midnight.getTime()
   })()
   const finalizedAt = opportunity.finalizedAt
-  const windowOpen =
-    completed && finalizedAt && isRatingWindowOpen(finalizedAt)
   const canRate =
     completed &&
-    windowOpen &&
+    !!finalizedAt &&
     (isCreator || isConfirmedParticipant) &&
     !myRating &&
     !loadingRating
@@ -660,8 +654,8 @@ export function MatchCompletionPanel({
             {needsResolveAfterMidnight ? 'Resolver partido' : 'Finalizar partido'}
           </p>
           <p className="text-xs text-muted-foreground">
-            Al cerrar, se registrará el resultado y se abrirá la ventana de 48 h
-            para que los jugadores califiquen.
+            Al cerrar, se registrará el resultado. Cada jugador podrá calificar
+            cuando entre al detalle del partido (sin plazo de caducidad).
           </p>
           <Button
             type="button"
@@ -692,7 +686,8 @@ export function MatchCompletionPanel({
                       : 'Confirmar cierre'}
                 </DialogTitle>
                 <DialogDescription>
-                  Se abrirá la ventana de 48 h para que los jugadores califiquen.
+                  Los jugadores podrán dejar su calificación desde el detalle del
+                  partido cuando les acomode (una sola vez cada uno).
                   {opportunity.type === 'players' ||
                   opportunity.type === 'team_pick_public' ||
                   opportunity.type === 'team_pick_private'
@@ -1353,15 +1348,6 @@ export function MatchCompletionPanel({
             Partido finalizado
           </p>
           {outcomeLine()}
-          {finalizedAt && windowOpen && (
-            <p className="text-xs text-muted-foreground">
-              Plazo de calificación: termina{' '}
-              {formatDistanceToNow(getRatingDeadline(finalizedAt), {
-                locale: es,
-                addSuffix: true,
-              })}
-            </p>
-          )}
         </div>
       )}
 
@@ -1377,6 +1363,15 @@ export function MatchCompletionPanel({
 
       {canRate && (
         <div className="space-y-4 pt-1">
+          <div className="rounded-xl border border-primary/40 bg-primary/10 px-3 py-2.5 space-y-1">
+            <p className="text-sm font-semibold text-foreground">
+              Falta tu calificación
+            </p>
+            <p className="text-xs text-muted-foreground leading-snug">
+              Toma unos segundos: ayuda a la comunidad. Puedes enviarla cuando
+              quieras; no caduca.
+            </p>
+          </div>
           <p className="text-sm font-medium text-foreground">
             Tu calificación (una sola vez)
           </p>
@@ -1433,16 +1428,6 @@ export function MatchCompletionPanel({
         </div>
       )}
 
-      {completed &&
-        finalizedAt &&
-        !windowOpen &&
-        !myRating &&
-        (isCreator || isConfirmedParticipant) &&
-        !loadingRating && (
-          <p className="text-xs text-muted-foreground">
-            El plazo de 48 h para calificar ya cerró.
-          </p>
-        )}
     </div>
   )
 }

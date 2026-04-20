@@ -332,7 +332,7 @@ export interface MatchOpportunity {
     endsAt: Date
     currency: string
   } | null
-  /** Cuando el organizador cerró el partido (inicio ventana 48 h para calificar). */
+  /** Cuando el organizador cerró el partido (desde aquí se pueden enviar calificaciones sin caducidad). */
   finalizedAt?: Date
   rivalResult?: RivalResult
   /** Partidos players/open: marcado como jugado sin marcador de equipos. */

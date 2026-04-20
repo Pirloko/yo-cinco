@@ -1458,7 +1458,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const matches = await fetchLatestMatchOpportunities(supabase)
     setMatchOpportunities(matches)
     await refreshCurrentUserProfile()
-    toast.success('Resultado confirmado. Ventana de calificaciones 48 h.')
+    toast.success(
+      'Resultado confirmado. Los jugadores pueden calificar desde el detalle del partido.'
+    )
   })
 
   const finalizeMatchOpportunity = useStableCallback(async (
@@ -1526,7 +1528,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const matches = await fetchLatestMatchOpportunities(supabase)
       setMatchOpportunities(matches)
       await refreshCurrentUserProfile()
-      toast.success('Partido finalizado. Los jugadores pueden calificar en las próximas 48 h.')
+      toast.success(
+        'Partido finalizado. Los jugadores pueden calificar desde el detalle cuando quieran.'
+      )
       return true
     }
 
@@ -1542,7 +1546,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const matches = await fetchLatestMatchOpportunities(supabase)
       setMatchOpportunities(matches)
       await refreshCurrentUserProfile()
-      toast.success('Partido finalizado. Los jugadores pueden calificar en las próximas 48 h.')
+      toast.success(
+        'Partido finalizado. Los jugadores pueden calificar desde el detalle cuando quieran.'
+      )
       return true
     }
 
@@ -1568,7 +1574,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const matches = await fetchLatestMatchOpportunities(supabase)
     setMatchOpportunities(matches)
     await refreshCurrentUserProfile()
-    toast.success('Partido finalizado. Los jugadores pueden calificar en las próximas 48 h.')
+    toast.success(
+      'Partido finalizado. Los jugadores pueden calificar desde el detalle cuando quieran.'
+    )
     return true
   })
 

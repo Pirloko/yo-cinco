@@ -38,31 +38,16 @@ export async function fetchMyRatingForOpportunity(
   return data as MatchOpportunityRatingRow
 }
 
-/** Ventana de 48 h desde finalized_at (solo UI). */
-export function getRatingDeadline(finalizedAt: Date): Date {
-  return new Date(finalizedAt.getTime() + 48 * 60 * 60 * 1000)
-}
-
-export function isRatingWindowOpen(finalizedAt: Date | undefined): boolean {
-  if (!finalizedAt) return false
-  return Date.now() <= getRatingDeadline(finalizedAt).getTime()
-}
-
 /**
  * ¿Se pueden enviar mensajes en el chat del partido?
  * - Partidos no finalizados: sí.
  * - Cancelados: no.
- * - Finalizados: solo durante las mismas 48 h posteriores a `finalizedAt` que las reseñas.
+ * - Finalizados: solo lectura (el hilo queda como historial; las calificaciones no caducan).
  */
-export function isMatchChatMessagingOpen(opp: {
-  status: string
-  finalizedAt?: Date
-}): boolean {
+export function isMatchChatMessagingOpen(opp: { status: string }): boolean {
   if (opp.status === 'cancelled') return false
-  if (opp.status !== 'completed') return true
-  const fa = opp.finalizedAt
-  if (!fa) return true
-  return isRatingWindowOpen(fa)
+  if (opp.status === 'completed') return false
+  return true
 }
 
 function round1(n: number): number {
