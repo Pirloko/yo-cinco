@@ -1,38 +1,13 @@
 'use client'
 
-import { memo, useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useAppAuth } from '@/lib/app-context'
 import type { MatchOpportunity } from '@/lib/types'
 import type { OpportunityParticipantRow } from '@/lib/supabase/message-queries'
 import { JERSEY_COLOR_PRESETS } from '@/lib/jersey-colors'
 import { Button } from '@/components/ui/button'
+import { TeamPickShieldShape } from '@/components/team-pick-jersey-color-picker'
 import { Loader2 } from 'lucide-react'
-
-function shirtEmojiColor(hex: string): string {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
-  if (!m) return '#fff'
-  const n = parseInt(m[1], 16)
-  const r = (n >> 16) & 255
-  const g = (n >> 8) & 255
-  const b = n & 255
-  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-  return lum < 0.45 ? '#fff' : '#171717'
-}
-
-const JerseyBadge = memo(function JerseyBadge({ hex }: { hex: string }) {
-  return (
-    <div
-      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border-2 border-border text-2xl shadow-sm"
-      style={{
-        backgroundColor: hex,
-        color: shirtEmojiColor(hex),
-      }}
-      title="Camiseta"
-    >
-      👕
-    </div>
-  )
-})
 
 type Props = {
   opportunity: MatchOpportunity
@@ -111,7 +86,14 @@ export function RevueltaTeamsPanel({
   const renderTeam = (label: string, userIds: string[], hex: string) => (
     <div className="rounded-xl border border-border bg-secondary/40 p-3 space-y-2">
       <div className="flex items-center gap-3">
-        <JerseyBadge hex={hex} />
+        <TeamPickShieldShape
+          fill={hex}
+          className={
+            compact
+              ? 'h-10 w-8 shrink-0 drop-shadow-sm'
+              : 'h-12 w-9 shrink-0 drop-shadow-md'
+          }
+        />
         <div className="min-w-0">
           <p className="font-semibold text-foreground text-sm">{label}</p>
           <p className="text-[11px] text-muted-foreground">
@@ -182,7 +164,10 @@ export function RevueltaTeamsPanel({
         </p>
       )}
 
-      {isOrganizer && full && hasTwoGoalkeepers && (
+      {isOrganizer &&
+        full &&
+        hasTwoGoalkeepers &&
+        opportunity.status !== 'completed' && (
         <div className="space-y-3 border-t border-border pt-3">
           {!compact && (
             <p className="text-xs font-medium text-muted-foreground">

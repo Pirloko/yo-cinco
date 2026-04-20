@@ -38,6 +38,16 @@ export function parseVenuePhoneChile(
   return { valid: false }
 }
 
+/** `https://wa.me/...` solo si el valor cumple formato jugador Chile (+569 + 8 dígitos). */
+export function whatsappWaMeBaseHref(
+  phone: string | null | undefined
+): string | null {
+  const t = (phone ?? '').trim()
+  if (!t || !isValidFullPlayerWhatsapp(t)) return null
+  const digits = t.replace(/\D/g, '')
+  return digits ? `https://wa.me/${digits}` : null
+}
+
 export function extractWhatsappSuffix8(stored: string | undefined | null): string {
   const raw = (stored ?? '').trim().replace(/\s/g, '')
   if (!raw) return ''

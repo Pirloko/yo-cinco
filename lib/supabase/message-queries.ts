@@ -103,6 +103,8 @@ export type OpportunityParticipantRow = {
   id: string
   name: string
   photo: string
+  /** `profiles.whatsapp_phone` si la política permite leerlo al viewer. */
+  whatsappPhone?: string | null
   status: 'creator' | 'confirmed' | 'pending' | 'invited' | 'cancelled'
   /** Solo revuelta (open): participante eligió ir de arquero. */
   isGoalkeeper?: boolean
@@ -152,7 +154,7 @@ export async function fetchParticipantsForOpportunity(
 
   const { data: profs } = await supabase
     .from('profiles')
-    .select('id, name, photo_url')
+    .select('id, name, photo_url, whatsapp_phone')
     .in('id', [...userIds])
 
   const byId = new Map((profs ?? []).map((r) => [r.id as string, r] as const))
@@ -169,6 +171,7 @@ export async function fetchParticipantsForOpportunity(
       id: creatorId,
       name: (c?.name as string) || 'Organizador',
       photo: (c?.photo_url as string) || DEFAULT_AVATAR,
+      whatsappPhone: (c?.whatsapp_phone as string | null | undefined) ?? null,
       status: 'creator',
       isGoalkeeper: creatorPart ? creatorPart.is_goalkeeper === true : false,
       pickTeam: (creatorPart?.pick_team as PickTeamSide | undefined) ?? undefined,
@@ -188,6 +191,7 @@ export async function fetchParticipantsForOpportunity(
       id: uid,
       name: (u?.name as string) || 'Jugador',
       photo: (u?.photo_url as string) || DEFAULT_AVATAR,
+      whatsappPhone: (u?.whatsapp_phone as string | null | undefined) ?? null,
       status: (p.status as OpportunityParticipantRow['status']) || 'pending',
       isGoalkeeper: p.is_goalkeeper === true,
       pickTeam: (p.pick_team as PickTeamSide | undefined) ?? undefined,

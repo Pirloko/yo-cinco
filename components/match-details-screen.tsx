@@ -66,7 +66,6 @@ import {
   canEditTeamPickLineupBeforeDeadline,
   TEAM_PICK_MAX_FIELD_PER_SIDE,
   TEAM_PICK_MAX_GK_PER_SIDE,
-  teamPickAccentBorderForOutline,
   teamPickColorsForUi,
   encounterLineupRoleLabel,
   teamPickJerseyPresetLabel,
@@ -75,6 +74,8 @@ import {
 } from '@/lib/team-pick-ui'
 import { playersSeekProfileLabel } from '@/lib/players-seek-profile'
 import { MatchCourtPricingBlock } from '@/components/match-court-pricing'
+import { TeamPickShieldShape } from '@/components/team-pick-jersey-color-picker'
+import { whatsappWaMeBaseHref } from '@/lib/player-whatsapp'
 import { prefetchPublicPlayerProfile } from '@/lib/public-player-prefetch'
 import { getOrganizerTier } from '@/lib/organizer-level'
 import { fetchOrganizerCompletedCount } from '@/lib/supabase/queries'
@@ -594,6 +595,25 @@ export function MatchDetailsScreen() {
     return participants.find((x) => x.id === lineupEditUserId) ?? null
   }, [lineupEditUserId, participants])
 
+  const organizerWhatsappUrlForParticipant = useCallback(
+    (p: OpportunityParticipantRow): string | null => {
+      if (!opportunity || !isCreator || p.id === opportunity.creatorId) return null
+      if (
+        p.status !== 'confirmed' &&
+        p.status !== 'pending' &&
+        p.status !== 'invited'
+      ) {
+        return null
+      }
+      const base = whatsappWaMeBaseHref(p.whatsappPhone)
+      if (!base) return null
+      const first = p.name.trim().split(/\s+/)[0] || 'hola'
+      const msg = `Hola ${first}, soy ${currentUser.name} (organizo el partido «${opportunity.title}» el ${formatMatchInTimezone(opportunity.dateTime, "EEEE d 'de' MMMM")} a las ${formatMatchInTimezone(opportunity.dateTime, 'HH:mm')} en ${opportunity.venue}, ${opportunity.location}). ¿Confirmas que vas a asistir? Cuando puedas, responde por aquí. ¡Gracias!`
+      return `${base}?text=${encodeURIComponent(msg)}`
+    },
+    [currentUser.name, isCreator, opportunity]
+  )
+
   const renderTeamPickParticipantRow = (p: OpportunityParticipantRow) => {
     const isTeamPickOpp =
       opportunity.type === 'team_pick_public' ||
@@ -615,8 +635,23 @@ export function MatchDetailsScreen() {
       isCreator &&
       p.id !== opportunity.creatorId &&
       (p.status === 'confirmed' || p.status === 'pending')
+    const waHref = organizerWhatsappUrlForParticipant(p)
+    const waBtn =
+      waHref ? (
+        <Button
+          asChild
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs border-green-500/45 text-green-400 hover:bg-green-500/10"
+        >
+          <a href={waHref} target="_blank" rel="noreferrer">
+            <MessageCircle className="w-3.5 h-3.5 mr-1 shrink-0" aria-hidden />
+            WhatsApp
+          </a>
+        </Button>
+      ) : null
     const actions =
-      mayEditLineup || mayKick ? (
+      mayEditLineup || mayKick || waBtn ? (
         <div className="flex flex-wrap gap-1.5 justify-end w-full">
           {mayEditLineup ? (
             <Button
@@ -643,6 +678,7 @@ export function MatchDetailsScreen() {
               Expulsar
             </Button>
           ) : null}
+          {waBtn}
         </div>
       ) : null
     return (
@@ -1070,6 +1106,7 @@ export function MatchDetailsScreen() {
         <div className="bg-card rounded-2xl border border-border p-4 space-y-4">
           {(opportunity.type === 'team_pick_public' ||
             opportunity.type === 'team_pick_private') &&
+            opportunity.status !== 'completed' &&
             (() => {
               const { colorA, colorB } = teamPickColorsForUi(opportunity)
               return (
@@ -1082,13 +1119,9 @@ export function MatchDetailsScreen() {
                       <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
                         Equipo A
                       </span>
-                      <span
-                        className="h-5 w-5 shrink-0 rounded-full border-2 shadow-sm"
-                        style={{
-                          backgroundColor: colorA,
-                          borderColor: teamPickAccentBorderForOutline(colorA),
-                        }}
-                        aria-hidden
+                      <TeamPickShieldShape
+                        fill={colorA}
+                        className="h-8 w-6 shrink-0 drop-shadow-sm"
                       />
                       <span className="text-sm font-medium text-foreground truncate">
                         {teamPickJerseyPresetLabel(colorA)}
@@ -1098,13 +1131,9 @@ export function MatchDetailsScreen() {
                       <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
                         Equipo B
                       </span>
-                      <span
-                        className="h-5 w-5 shrink-0 rounded-full border-2 shadow-sm"
-                        style={{
-                          backgroundColor: colorB,
-                          borderColor: teamPickAccentBorderForOutline(colorB),
-                        }}
-                        aria-hidden
+                      <TeamPickShieldShape
+                        fill={colorB}
+                        className="h-8 w-6 shrink-0 drop-shadow-sm"
                       />
                       <span className="text-sm font-medium text-foreground truncate">
                         {teamPickJerseyPresetLabel(colorB)}
@@ -1148,9 +1177,9 @@ export function MatchDetailsScreen() {
                           >
                             <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-border/60">
                               <span className="flex items-center gap-2 text-sm font-semibold text-foreground min-w-0">
-                                <span
-                                  className="h-3 w-3 rounded-full border border-border shrink-0"
-                                  style={{ backgroundColor: color }}
+                                <TeamPickShieldShape
+                                  fill={color}
+                                  className="h-9 w-7 shrink-0 drop-shadow-sm"
                                 />
                                 Equipo {side}
                                 {teamPickSideIsFull(s) ? (
@@ -1227,8 +1256,26 @@ export function MatchDetailsScreen() {
                     isCreator &&
                     p.id !== opportunity.creatorId &&
                     (p.status === 'confirmed' || p.status === 'pending')
+                  const waHrefList = organizerWhatsappUrlForParticipant(p)
+                  const waBtnList =
+                    waHrefList ? (
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs border-green-500/45 text-green-400 hover:bg-green-500/10"
+                      >
+                        <a href={waHrefList} target="_blank" rel="noreferrer">
+                          <MessageCircle
+                            className="w-3.5 h-3.5 mr-1 shrink-0"
+                            aria-hidden
+                          />
+                          WhatsApp
+                        </a>
+                      </Button>
+                    ) : null
                   const actions =
-                    mayEditLineup || mayKick ? (
+                    mayEditLineup || mayKick || waBtnList ? (
                       <div className="flex flex-wrap gap-1.5 justify-end w-full">
                         {mayEditLineup ? (
                           <Button
@@ -1255,6 +1302,7 @@ export function MatchDetailsScreen() {
                             Expulsar
                           </Button>
                         ) : null}
+                        {waBtnList}
                       </div>
                     ) : null
                   return (

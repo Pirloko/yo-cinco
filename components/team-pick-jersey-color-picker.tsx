@@ -14,7 +14,7 @@ function strokeForShieldFill(hex: string): string {
 }
 
 /** Escudo tipo club; el relleno es el color del equipo. */
-function TeamPickShieldShape({
+export function TeamPickShieldShape({
   fill,
   className,
 }: {

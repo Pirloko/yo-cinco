@@ -50,15 +50,16 @@ function parseParticipantStatus(
 async function fetchProfileBasics(
   supabase: SupabaseClient,
   userId: string
-): Promise<{ name: string; photo: string }> {
+): Promise<{ name: string; photo: string; whatsappPhone: string | null }> {
   const { data } = await supabase
     .from('profiles')
-    .select('name, photo_url')
+    .select('name, photo_url, whatsapp_phone')
     .eq('id', userId)
     .maybeSingle()
   return {
     name: (data?.name as string)?.trim() || 'Jugador',
     photo: (data?.photo_url as string)?.trim() || DEFAULT_AVATAR,
+    whatsappPhone: (data?.whatsapp_phone as string | null | undefined) ?? null,
   }
 }
 
@@ -148,11 +149,15 @@ export async function applyMatchOpportunityParticipantsRealtime(
     }
 
     if (ev.eventType === 'INSERT' || ev.eventType === 'UPDATE') {
-      const { name, photo } = await fetchProfileBasics(supabase, userId)
+      const { name, photo, whatsappPhone } = await fetchProfileBasics(
+        supabase,
+        userId
+      )
       next.push({
         id: userId,
         name,
         photo,
+        whatsappPhone,
         status,
         isGoalkeeper: isGk,
         pickTeam,
