@@ -1,6 +1,9 @@
 'use client'
 
 import { useMemo, useState, useRef } from 'react'
+import { usePushNotifications } from '@/lib/hooks/use-push-notifications'
+import { ProfilePushNudge } from '@/components/profile-push-nudge'
+import { ProfilePushSettingsBlock } from '@/components/profile-push-settings-block'
 import { toast } from 'sonner'
 import { useAppAuth, useAppTeam, useAppUI } from '@/lib/app-context'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
@@ -28,7 +31,6 @@ import {
   Minus,
   TrendingDown,
   Clock,
-  Bell,
   Shield,
   Info,
   Loader2,
@@ -195,6 +197,8 @@ export function ProfileScreen() {
   }, [currentUser?.availability])
 
   const isBanned = Boolean(currentUser?.modBannedAt)
+
+  const pushNotifications = usePushNotifications()
 
   const showYellowAlert = useMemo(
     () => !isBanned && within24hSince(currentUser?.modLastYellowAt ?? null),
@@ -390,6 +394,17 @@ export function ProfileScreen() {
       />
 
       <div className="px-4 pt-4 pb-2 relative z-[2]">
+        {!isBanned ? (
+          <ProfilePushNudge
+            supported={pushNotifications.supported}
+            isBanned={isBanned}
+            state={pushNotifications.state}
+            subscribeAndSync={pushNotifications.subscribeAndSync}
+            onActivated={() =>
+              toast.success('Notificaciones activadas en este dispositivo.')
+            }
+          />
+        ) : null}
         <div className="bg-card rounded-2xl border border-border shadow-lg shadow-black/20 p-6 pt-8">
           {isBanned ? (
             <div className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-center">
@@ -726,15 +741,12 @@ export function ProfileScreen() {
                 </div>
               </div>
             </div>
-            <div className="flex gap-3 rounded-xl border border-border/60 bg-secondary/30 p-4">
-              <Bell className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium text-foreground text-sm">Notificaciones</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Próximamente podrás elegir avisos de partidos y mensajes.
-                </p>
-              </div>
-            </div>
+            <ProfilePushSettingsBlock
+              supported={pushNotifications.supported}
+              state={pushNotifications.state}
+              errorMessage={pushNotifications.errorMessage}
+              subscribeAndSync={pushNotifications.subscribeAndSync}
+            />
             <div className="flex gap-3 rounded-xl border border-border/60 bg-secondary/30 p-4">
               <Shield className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
               <div>
