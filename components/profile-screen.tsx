@@ -360,12 +360,12 @@ export function ProfileScreen() {
 
   return (
     <div className="min-h-screen bg-background pb-24">
-      <header className="relative overflow-hidden border-b border-border">
+      <header className="relative overflow-hidden border-b border-border/70">
         <div
           className="absolute inset-0 bg-gradient-to-br from-primary/25 via-background to-accent/15"
           aria-hidden
         />
-        <div className="relative z-[1] flex items-center justify-between gap-3 px-4 pt-12 pb-5 sm:pt-14">
+        <div className="relative z-[1] flex items-center justify-between gap-3 px-4 pt-8 pb-3 sm:pt-10 sm:pb-4">
           <AppScreenBrandHeading
             className="min-w-0 flex-1"
             title="Perfil"
@@ -376,7 +376,7 @@ export function ProfileScreen() {
             type="button"
             variant="secondary"
             size="icon"
-            className="h-10 w-10 shrink-0 rounded-full border border-border bg-card/80 shadow-sm backdrop-blur-sm"
+            className="h-9 w-9 shrink-0 rounded-full border border-border bg-card/80 shadow-sm backdrop-blur-sm"
             onClick={() => setSettingsOpen(true)}
             aria-label="Configuración"
           >
@@ -393,7 +393,7 @@ export function ProfileScreen() {
         onChange={(ev) => void handlePhotoChange(ev)}
       />
 
-      <div className="px-4 pt-4 pb-2 relative z-[2]">
+      <div className="px-4 pt-2 pb-2 relative z-[2]">
         {!isBanned ? (
           <ProfilePushNudge
             supported={pushNotifications.supported}
