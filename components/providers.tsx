@@ -1,6 +1,7 @@
 'use client'
 
 import { PushServiceWorkerRegister } from '@/components/push-service-worker-register'
+import { PushLoginPrompt } from '@/components/push-login-prompt'
 import { ThemeProvider } from '@/components/theme-provider'
 import { Toaster } from '@/components/ui/sonner'
 import { AppProvider } from '@/lib/app-context'
@@ -16,9 +17,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
       disableTransitionOnChange
     >
       <QueryProvider>
-        <AppProvider>{children}</AppProvider>
+        <AppProvider>
+          {children}
+          <PushServiceWorkerRegister />
+          <PushLoginPrompt />
+        </AppProvider>
       </QueryProvider>
-      <PushServiceWorkerRegister />
       <Toaster richColors position="top-center" />
     </ThemeProvider>
   )
