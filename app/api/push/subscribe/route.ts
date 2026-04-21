@@ -1,4 +1,7 @@
-import { createClient } from '@/lib/supabase/server'
+import {
+  createSupabaseWithUserJwt,
+  requireSession,
+} from '@/lib/supabase/require-session'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
@@ -13,18 +16,14 @@ const bodySchema = z.object({
 })
 
 /**
- * Guarda o actualiza la suscripción push del usuario autenticado (cookies Supabase).
- * user_id sale del JWT en servidor; no se acepta user_id del cliente.
+ * Guarda o actualiza la suscripción push del usuario autenticado.
+ * Acepta cookies SSR o Authorization: Bearer (SPA con sesión en localStorage).
+ * user_id sale del JWT; no se acepta user_id del body.
  */
 export async function POST(req: Request) {
   try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
+    const sessionResult = await requireSession(req)
+    if (!sessionResult.ok) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
     }
 
@@ -35,9 +34,10 @@ export async function POST(req: Request) {
     }
 
     const { endpoint, keys } = parsed.data
+    const supabase = createSupabaseWithUserJwt(sessionResult.accessToken)
     const { error } = await supabase.from('push_subscriptions').upsert(
       {
-        user_id: user.id,
+        user_id: sessionResult.userId,
         endpoint,
         p256dh_key: keys.p256dh,
         auth_key: keys.auth,

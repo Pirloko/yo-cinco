@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import { urlBase64ToUint8Array } from '@/lib/push/url-base64'
+import { getBrowserSupabase } from '@/lib/supabase/client'
 
 export type PushSubscribeState =
   | 'unsupported'
@@ -90,9 +91,29 @@ export function usePushNotifications() {
         return { ok: false, reason: 'error', message: msg }
       }
 
+      const sb = getBrowserSupabase()
+      if (!sb) {
+        const msg = 'No se pudo conectar con la sesión'
+        setState('error')
+        setErrorMessage(msg)
+        return { ok: false, reason: 'error', message: msg }
+      }
+      const {
+        data: { session },
+      } = await sb.auth.getSession()
+      if (!session?.access_token) {
+        const msg = 'Inicia sesión para activar notificaciones'
+        setState('error')
+        setErrorMessage(msg)
+        return { ok: false, reason: 'error', message: msg }
+      }
+
       const res = await fetch('/api/push/subscribe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
         credentials: 'include',
         body: JSON.stringify({
           endpoint: json.endpoint,
