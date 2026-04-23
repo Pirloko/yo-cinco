@@ -355,13 +355,8 @@ export function MatchDetailsScreen() {
       ).length,
     [participantsForList]
   )
-  const activeParticipantIds = useMemo(
-    () =>
-      new Set(
-        participantsForList
-          .filter((p) => p.status !== 'cancelled')
-          .map((p) => p.id)
-      ),
+  const linkedParticipantIds = useMemo(
+    () => new Set(participantsForList.map((p) => p.id)),
     [participantsForList]
   )
   const freeSlots = useMemo(() => {
@@ -417,7 +412,7 @@ export function MatchDetailsScreen() {
       return p === 'portero' || p === 'arquero' || p === 'gk'
     }
     return (inviteCandidatesQuery.data ?? [])
-      .filter((u) => !activeParticipantIds.has(u.id))
+      .filter((u) => !linkedParticipantIds.has(u.id))
       .filter((u) => {
         if (inviteRoleFilter === 'all') return true
         if (inviteRoleFilter === 'gk') return isGoalkeeper(u.position)
@@ -426,7 +421,7 @@ export function MatchDetailsScreen() {
       .filter((u) => (q ? u.name.toLowerCase().includes(q) : true))
   }, [
     inviteCandidatesQuery.data,
-    activeParticipantIds,
+    linkedParticipantIds,
     inviteSearch,
     inviteRoleFilter,
   ])
