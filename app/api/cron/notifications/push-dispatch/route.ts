@@ -20,22 +20,12 @@ export async function POST(req: Request) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
   }
-
   try {
     const admin = createAdminClient()
-    const { data, error } = await admin.rpc(
-      'create_match_upcoming_2h_notifications'
-    )
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-    const push = await dispatchPendingNotificationPushes(admin, 200)
-    return NextResponse.json({
-      ok: true,
-      created: Number(data ?? 0),
-      push,
-    })
-  } catch {
-    return NextResponse.json({ error: 'Error interno' }, { status: 500 })
+    const stats = await dispatchPendingNotificationPushes(admin)
+    return NextResponse.json({ ok: true, ...stats })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Error interno'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

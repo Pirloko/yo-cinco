@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/notifications/push-dispatch",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/notifications/upcoming-2h",
+      "schedule": "*/10 * * * *"
+    }
+  ]
+}
