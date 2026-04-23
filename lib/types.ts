@@ -29,7 +29,7 @@ export type PickTeamSide = 'A' | 'B'
 export type { RevueltaLineup }
 
 /** Pestañas de la pantalla Partidos (hub). */
-export type MatchesHubTab = 'upcoming' | 'chats' | 'finished'
+export type MatchesHubTab = 'upcoming' | 'invitations' | 'chats' | 'finished'
 
 /** Resultado en partidos tipo rival (equipo del creador vs rival). */
 export type RivalResult = 'creator_team' | 'rival_team' | 'draw'

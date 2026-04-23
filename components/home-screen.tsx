@@ -14,11 +14,11 @@ import { BottomNav } from '@/components/bottom-nav'
 import { MatchCard } from '@/components/match-card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NotificationsBellPopover } from '@/components/notifications-bell-popover'
 import {
   Users,
   Shuffle,
   Sparkles,
-  Bell,
   Swords,
   Loader2,
 } from 'lucide-react'
@@ -206,20 +206,13 @@ export function HomeScreen() {
           </div>
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <ThemeMenuButton className="shrink-0" />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="relative shrink-0"
-              type="button"
-              onClick={() => {
-                setInitialMatchesTab('chats')
+            <NotificationsBellPopover
+              onNavigate={(tab, matchId) => {
+                if (matchId) setSelectedMatchOpportunityId(matchId)
+                setInitialMatchesTab(tab)
                 setCurrentScreen('matches')
               }}
-              aria-label="Ir a chats de partidos"
-            >
-              <Bell className="w-5 h-5 text-muted-foreground" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-primary rounded-full" />
-            </Button>
+            />
             <button 
               onClick={() => setCurrentScreen('profile')}
               className="w-10 h-10 rounded-full overflow-hidden border-2 border-primary"

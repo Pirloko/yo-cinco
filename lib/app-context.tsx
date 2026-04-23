@@ -2522,8 +2522,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setCurrentUser(profile)
       void updateLastSeen(supabase, authUser.id)
 
-      if (profile.accountType === 'venue' || profile.accountType === 'admin') {
+      if (profile.accountType === 'venue') {
         setMatchOpportunities([])
+        setUsers([])
+        setTeams([])
+        setTeamInvites([])
+        setTeamJoinRequests([])
+        setParticipatingOpportunityIds([])
+        setRivalChallenges([])
+        return
+      }
+
+      if (profile.accountType === 'admin') {
+        const adminMatches = await fetchLatestMatchOpportunities(supabase)
+        setMatchOpportunities(adminMatches)
         setUsers([])
         setTeams([])
         setTeamInvites([])
@@ -2701,15 +2713,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [authLoading, currentUser, currentScreen])
 
-  /** Cuenta admin: siempre entra al dashboard admin. */
+  /** Cuenta admin: dashboard por defecto; permite abrir detalle de partido para gestión. */
   useEffect(() => {
     if (authLoading || !currentUser) return
     if (currentUser.accountType !== 'admin') return
     if (currentScreen === 'auth') return
-    if (currentScreen !== 'adminDashboard') {
+    const allowedAdminScreens: AppScreen[] = ['adminDashboard', 'matchDetails']
+    if (!allowedAdminScreens.includes(currentScreen)) {
       setCurrentScreen('adminDashboard')
     }
   }, [authLoading, currentUser, currentScreen])
+
+  /** Admin: al abrir detalle, asegurar catálogo de partidos en memoria. */
+  useEffect(() => {
+    if (authLoading || !currentUser) return
+    if (currentUser.accountType !== 'admin') return
+    if (currentScreen !== 'matchDetails') return
+    if (!selectedMatchOpportunityId) return
+    if (matchOpportunities.length > 0) return
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
+    let cancelled = false
+    void (async () => {
+      const adminMatches = await fetchLatestMatchOpportunities(supabase)
+      if (cancelled) return
+      setMatchOpportunities(adminMatches)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    authLoading,
+    currentUser,
+    currentScreen,
+    selectedMatchOpportunityId,
+    matchOpportunities.length,
+  ])
 
   /** Jugador baneado: solo pantalla Perfil (resto de la app deshabilitada en UI). */
   useEffect(() => {

@@ -154,7 +154,7 @@ export async function fetchParticipantsForOpportunity(
 
   const { data: profs } = await supabase
     .from('profiles')
-    .select('id, name, photo_url, whatsapp_phone')
+    .select('id, name, photo_url, whatsapp_phone, account_type')
     .in('id', [...userIds])
 
   const byId = new Map((profs ?? []).map((r) => [r.id as string, r] as const))
@@ -163,9 +163,12 @@ export async function fetchParticipantsForOpportunity(
     (parts ?? []).map((p) => [p.user_id as string, p] as const)
   )
   const creatorPart = creatorId ? partByUser.get(creatorId) : undefined
+  const creatorProfile = creatorId ? byId.get(creatorId) : undefined
+  const creatorIsAdmin =
+    ((creatorProfile?.account_type as string | null | undefined) ?? null) === 'admin'
 
   const out: OpportunityParticipantRow[] = []
-  if (creatorId) {
+  if (creatorId && !creatorIsAdmin) {
     const c = byId.get(creatorId)
     out.push({
       id: creatorId,

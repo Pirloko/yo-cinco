@@ -37,6 +37,7 @@ import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { GeoLocationSelect } from '@/components/geo-location-select'
 import { AdminGeoCatalogPanel } from '@/components/admin-geo-catalog-panel'
 import { AdminPlayersDashboardPanel } from '@/components/admin-players-dashboard-panel'
+import { AdminMatchCenterPanel } from '@/components/admin-match-center-panel'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import {
   getBrowserSupabase,
@@ -1092,6 +1093,16 @@ export function AdminDashboardScreen() {
             />
           </div>
           <div className="flex shrink-0 items-center justify-end gap-2 sm:justify-start">
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              onClick={() => setAdminTab('partidos')}
+              className="shrink-0"
+            >
+              <CalendarDays className="mr-1.5 h-4 w-4" />
+              Crear partido
+            </Button>
             <ThemeMenuButton />
             <Button variant="outline" size="sm" onClick={() => void logout()} className="shrink-0">
               <LogOut className="mr-1.5 h-4 w-4" />
@@ -1325,6 +1336,7 @@ export function AdminDashboardScreen() {
           </TabsContent>
 
           <TabsContent value="partidos" className="mt-0 space-y-4">
+            <AdminMatchCenterPanel />
             <Card className="gap-0 overflow-hidden border-border py-0 shadow-sm">
               <CardHeader className="border-b border-border bg-secondary/20 px-4 py-4 sm:px-6">
                 <CardTitle className="text-lg">Consulta partido</CardTitle>

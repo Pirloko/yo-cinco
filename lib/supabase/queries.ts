@@ -14,6 +14,9 @@ import {
   PROFILE_SELECT_WITH_GEO,
 } from '@/lib/supabase/geo-queries'
 
+const SPORTMATCH_ORGANIZER_NAME = 'Sportmatch'
+const SPORTMATCH_ORGANIZER_PHOTO = '/logohome.webp'
+
 function normalizeMatchVenueLabel(raw: string): string {
   return raw
     .trim()
@@ -97,24 +100,49 @@ export async function fetchMatchOpportunities(
   const creatorIds = [...new Set(rows.map((r) => r.creator_id))]
   const { data: creators } = await supabase
     .from('profiles')
-    .select('id, name, photo_url')
+    .select('id, name, photo_url, account_type')
     .in('id', creatorIds)
 
   // Fallback robusto: contamos participantes desde la tabla relacional.
   // Esto evita desajustes visuales si el trigger de players_joined no está aplicado.
   const { data: parts } = await supabase
     .from('match_opportunity_participants')
-    .select('opportunity_id, status')
+    .select('opportunity_id, user_id, status')
     .in('opportunity_id', opportunityIds)
 
-  const byId = new Map(
-    (creators ?? []).map((c) => [c.id, c as CreatorSnippet])
-  )
+  const byId = new Map<string, CreatorSnippet>()
+  const isAdminCreatorById = new Map<string, boolean>()
+  for (const c of creators ?? []) {
+    const accountType = c.account_type as string | null | undefined
+    isAdminCreatorById.set(c.id as string, accountType === 'admin')
+    byId.set(c.id as string, {
+      id: c.id as string,
+      name:
+        accountType === 'admin'
+          ? SPORTMATCH_ORGANIZER_NAME
+          : ((c.name as string) ?? 'Jugador'),
+      photo_url:
+        accountType === 'admin'
+          ? SPORTMATCH_ORGANIZER_PHOTO
+          : ((c.photo_url as string | null) ?? '').trim(),
+    })
+  }
   const joinedByOpportunity = new Map<string, number>()
+  const creatorIdByOpportunity = new Map(rows.map((r) => [r.id, r.creator_id] as const))
   for (const p of parts ?? []) {
     const oid = p.opportunity_id as string
+    const uid = p.user_id as string
     const status = p.status as string
     if (status !== 'pending' && status !== 'confirmed') continue
+    const creatorId = creatorIdByOpportunity.get(oid)
+    if (
+      creatorId &&
+      uid === creatorId &&
+      isAdminCreatorById.get(creatorId) === true
+    ) {
+      // Admin organiza como Sportmatch pero no ocupa cupo.
+      continue
+    }
     joinedByOpportunity.set(oid, (joinedByOpportunity.get(oid) ?? 0) + 1)
   }
 

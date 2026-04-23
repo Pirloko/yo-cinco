@@ -19,6 +19,13 @@ import { BottomNav } from '@/components/bottom-nav'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -28,6 +35,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import {
   getBrowserSupabase,
   isSupabaseConfigured,
@@ -55,6 +63,9 @@ import {
   Calendar,
   Clock,
   MapPin,
+  MoreHorizontal,
+  Search,
+  UserPlus,
   Users,
   MessageCircle,
   Shield,
@@ -97,6 +108,15 @@ import { QUERY_STALE_TIME_STATIC_MS } from '@/lib/query-defaults'
 import { replaceParticipantsCacheFromServer } from '@/lib/realtime/match-opportunity-participants-realtime'
 import { cn } from '@/lib/utils'
 import { useMatchOpportunityParticipantsRealtime } from '@/lib/hooks/use-match-opportunity-participants-realtime'
+
+type InviteCandidate = {
+  id: string
+  name: string
+  photo: string
+  position: string
+  level: string
+}
+type InviteRoleFilter = 'all' | 'gk' | 'field'
 
 export function MatchDetailsScreen() {
   const {
@@ -290,6 +310,10 @@ export function MatchDetailsScreen() {
   const [kickSubmitting, setKickSubmitting] = useState(false)
   const [respondingId, setRespondingId] = useState<string | null>(null)
   const [joinPlayersOpen, setJoinPlayersOpen] = useState(false)
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [inviteSearch, setInviteSearch] = useState('')
+  const [inviteRoleFilter, setInviteRoleFilter] = useState<InviteRoleFilter>('all')
+  const [invitingUserId, setInvitingUserId] = useState<string | null>(null)
   const organizerId = opportunity?.creatorId ?? null
   const organizerOrganizedCountQuery = useQuery({
     queryKey: queryKeys.profile.organizerCompletedCount(organizerId),
@@ -313,6 +337,130 @@ export function MatchDetailsScreen() {
       : organizerId === currentUser.id
         ? (currentUser.statsOrganizedCompleted ?? 0)
         : (organizerOrganizedCountQuery.data ?? 0)
+  const organizerNameNormalized = (opportunity?.creatorName ?? '')
+    .trim()
+    .toLowerCase()
+  const isSystemOrganizer =
+    organizerNameNormalized === 'sportmatch' ||
+    organizerNameNormalized === 'administrador'
+
+  const occupiedSlots = useMemo(
+    () =>
+      participantsForList.filter(
+        (p) =>
+          p.status === 'creator' ||
+          p.status === 'confirmed' ||
+          p.status === 'pending' ||
+          p.status === 'invited'
+      ).length,
+    [participantsForList]
+  )
+  const activeParticipantIds = useMemo(
+    () =>
+      new Set(
+        participantsForList
+          .filter((p) => p.status !== 'cancelled')
+          .map((p) => p.id)
+      ),
+    [participantsForList]
+  )
+  const freeSlots = useMemo(() => {
+    const total = opportunity?.playersNeeded ?? 0
+    if (total <= 0) return 0
+    return Math.max(0, total - occupiedSlots)
+  }, [opportunity?.playersNeeded, occupiedSlots])
+  const canOrganizerInvite =
+    currentUser?.id === opportunity?.creatorId &&
+    freeSlots > 0 &&
+    (opportunity?.status === 'pending' || opportunity?.status === 'confirmed')
+
+  const inviteCandidatesQuery = useQuery({
+    queryKey: [
+      'match-invite-candidates',
+      opportunity?.id ?? null,
+      opportunity?.cityId ?? null,
+      opportunity?.gender ?? null,
+    ],
+    enabled: Boolean(
+      inviteOpen &&
+        canOrganizerInvite &&
+        opportunity?.cityId &&
+        sessionQueryEnabled(currentUser?.id)
+    ),
+    queryFn: async (): Promise<InviteCandidate[]> => {
+      if (!opportunity?.cityId) return []
+      const sb = getBrowserSupabase()
+      if (!sb) return []
+      const { data, error } = await sb
+        .from('profiles')
+        .select('id, name, photo_url, position, level, mod_banned_at, account_type')
+        .eq('city_id', opportunity.cityId)
+        .eq('gender', opportunity.gender)
+        .eq('account_type', 'player')
+        .is('mod_banned_at', null)
+        .limit(120)
+      if (error) throw new Error(error.message)
+      return (data ?? []).map((r) => ({
+        id: r.id as string,
+        name: ((r.name as string | null) ?? '').trim() || 'Jugador',
+        photo:
+          ((r.photo_url as string | null) ?? '').trim() || '/sportmatch-logo.png',
+        position: ((r.position as string | null) ?? '').trim() || 'Jugador',
+        level: ((r.level as string | null) ?? '').trim() || 'intermedio',
+      }))
+    },
+  })
+  const inviteCandidatesFiltered = useMemo(() => {
+    const q = inviteSearch.trim().toLowerCase()
+    const isGoalkeeper = (position: string) => {
+      const p = position.trim().toLowerCase()
+      return p === 'portero' || p === 'arquero' || p === 'gk'
+    }
+    return (inviteCandidatesQuery.data ?? [])
+      .filter((u) => !activeParticipantIds.has(u.id))
+      .filter((u) => {
+        if (inviteRoleFilter === 'all') return true
+        if (inviteRoleFilter === 'gk') return isGoalkeeper(u.position)
+        return !isGoalkeeper(u.position)
+      })
+      .filter((u) => (q ? u.name.toLowerCase().includes(q) : true))
+  }, [
+    inviteCandidatesQuery.data,
+    activeParticipantIds,
+    inviteSearch,
+    inviteRoleFilter,
+  ])
+
+  const invitePlayer = useCallback(
+    async (userId: string) => {
+      if (!opportunity || !selectedMatchOpportunityId || !canOrganizerInvite) return
+      const sb = getBrowserSupabase()
+      if (!sb) return
+      setInvitingUserId(userId)
+      try {
+        const { error } = await sb.from('match_opportunity_participants').upsert(
+          {
+            opportunity_id: opportunity.id,
+            user_id: userId,
+            status: 'invited',
+            is_goalkeeper: false,
+          },
+          { onConflict: 'opportunity_id,user_id' }
+        )
+        if (error) {
+          toast.error(error.message)
+          return
+        }
+        toast.success('Invitación enviada.')
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.matchOpportunity.participants(selectedMatchOpportunityId),
+        })
+      } finally {
+        setInvitingUserId(null)
+      }
+    },
+    [canOrganizerInvite, opportunity, queryClient, selectedMatchOpportunityId]
+  )
 
   const sportsVenueId = opportunity?.sportsVenueId ?? null
   const venueFallbackName = opportunity?.venue ?? ''
@@ -608,7 +756,7 @@ export function MatchDetailsScreen() {
       const base = whatsappWaMeBaseHref(p.whatsappPhone)
       if (!base) return null
       const first = p.name.trim().split(/\s+/)[0] || 'hola'
-      const msg = `Hola ${first}, soy ${currentUser.name} (organizo el partido «${opportunity.title}» el ${formatMatchInTimezone(opportunity.dateTime, "EEEE d 'de' MMMM")} a las ${formatMatchInTimezone(opportunity.dateTime, 'HH:mm')} en ${opportunity.venue}, ${opportunity.location}). ¿Confirmas que vas a asistir? Cuando puedas, responde por aquí. ¡Gracias!`
+      const msg = `Hola ${first}, soy ${currentUser.name} de Sportmatch.cl (organizo el partido «${opportunity.title}» el ${formatMatchInTimezone(opportunity.dateTime, "EEEE d 'de' MMMM")} a las ${formatMatchInTimezone(opportunity.dateTime, 'HH:mm')} en ${opportunity.venue}, ${opportunity.location}). ¿Confirmas que vas a asistir? Cuando puedas, responde por aquí. ¡Gracias!`
       return `${base}?text=${encodeURIComponent(msg)}`
     },
     [currentUser.name, isCreator, opportunity]
@@ -636,49 +784,63 @@ export function MatchDetailsScreen() {
       p.id !== opportunity.creatorId &&
       (p.status === 'confirmed' || p.status === 'pending')
     const waHref = organizerWhatsappUrlForParticipant(p)
-    const waBtn =
-      waHref ? (
-        <Button
-          asChild
-          variant="outline"
-          size="sm"
-          className="h-8 text-xs border-green-500/45 text-green-400 hover:bg-green-500/10"
-        >
-          <a href={waHref} target="_blank" rel="noreferrer">
-            <MessageCircle className="w-3.5 h-3.5 mr-1 shrink-0" aria-hidden />
-            WhatsApp
-          </a>
-        </Button>
-      ) : null
+    const openKickDialog = () => {
+      setKickUserId(p.id)
+      setKickReason('')
+    }
+
+    const waBtn = waHref ? (
+      <DropdownMenuItem asChild>
+        <a href={waHref} target="_blank" rel="noreferrer">
+          <MessageCircle className="w-4 h-4" aria-hidden />
+          WhatsApp
+        </a>
+      </DropdownMenuItem>
+    ) : null
     const actions =
       mayEditLineup || mayKick || waBtn ? (
-        <div className="flex flex-wrap gap-1.5 justify-end w-full">
-          {mayEditLineup ? (
+        <div className="flex items-center justify-end gap-1.5 w-full">
+          {waHref ? (
             <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => setLineupEditUserId(p.id)}
+              asChild
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-green-400 hover:text-green-300 hover:bg-green-500/10"
             >
-              {currentUser.id === p.id ? 'Mi puesto' : 'Ajustar'}
+              <a
+                href={waHref}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Contactar a ${p.name} por WhatsApp`}
+              >
+                <MessageCircle className="w-4 h-4" aria-hidden />
+              </a>
             </Button>
           ) : null}
-          {mayKick ? (
-            <Button
-              type="button"
-              variant="destructive"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => {
-                setKickUserId(p.id)
-                setKickReason('')
-              }}
-            >
-              Expulsar
-            </Button>
-          ) : null}
-          {waBtn}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="sm" className="h-8 text-xs gap-1.5">
+                Gestionar
+                <MoreHorizontal className="w-3.5 h-3.5" aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-44">
+              {mayEditLineup ? (
+                <DropdownMenuItem onSelect={() => setLineupEditUserId(p.id)}>
+                  {currentUser.id === p.id ? 'Ajustar mi puesto' : 'Ajustar jugador'}
+                </DropdownMenuItem>
+              ) : null}
+              {waBtn}
+              {mayKick ? (
+                <>
+                  {(mayEditLineup || waBtn) ? <DropdownMenuSeparator /> : null}
+                  <DropdownMenuItem variant="destructive" onSelect={openKickDialog}>
+                    Expulsar jugador
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ) : null
     return (
@@ -1083,7 +1245,7 @@ export function MatchDetailsScreen() {
             <Shield className="w-4 h-4 text-primary shrink-0" />
             <span className="text-muted-foreground">Organizador:</span>
             <span className="text-foreground font-medium">{opportunity.creatorName}</span>
-            {organizerOrganizedCount !== null && (
+            {organizerOrganizedCount !== null && !isSystemOrganizer && (
               <Badge
                 variant="secondary"
                 className="text-[10px] font-normal border-primary/25 bg-primary/10 text-primary"
@@ -1153,6 +1315,30 @@ export function MatchDetailsScreen() {
                 que el ajuste de alineación).
               </p>
             )}
+          {canOrganizerInvite ? (
+            <div className="rounded-xl border border-primary/35 bg-primary/10 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">
+                    Cupos disponibles: {freeSlots}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Puedes invitar jugadores de la ciudad de este partido y revisar
+                    su perfil antes de enviar la invitación.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setInviteOpen(true)}
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Invitar
+                </Button>
+              </div>
+            </div>
+          ) : null}
           {loadingParticipants ? (
             <p className="text-sm text-muted-foreground">Cargando participantes...</p>
           ) : participantsShownToViewer.length > 0 ? (
@@ -1257,52 +1443,74 @@ export function MatchDetailsScreen() {
                     p.id !== opportunity.creatorId &&
                     (p.status === 'confirmed' || p.status === 'pending')
                   const waHrefList = organizerWhatsappUrlForParticipant(p)
-                  const waBtnList =
-                    waHrefList ? (
-                      <Button
-                        asChild
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs border-green-500/45 text-green-400 hover:bg-green-500/10"
-                      >
-                        <a href={waHrefList} target="_blank" rel="noreferrer">
-                          <MessageCircle
-                            className="w-3.5 h-3.5 mr-1 shrink-0"
-                            aria-hidden
-                          />
-                          WhatsApp
-                        </a>
-                      </Button>
-                    ) : null
+                  const openKickDialog = () => {
+                    setKickUserId(p.id)
+                    setKickReason('')
+                  }
+                  const waBtnList = waHrefList ? (
+                    <DropdownMenuItem asChild>
+                      <a href={waHrefList} target="_blank" rel="noreferrer">
+                        <MessageCircle className="w-4 h-4" aria-hidden />
+                        WhatsApp
+                      </a>
+                    </DropdownMenuItem>
+                  ) : null
                   const actions =
                     mayEditLineup || mayKick || waBtnList ? (
-                      <div className="flex flex-wrap gap-1.5 justify-end w-full">
-                        {mayEditLineup ? (
+                      <div className="flex items-center justify-end gap-1.5 w-full">
+                        {waHrefList ? (
                           <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-8 text-xs"
-                            onClick={() => setLineupEditUserId(p.id)}
+                            asChild
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-green-400 hover:text-green-300 hover:bg-green-500/10"
                           >
-                            {currentUser.id === p.id ? 'Mi puesto' : 'Ajustar'}
+                            <a
+                              href={waHrefList}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={`Contactar a ${p.name} por WhatsApp`}
+                            >
+                              <MessageCircle className="w-4 h-4" aria-hidden />
+                            </a>
                           </Button>
                         ) : null}
-                        {mayKick ? (
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            className="h-8 text-xs"
-                            onClick={() => {
-                              setKickUserId(p.id)
-                              setKickReason('')
-                            }}
-                          >
-                            Expulsar
-                          </Button>
-                        ) : null}
-                        {waBtnList}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs gap-1.5"
+                            >
+                              Gestionar
+                              <MoreHorizontal className="w-3.5 h-3.5" aria-hidden />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="min-w-44">
+                            {mayEditLineup ? (
+                              <DropdownMenuItem onSelect={() => setLineupEditUserId(p.id)}>
+                                {currentUser.id === p.id
+                                  ? 'Ajustar mi puesto'
+                                  : 'Ajustar jugador'}
+                              </DropdownMenuItem>
+                            ) : null}
+                            {waBtnList}
+                            {mayKick ? (
+                              <>
+                                {(mayEditLineup || waBtnList) ? (
+                                  <DropdownMenuSeparator />
+                                ) : null}
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  onSelect={openKickDialog}
+                                >
+                                  Expulsar jugador
+                                </DropdownMenuItem>
+                              </>
+                            ) : null}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     ) : null
                   return (
@@ -1323,6 +1531,35 @@ export function MatchDetailsScreen() {
           ) : (
             <p className="text-sm text-muted-foreground">Sin participantes aún.</p>
           )}
+          {freeSlots > 0 ? (
+            <div className="space-y-2 border-t border-border pt-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                Cupos libres ({freeSlots})
+              </p>
+              <div className="space-y-2">
+                {Array.from({ length: Math.min(freeSlots, 6) }).map((_, idx) => (
+                  <div
+                    key={`free-slot-${idx}`}
+                    className="flex items-center justify-between rounded-lg border border-dashed border-border bg-secondary/20 px-3 py-2"
+                  >
+                    <p className="text-sm text-muted-foreground">Cupo disponible</p>
+                    {canOrganizerInvite ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        onClick={() => setInviteOpen(true)}
+                      >
+                        <UserPlus className="h-3.5 w-3.5" />
+                        Invitar
+                      </Button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {isOrganizerOfPrivateRevuelta &&
@@ -1583,6 +1820,114 @@ export function MatchDetailsScreen() {
           await joinTeamPickMatchOpportunity(opportunity.id, payload)
         }}
       />
+
+      <Dialog
+        open={inviteOpen}
+        onOpenChange={(open) => {
+          setInviteOpen(open)
+          if (!open) {
+            setInviteSearch('')
+            setInviteRoleFilter('all')
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Invitar jugadores</DialogTitle>
+            <DialogDescription>
+              Jugadores de la ciudad del partido. Puedes ver su perfil antes de
+              enviar la invitación.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={inviteSearch}
+                onChange={(e) => setInviteSearch(e.target.value)}
+                placeholder="Buscar jugador por nombre"
+                className="pl-8"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={inviteRoleFilter === 'all' ? 'default' : 'outline'}
+                onClick={() => setInviteRoleFilter('all')}
+              >
+                Todos
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={inviteRoleFilter === 'gk' ? 'default' : 'outline'}
+                onClick={() => setInviteRoleFilter('gk')}
+              >
+                Arqueros
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={inviteRoleFilter === 'field' ? 'default' : 'outline'}
+                onClick={() => setInviteRoleFilter('field')}
+              >
+                Jugadores
+              </Button>
+            </div>
+            <div className="max-h-[340px] space-y-2 overflow-y-auto pr-1">
+              {inviteCandidatesQuery.isFetching ? (
+                <p className="text-sm text-muted-foreground">Cargando jugadores...</p>
+              ) : inviteCandidatesFiltered.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No hay jugadores disponibles para invitar en este momento.
+                </p>
+              ) : (
+                inviteCandidatesFiltered.slice(0, freeSlots).map((u) => (
+                  <div
+                    key={u.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card/50 px-3 py-2"
+                  >
+                    <div className="min-w-0 flex items-center gap-2">
+                      <img
+                        src={avatarDisplayUrl(u.photo, u.id)}
+                        alt={u.name}
+                        className="h-9 w-9 rounded-full border border-border object-cover"
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {u.name}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {u.position} · {u.level}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openPublicProfile(u.id)}
+                      >
+                        Ver perfil
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={invitingUserId === u.id}
+                        onClick={() => void invitePlayer(u.id)}
+                      >
+                        {invitingUserId === u.id ? 'Invitando...' : 'Invitar'}
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {lineupEditUserId && lineupEditParticipant ? (
         <TeamPickLineupEditDialog
