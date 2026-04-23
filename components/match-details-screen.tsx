@@ -1881,7 +1881,7 @@ export function MatchDetailsScreen() {
                 inviteCandidatesFiltered.map((u) => (
                   <div
                     key={u.id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card/50 px-3 py-2"
+                    className="flex flex-col gap-2 rounded-lg border border-border bg-card/50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="min-w-0 flex items-center gap-2">
                       <img
@@ -1898,11 +1898,12 @@ export function MatchDetailsScreen() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
+                        className="h-8 px-3 text-xs"
                         onClick={() => openPublicProfile(u.id)}
                       >
                         Ver perfil
@@ -1910,6 +1911,7 @@ export function MatchDetailsScreen() {
                       <Button
                         type="button"
                         size="sm"
+                        className="h-8 px-3 text-xs"
                         disabled={invitingUserId === u.id}
                         onClick={() => void invitePlayer(u.id)}
                       >
