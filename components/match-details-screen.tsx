@@ -1883,7 +1883,7 @@ export function MatchDetailsScreen() {
                   No hay jugadores disponibles para invitar en este momento.
                 </p>
               ) : (
-                inviteCandidatesFiltered.slice(0, freeSlots).map((u) => (
+                inviteCandidatesFiltered.map((u) => (
                   <div
                     key={u.id}
                     className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card/50 px-3 py-2"
