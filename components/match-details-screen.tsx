@@ -344,17 +344,31 @@ export function MatchDetailsScreen() {
   const isSystemOrganizer =
     organizerNameNormalized === 'sportmatch' ||
     organizerNameNormalized === 'administrador'
+  const isPlayersSearchMode = opportunity?.type === 'players'
+  const participantsShownInRoster = useMemo(
+    () =>
+      isPlayersSearchMode
+        ? participantsShownToViewer.filter(
+            (p) => p.status !== 'creator' && p.id !== opportunity?.creatorId
+          )
+        : participantsShownToViewer,
+    [isPlayersSearchMode, opportunity?.creatorId, participantsShownToViewer]
+  )
 
   const occupiedSlots = useMemo(
     () =>
       participantsForList.filter(
         (p) =>
-          p.status === 'creator' ||
-          p.status === 'confirmed' ||
-          p.status === 'pending' ||
-          p.status === 'invited'
+          (isPlayersSearchMode
+            ? p.status === 'confirmed' ||
+              p.status === 'pending' ||
+              p.status === 'invited'
+            : p.status === 'creator' ||
+              p.status === 'confirmed' ||
+              p.status === 'pending' ||
+              p.status === 'invited')
       ).length,
-    [participantsForList]
+    [isPlayersSearchMode, participantsForList]
   )
   const linkedParticipantIds = useMemo(
     () => new Set(participantsForList.map((p) => p.id)),
@@ -1363,7 +1377,7 @@ export function MatchDetailsScreen() {
           ) : null}
           {loadingParticipants ? (
             <p className="text-sm text-muted-foreground">Cargando participantes...</p>
-          ) : participantsShownToViewer.length > 0 ? (
+          ) : participantsShownInRoster.length > 0 ? (
             opportunity.type === 'team_pick_public' ||
             opportunity.type === 'team_pick_private' ? (
               <div className="space-y-4">
@@ -1443,7 +1457,7 @@ export function MatchDetailsScreen() {
               </div>
             ) : (
               <div className="space-y-2">
-                {participantsShownToViewer.map((p) => {
+                {participantsShownInRoster.map((p) => {
                   const isTeamPickOpp =
                     opportunity.type === 'team_pick_public' ||
                     opportunity.type === 'team_pick_private'

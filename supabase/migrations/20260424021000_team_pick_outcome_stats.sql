@@ -131,14 +131,14 @@ BEGIN
       FROM public.match_opportunity_participants mop
       WHERE mop.opportunity_id = p_opp_id
         AND mop.pick_team = 'A'
-        AND mop.status IN ('creator'::public.participant_status, 'confirmed'::public.participant_status, 'pending'::public.participant_status)
+        AND mop.status IN ('confirmed'::public.participant_status, 'pending'::public.participant_status)
     );
     ids_b := ARRAY(
       SELECT mop.user_id
       FROM public.match_opportunity_participants mop
       WHERE mop.opportunity_id = p_opp_id
         AND mop.pick_team = 'B'
-        AND mop.status IN ('creator'::public.participant_status, 'confirmed'::public.participant_status, 'pending'::public.participant_status)
+        AND mop.status IN ('confirmed'::public.participant_status, 'pending'::public.participant_status)
     );
 
     IF mo.revuelta_result = 'draw'::public.revuelta_result THEN
