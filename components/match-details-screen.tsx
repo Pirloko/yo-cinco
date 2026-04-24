@@ -115,6 +115,7 @@ type InviteCandidate = {
   photo: string
   position: string
   level: string
+  isGoalkeeper: boolean
 }
 type InviteRoleFilter = 'all' | 'gk' | 'field'
 
@@ -396,12 +397,15 @@ export function MatchDetailsScreen() {
         .limit(120)
       if (error) throw new Error(error.message)
       return (data ?? []).map((r) => ({
+        position: ((r.position as string | null) ?? '').trim() || 'Jugador',
         id: r.id as string,
         name: ((r.name as string | null) ?? '').trim() || 'Jugador',
         photo:
           ((r.photo_url as string | null) ?? '').trim() || '/sportmatch-logo.png',
-        position: ((r.position as string | null) ?? '').trim() || 'Jugador',
         level: ((r.level as string | null) ?? '').trim() || 'intermedio',
+        isGoalkeeper: ['portero', 'arquero', 'gk'].includes(
+          (((r.position as string | null) ?? '').trim() || '').toLowerCase()
+        ),
       }))
     },
   })
@@ -433,13 +437,30 @@ export function MatchDetailsScreen() {
       if (!sb) return
       setInvitingUserId(userId)
       try {
+        const selectedCandidate = (inviteCandidatesQuery.data ?? []).find(
+          (candidate) => candidate.id === userId
+        )
+        const invitePayload: {
+          opportunity_id: string
+          user_id: string
+          status: 'invited'
+          is_goalkeeper: boolean
+          encounter_lineup_role?: EncounterLineupRole
+        } = {
+          opportunity_id: opportunity.id,
+          user_id: userId,
+          status: 'invited',
+          is_goalkeeper: selectedCandidate?.isGoalkeeper ?? false,
+        }
+        if (
+          opportunity.type === 'team_pick_public' ||
+          opportunity.type === 'team_pick_private'
+        ) {
+          invitePayload.encounter_lineup_role =
+            selectedCandidate?.isGoalkeeper === true ? 'gk' : 'delantero'
+        }
         const { error } = await sb.from('match_opportunity_participants').upsert(
-          {
-            opportunity_id: opportunity.id,
-            user_id: userId,
-            status: 'invited',
-            is_goalkeeper: false,
-          },
+          invitePayload,
           { onConflict: 'opportunity_id,user_id' }
         )
         if (error) {
@@ -454,7 +475,13 @@ export function MatchDetailsScreen() {
         setInvitingUserId(null)
       }
     },
-    [canOrganizerInvite, opportunity, queryClient, selectedMatchOpportunityId]
+    [
+      canOrganizerInvite,
+      inviteCandidatesQuery.data,
+      opportunity,
+      queryClient,
+      selectedMatchOpportunityId,
+    ]
   )
 
   const sportsVenueId = opportunity?.sportsVenueId ?? null
