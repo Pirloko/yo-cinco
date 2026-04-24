@@ -1485,16 +1485,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.info('Este partido ya está finalizado.')
       return false
     }
-    if (
-      (opp.type === 'players' ||
-        opp.type === 'team_pick_public' ||
-        opp.type === 'team_pick_private') &&
-      outcome.kind !== 'casual'
-    ) {
+    if (opp.type === 'players' && outcome.kind !== 'casual') {
       toast.error('Indica el cierre como partido casual.')
       return false
     }
-    if (opp.type === 'open' && outcome.kind !== 'revuelta') {
+    if (
+      (opp.type === 'open' ||
+        opp.type === 'team_pick_public' ||
+        opp.type === 'team_pick_private') &&
+      outcome.kind !== 'revuelta'
+    ) {
       toast.error('Indica el resultado (equipo A, B o empate).')
       return false
     }
@@ -1539,6 +1539,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
         p_opportunity_id: opportunityId,
         p_result: outcome.revueltaResult,
       })
+      if (error) {
+        toast.error(error.message)
+        return false
+      }
+      const matches = await fetchLatestMatchOpportunities(supabase)
+      setMatchOpportunities(matches)
+      await refreshCurrentUserProfile()
+      toast.success(
+        'Partido finalizado. Los jugadores pueden calificar desde el detalle cuando quieran.'
+      )
+      return true
+    }
+
+    if (
+      (opp.type === 'team_pick_public' || opp.type === 'team_pick_private') &&
+      outcome.kind === 'revuelta'
+    ) {
+      const now = new Date().toISOString()
+      const { error } = await supabase
+        .from('match_opportunities')
+        .update({
+          status: 'completed',
+          finalized_at: now,
+          updated_at: now,
+          rival_result: null,
+          revuelta_result: outcome.revueltaResult,
+          casual_completed: null,
+        })
+        .eq('id', opportunityId)
+        .eq('creator_id', currentUser.id)
       if (error) {
         toast.error(error.message)
         return false

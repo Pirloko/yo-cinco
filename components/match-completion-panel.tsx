@@ -396,7 +396,12 @@ export function MatchCompletionPanel({
         </p>
       )
     }
-    if (opportunity.type === 'open' && opportunity.revueltaResult) {
+    if (
+      (opportunity.type === 'open' ||
+        opportunity.type === 'team_pick_public' ||
+        opportunity.type === 'team_pick_private') &&
+      opportunity.revueltaResult
+    ) {
       const map: Record<RevueltaResult, string> = {
         team_a: 'Ganó equipo A',
         team_b: 'Ganó equipo B',
@@ -427,7 +432,11 @@ export function MatchCompletionPanel({
   }
 
   const handleFinalizeCasualOrRevuelta = async (): Promise<boolean> => {
-    if (opportunity.type === 'open') {
+    if (
+      opportunity.type === 'open' ||
+      opportunity.type === 'team_pick_public' ||
+      opportunity.type === 'team_pick_private'
+    ) {
       if (!revueltaPick) return false
       setFinalizing(true)
       try {
@@ -681,6 +690,9 @@ export function MatchCompletionPanel({
                 <DialogTitle>
                   {opportunity.type === 'open'
                     ? 'Resultado de la revuelta'
+                    : opportunity.type === 'team_pick_public' ||
+                        opportunity.type === 'team_pick_private'
+                      ? 'Resultado selección de equipos'
                     : opportunity.type === 'rival'
                       ? 'Resultado equipo vs equipo'
                       : 'Confirmar cierre'}
@@ -688,15 +700,15 @@ export function MatchCompletionPanel({
                 <DialogDescription>
                   Los jugadores podrán dejar su calificación desde el detalle del
                   partido cuando les acomode (una sola vez cada uno).
-                  {opportunity.type === 'players' ||
-                  opportunity.type === 'team_pick_public' ||
-                  opportunity.type === 'team_pick_private'
+                  {opportunity.type === 'players'
                     ? ' Se registrará como partido jugado (sin marcador por equipos).'
                     : null}
                 </DialogDescription>
               </DialogHeader>
 
-              {opportunity.type === 'open' && (
+              {(opportunity.type === 'open' ||
+                opportunity.type === 'team_pick_public' ||
+                opportunity.type === 'team_pick_private') && (
                 <div className="space-y-2 py-1">
                   <Label className="text-xs text-muted-foreground">
                     ¿Quién ganó?
@@ -779,7 +791,10 @@ export function MatchCompletionPanel({
                   type="button"
                   disabled={
                     finalizing ||
-                    (opportunity.type === 'open' && !revueltaPick) ||
+                    ((opportunity.type === 'open' ||
+                      opportunity.type === 'team_pick_public' ||
+                      opportunity.type === 'team_pick_private') &&
+                      !revueltaPick) ||
                     (opportunity.type === 'rival' && !rivalOrganizerPick)
                   }
                   onClick={() => void confirmFinalizeFromDialog()}
