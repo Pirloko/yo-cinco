@@ -22,6 +22,7 @@ import {
   type PlayerVenueReservationListItem,
 } from '@/lib/supabase/venue-queries'
 import type { LastMessagePreview } from '@/lib/supabase/message-queries'
+import { fetchInvitedOpportunityIds } from '@/lib/supabase/message-queries'
 import type { SoloVenueReviewSummary } from '@/lib/supabase/venue-review-queries'
 import { SoloReserveVenueRatingBlock } from '@/components/solo-reserve-venue-rating'
 import {
@@ -645,17 +646,23 @@ export function MatchesScreen() {
     setCurrentScreen('matchDetails')
   }, [setSelectedMatchOpportunityId, setCurrentScreen])
 
-  const invitationNotifications = useMemo(
+  const invitedIdsQuery = useQuery({
+    queryKey: queryKeys.matchesHub.invitedOpportunityIds(currentUser?.id),
+    enabled: Boolean(soloHubEnabled && sessionQueryEnabled(currentUser?.id)),
+    queryFn: async () => {
+      if (!currentUser?.id) return [] as string[]
+      const supabase = getBrowserSupabase()
+      if (!supabase) return [] as string[]
+      return fetchInvitedOpportunityIds(supabase, currentUser.id)
+    },
+  })
+
+  const invitationMatches = useMemo(
     () =>
-      notificationItems
-        .filter((n) => n.type === 'match_invitation')
-        .sort((a, b) => {
-          if (a.isRead !== b.isRead) return Number(a.isRead) - Number(b.isRead)
-          return (
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          )
-        }),
-    [notificationItems]
+      matchOpportunities
+        .filter((m) => (invitedIdsQuery.data ?? []).includes(m.id))
+        .sort((a, b) => a.dateTime.getTime() - b.dateTime.getTime()),
+    [invitedIdsQuery.data, matchOpportunities]
   )
 
   const openInvitationFromNotification = useCallback(
@@ -690,7 +697,7 @@ export function MatchesScreen() {
             onClick={() => setActiveTab('invitations')}
             icon={<ShieldAlert className="w-4 h-4" />}
             label="Invitaciones"
-            count={invitationNotifications.length}
+            count={invitationMatches.length}
           />
           <TabButton
             active={activeTab === 'chats'}
@@ -1023,21 +1030,24 @@ export function MatchesScreen() {
 
         {activeTab === 'invitations' && (
           <div className="space-y-2">
-            {invitationNotifications.length === 0 ? (
+            {invitationMatches.length === 0 ? (
               <EmptyState
                 icon={<ShieldAlert className="w-8 h-8" />}
                 title="Sin invitaciones por ahora"
                 description="Cuando un organizador te invite a un partido aparecerá aquí. También verás el aviso en la campanita."
               />
             ) : (
-              invitationNotifications.map((n) => {
-                const matchId = n.payload?.matchId
+              invitationMatches.map((match) => {
+                const linkedNotification = notificationItems.find(
+                  (n) =>
+                    n.type === 'match_invitation' && n.payload?.matchId === match.id
+                )
                 return (
                   <div
-                    key={n.id}
+                    key={match.id}
                     className={cn(
                       'rounded-xl border p-3',
-                      n.isRead
+                      linkedNotification?.isRead
                         ? 'border-border bg-card/40'
                         : 'border-primary/40 bg-primary/5'
                     )}
@@ -1045,26 +1055,33 @@ export function MatchesScreen() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-foreground">
-                          {n.title}
+                          Invitación a partido
                         </p>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          {n.body}
+                          {match.title} · {formatMatchInTimezone(match.dateTime, 'EEEE d MMM · HH:mm')}
                         </p>
                       </div>
-                      {!n.isRead ? (
+                      {linkedNotification && !linkedNotification.isRead ? (
                         <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
                       ) : null}
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-2">
                       <p className="text-[11px] text-muted-foreground">
-                        {new Date(n.createdAt).toLocaleString()}
+                        {match.venue} · {match.location}
                       </p>
                       <button
                         type="button"
                         className="rounded-md border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/15"
-                        onClick={() =>
-                          void openInvitationFromNotification(n.id, matchId)
-                        }
+                        onClick={() => {
+                          if (linkedNotification) {
+                            void openInvitationFromNotification(
+                              linkedNotification.id,
+                              match.id
+                            )
+                            return
+                          }
+                          openDetails(match.id)
+                        }}
                       >
                         Ver invitación
                       </button>

@@ -98,6 +98,8 @@ export const queryKeys = {
     all: queryKeyRoot.matchesHub,
     soloVenueReservations: (userId: string | null | undefined) =>
       [...queryKeyRoot.matchesHub, 'soloVenueReservations', userId ?? ''] as const,
+    invitedOpportunityIds: (userId: string | null | undefined) =>
+      [...queryKeyRoot.matchesHub, 'invitedOpportunityIds', userId ?? ''] as const,
     lastMessages: (opportunityIdsKey: string) =>
       [...queryKeyRoot.matchesHub, 'lastMessages', opportunityIdsKey] as const,
     ratingSummaries: (opportunityIdsKey: string) =>

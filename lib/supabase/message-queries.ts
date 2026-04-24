@@ -20,6 +20,19 @@ export async function fetchParticipatingOpportunityIds(
   ]
 }
 
+export async function fetchInvitedOpportunityIds(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<string[]> {
+  const { data: parts } = await supabase
+    .from('match_opportunity_participants')
+    .select('opportunity_id')
+    .eq('user_id', userId)
+    .eq('status', 'invited')
+
+  return [...new Set((parts ?? []).map((p) => p.opportunity_id as string))]
+}
+
 export type ChatMessageRow = {
   id: string
   senderId: string

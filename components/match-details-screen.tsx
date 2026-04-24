@@ -346,12 +346,17 @@ export function MatchDetailsScreen() {
     organizerNameNormalized === 'administrador'
   const isPlayersSearchMode = opportunity?.type === 'players'
   const participantsShownInRoster = useMemo(
-    () =>
-      isPlayersSearchMode
-        ? participantsShownToViewer.filter(
-            (p) => p.status !== 'creator' && p.id !== opportunity?.creatorId
-          )
-        : participantsShownToViewer,
+    () => {
+      const withoutInvited = participantsShownToViewer.filter(
+        (p) => p.status !== 'invited'
+      )
+      if (isPlayersSearchMode) {
+        return withoutInvited.filter(
+          (p) => p.status !== 'creator' && p.id !== opportunity?.creatorId
+        )
+      }
+      return withoutInvited
+    },
     [isPlayersSearchMode, opportunity?.creatorId, participantsShownToViewer]
   )
 
@@ -361,12 +366,10 @@ export function MatchDetailsScreen() {
         (p) =>
           (isPlayersSearchMode
             ? p.status === 'confirmed' ||
-              p.status === 'pending' ||
-              p.status === 'invited'
+              p.status === 'pending'
             : p.status === 'creator' ||
               p.status === 'confirmed' ||
-              p.status === 'pending' ||
-              p.status === 'invited')
+              p.status === 'pending')
       ).length,
     [isPlayersSearchMode, participantsForList]
   )
