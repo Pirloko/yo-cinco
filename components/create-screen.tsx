@@ -934,9 +934,12 @@ export function CreateScreen() {
                     title="Buscar jugadores"
                     description="Te faltan jugadores para completar"
                     selected={matchType === 'players'}
+                    disabled
+                    unavailableLabel="No disponible"
                     onClick={() => {
-                      setStep1TeamPickSubstep('menu')
-                      setMatchType('players')
+                      toast.info(
+                        'Buscar jugadores estará disponible pronto. Por ahora usa Revuelta o Selección de equipos.'
+                      )
                     }}
                     color="green"
                   />
@@ -1040,6 +1043,12 @@ export function CreateScreen() {
                     setStep(2)
                   }
                 } else {
+                  if (matchType === 'players') {
+                    toast.info(
+                      'Buscar jugadores está temporalmente no disponible.'
+                    )
+                    return
+                  }
                   setStep(2)
                 }
               }}
@@ -1047,7 +1056,7 @@ export function CreateScreen() {
                 step1TeamPickSubstep === 'visibility'
                   ? matchType !== 'team_pick_public' &&
                     matchType !== 'team_pick_private'
-                  : !matchType
+                  : !matchType || matchType === 'players'
               }
               className="w-full h-14 mt-8 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
@@ -2285,6 +2294,8 @@ function TypeCard({
   selected,
   onClick,
   color,
+  disabled = false,
+  unavailableLabel,
 }: {
   icon: ReactNode
   title: string
@@ -2292,6 +2303,8 @@ function TypeCard({
   selected: boolean
   onClick: () => void
   color: 'red' | 'green' | 'gold'
+  disabled?: boolean
+  unavailableLabel?: string
 }) {
   const colorClasses = {
     red: selected ? 'border-red-500 bg-red-500/10' : 'border-border hover:border-red-500/50',
@@ -2307,8 +2320,15 @@ function TypeCard({
 
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`w-full p-6 rounded-2xl border-2 transition-all flex items-center gap-4 ${colorClasses[color]}`}
+      disabled={disabled}
+      aria-disabled={disabled}
+      className={`w-full p-6 rounded-2xl border-2 transition-all flex items-center gap-4 ${colorClasses[color]} ${
+        disabled
+          ? 'cursor-not-allowed opacity-75 saturate-50 hover:border-border'
+          : ''
+      }`}
     >
       <div className={`p-3 rounded-xl ${
         color === 'red' ? 'bg-red-500/20' :
@@ -2318,7 +2338,17 @@ function TypeCard({
         <span className={iconColors[color]}>{icon}</span>
       </div>
       <div className="text-left flex-1">
-        <h3 className="font-semibold text-lg text-foreground">{title}</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="font-semibold text-lg text-foreground">{title}</h3>
+          {disabled && unavailableLabel ? (
+            <Badge
+              variant="outline"
+              className="border-amber-500/45 bg-amber-500/10 text-amber-300"
+            >
+              {unavailableLabel}
+            </Badge>
+          ) : null}
+        </div>
         <p className="text-sm text-muted-foreground">{description}</p>
       </div>
       <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
