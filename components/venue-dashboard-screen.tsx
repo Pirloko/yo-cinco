@@ -59,17 +59,30 @@ import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import {
   Activity,
+  AlertCircle,
   BarChart3,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle2,
   Clock,
+  DollarSign,
+  Hash,
   KeyRound,
   LayoutGrid,
   Link2,
   LogOut,
   MapPin,
   MessageCircle,
+  MapPinned,
   Plus,
+  Sparkles,
+  Users,
+  User,
+  Phone,
+  TrendingUp,
   Trash2,
+  XCircle,
 } from 'lucide-react'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { ThemeMenuButton } from '@/components/theme-controls'
@@ -276,6 +289,7 @@ const WEEKDAY_LONG_ES = [
   'Viernes',
   'Sábado',
 ] as const
+const WEEKDAY_SHORT_ES = ['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'] as const
 
 const DEFAULT_OPEN_CLOSE: { open: string; close: string } = {
   open: '09:00',
@@ -295,18 +309,28 @@ export function VenueDashboardScreen() {
   const { currentUser, logout } = useAppAuth()
   const [tab, setTab] = useState<
     'dashboard' | 'bookings' | 'profile' | 'courts' | 'hours'
-  >('bookings')
+  >('dashboard')
   const [venue, setVenue] = useState<SportsVenue | null>(null)
   const [courts, setCourts] = useState<VenueCourt[]>([])
   const [weeklyLoaded, setWeeklyLoaded] = useState<VenueWeeklyHour[]>([])
   const [dayStr, setDayStr] = useState(() => toDateInputValue(new Date()))
+  const [dayQuickOffset, setDayQuickOffset] = useState<number | null>(0)
   const [reservations, setReservations] = useState<
     Awaited<ReturnType<typeof fetchVenueReservationsRange>>
   >([])
+  const [bookingsMode, setBookingsMode] = useState<'day' | 'upcoming'>('day')
+  const [upcomingRows, setUpcomingRows] = useState<VenueReservationRow[]>([])
+  const [upcomingLoading, setUpcomingLoading] = useState(false)
   const [matchById, setMatchById] = useState<
     Map<string, { id: string; title: string; creatorId: string }>
   >(new Map())
   const [organizerById, setOrganizerById] = useState<
+    Map<string, { id: string; name: string; whatsappPhone: string | null }>
+  >(new Map())
+  const [upcomingMatchById, setUpcomingMatchById] = useState<
+    Map<string, { id: string; title: string; creatorId: string }>
+  >(new Map())
+  const [upcomingOrganizerById, setUpcomingOrganizerById] = useState<
     Map<string, { id: string; name: string; whatsappPhone: string | null }>
   >(new Map())
 
@@ -366,6 +390,13 @@ export function VenueDashboardScreen() {
   })
 
   const ownerId = currentUser?.id
+
+  const quickDayValue = useCallback((add: number) => {
+    const d = new Date()
+    d.setHours(12, 0, 0, 0)
+    d.setDate(d.getDate() + add)
+    return toDateInputValue(d)
+  }, [])
 
   const ownerBundleQuery = useQuery({
     queryKey: queryKeys.venueDashboard.ownerBundle(ownerId),
@@ -486,10 +517,49 @@ export function VenueDashboardScreen() {
     }
   }, [venue?.id, dashboardPeriod])
 
+  const loadUpcomingBookings = useCallback(async () => {
+    const venueId = venue?.id
+    if (!venueId || !isSupabaseConfigured()) return
+    setUpcomingLoading(true)
+    try {
+      const supabase = getBrowserSupabase()
+      if (!supabase) return
+      const from = new Date()
+      from.setHours(0, 0, 0, 0)
+      const to = new Date(from)
+      to.setDate(to.getDate() + 45)
+      to.setHours(23, 59, 59, 999)
+      const list = await fetchVenueReservationsRange(
+        supabase,
+        venueId,
+        from.toISOString(),
+        to.toISOString()
+      )
+      const filtered = list
+        .filter((r) => r.status !== 'cancelled' && r.endsAt >= from)
+        .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
+      setUpcomingRows(filtered)
+      const { matchById: mMap, organizerById: pMap } =
+        await fetchMatchAndOrganizerMapsForVenueBookings(supabase, filtered)
+      setUpcomingMatchById(mMap)
+      setUpcomingOrganizerById(pMap)
+    } finally {
+      setUpcomingLoading(false)
+    }
+  }, [venue?.id])
+
   const refreshBookingsAndDashboard = useCallback(() => {
     void loadBookingsForSelectedDay()
     if (tabRef.current === 'dashboard') void loadDashboardRange()
-  }, [loadBookingsForSelectedDay, loadDashboardRange])
+    if (tabRef.current === 'bookings' && bookingsMode === 'upcoming') {
+      void loadUpcomingBookings()
+    }
+  }, [
+    loadBookingsForSelectedDay,
+    loadDashboardRange,
+    loadUpcomingBookings,
+    bookingsMode,
+  ])
 
   const confirmReservationMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -691,6 +761,11 @@ export function VenueDashboardScreen() {
   useEffect(() => {
     void loadBookingsForSelectedDay()
   }, [loadBookingsForSelectedDay])
+
+  useEffect(() => {
+    if (tab !== 'bookings' || bookingsMode !== 'upcoming' || !venue?.id) return
+    void loadUpcomingBookings()
+  }, [tab, bookingsMode, venue?.id, loadUpcomingBookings])
 
   useEffect(() => {
     if (tab !== 'dashboard' || !venue?.id) return
@@ -945,6 +1020,55 @@ export function VenueDashboardScreen() {
     for (const c of courts) m.set(c.id, c.name)
     return m
   }, [courts])
+  const reservationsActiveDay = useMemo(
+    () => reservations.filter((r) => r.status !== 'cancelled'),
+    [reservations]
+  )
+  const upcomingGrouped = useMemo(() => {
+    const map = new Map<string, VenueReservationRow[]>()
+    for (const row of upcomingRows) {
+      const key = row.startsAt.toLocaleDateString('en-CA')
+      const arr = map.get(key) ?? []
+      arr.push(row)
+      map.set(key, arr)
+    }
+    return [...map.entries()].map(([dateKey, rows]) => ({
+      dateKey,
+      date: rows[0].startsAt,
+      rows,
+    }))
+  }, [upcomingRows])
+  const upcomingMetrics = useMemo(() => {
+    const active = upcomingRows.length
+    const income = upcomingRows
+      .filter(
+        (r) => r.paymentStatus === 'paid' || r.paymentStatus === 'deposit_paid'
+      )
+      .reduce(
+        (acc, r) => acc + (r.paidAmount ?? r.depositAmount ?? r.pricePerHour ?? 0),
+        0
+      )
+    const incomeCompact = new Intl.NumberFormat('es-CL', {
+      notation: 'compact',
+      compactDisplay: 'short',
+      maximumFractionDigits: 1,
+    }).format(income)
+    return { active, incomeCompact }
+  }, [upcomingRows])
+  const courtStats = useMemo(() => {
+    const prices = courts
+      .map((c) => c.pricePerHour)
+      .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+    const avg =
+      prices.length > 0
+        ? Math.round(prices.reduce((acc, n) => acc + n, 0) / prices.length)
+        : 0
+    return {
+      total: courts.length,
+      active: courts.length,
+      avgPrice: avg,
+    }
+  }, [courts])
 
   const [clockTick, setClockTick] = useState(0)
   useEffect(() => {
@@ -975,6 +1099,24 @@ export function VenueDashboardScreen() {
       cancelled,
       paidOrDeposit,
     }
+  }, [dashboardRows])
+  const dashboardIncome = useMemo(() => {
+    const total = dashboardRows
+      .filter(
+        (r) =>
+          r.status !== 'cancelled' &&
+          (r.paymentStatus === 'paid' || r.paymentStatus === 'deposit_paid')
+      )
+      .reduce(
+        (acc, r) => acc + (r.paidAmount ?? r.depositAmount ?? r.pricePerHour ?? 0),
+        0
+      )
+    const compact = new Intl.NumberFormat('es-CL', {
+      notation: 'compact',
+      compactDisplay: 'short',
+      maximumFractionDigits: 1,
+    }).format(total)
+    return { total, compact }
   }, [dashboardRows])
 
   /** Siempre día calendario actual (no depende del filtro Hoy/7d/30d). */
@@ -1045,6 +1187,14 @@ export function VenueDashboardScreen() {
     () => dashboardHistoryRows.slice(0, historyLimit),
     [dashboardHistoryRows, historyLimit]
   )
+  const todayOccupancyPct = useMemo(() => {
+    if (todaySlotAvailability.total <= 0) return 0
+    const occupied = todaySlotAvailability.total - todaySlotAvailability.free
+    return Math.max(
+      0,
+      Math.min(100, Math.round((occupied / todaySlotAvailability.total) * 100))
+    )
+  }, [todaySlotAvailability])
 
   const saveVenueContactProfile = async () => {
     if (!venue) return
@@ -1280,10 +1430,12 @@ export function VenueDashboardScreen() {
             ))}
           </div>
 
-          <main className="flex-1 p-4 space-y-4 max-w-lg mx-auto w-full">
+          <main
+            className={`flex-1 p-4 space-y-4 mx-auto w-full ${tab === 'dashboard' ? 'max-w-6xl' : 'max-w-lg'}`}
+          >
             {tab === 'dashboard' && (
               <div className="space-y-4">
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-card p-1.5 w-fit">
                   {(
                     [
                       ['today', 'Hoy'],
@@ -1294,7 +1446,8 @@ export function VenueDashboardScreen() {
                     <Button
                       key={id}
                       size="sm"
-                      variant={dashboardPeriod === id ? 'default' : 'outline'}
+                      variant={dashboardPeriod === id ? 'default' : 'ghost'}
+                      className="rounded-full"
                       onClick={() =>
                         setDashboardPeriod(id as 'today' | '7d' | '30d')
                       }
@@ -1303,11 +1456,13 @@ export function VenueDashboardScreen() {
                     </Button>
                   ))}
                 </div>
-                <p className="text-[11px] text-muted-foreground leading-snug">
-                  Pendientes, confirmadas y canceladas cuentan reservas del
-                  periodo elegido. La tarjeta «Hoy» muestra cupos disponibles
-                  según la fecha de hoy y el horario del centro.
-                </p>
+                <Card className="border-border bg-card/70">
+                  <CardContent className="p-3 text-[11px] text-muted-foreground leading-snug">
+                    Métricas del periodo elegido. La tarjeta «Hoy» refleja cupos
+                    disponibles en tiempo real según horario del centro y
+                    duración del tramo ({venue?.slotDurationMinutes ?? 60} min).
+                  </CardContent>
+                </Card>
 
                 {dashboardLoading ? (
                   <div className="flex justify-center py-8">
@@ -1318,145 +1473,184 @@ export function VenueDashboardScreen() {
                   </div>
                 ) : (
                   <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Card className="bg-card border-border">
-                        <CardHeader className="p-3 pb-1">
-                          <CardTitle className="text-sm font-medium text-muted-foreground">
+                    <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+                      <Card className="bg-card border-border rounded-3xl shadow-sm transition-transform duration-300 hover:-translate-y-0.5">
+                        <CardHeader className="p-4 pb-2">
+                          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-950/40">
+                            <AlertCircle className="h-5 w-5 text-amber-700 dark:text-amber-300" />
+                          </div>
+                          <CardTitle className="text-lg font-semibold tracking-[0.08em] uppercase text-foreground/75">
                             Pendientes
                           </CardTitle>
                         </CardHeader>
-                        <CardContent className="p-3 pt-0">
-                          <p className="text-2xl font-semibold tabular-nums">
+                        <CardContent className="p-4 pt-0">
+                          <p className="text-5xl leading-none font-bold tabular-nums">
                             {dashboardKpis.pending}
+                          </p>
+                          <p className="text-sm text-muted-foreground mt-2">
+                            por confirmar
                           </p>
                         </CardContent>
                       </Card>
-                      <Card className="bg-card border-border">
-                        <CardHeader className="p-3 pb-1">
-                          <CardTitle className="text-sm font-medium text-muted-foreground">
+                      <Card className="bg-card border-border rounded-3xl shadow-sm transition-transform duration-300 hover:-translate-y-0.5">
+                        <CardHeader className="p-4 pb-2">
+                          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-950/40">
+                            <CheckCircle2 className="h-5 w-5 text-emerald-700 dark:text-emerald-300" />
+                          </div>
+                          <CardTitle className="text-lg font-semibold tracking-[0.08em] uppercase text-foreground/75">
                             Confirmadas
                           </CardTitle>
                         </CardHeader>
-                        <CardContent className="p-3 pt-0">
-                          <p className="text-2xl font-semibold tabular-nums">
+                        <CardContent className="p-4 pt-0">
+                          <p className="text-5xl leading-none font-bold tabular-nums">
                             {dashboardKpis.confirmed}
                           </p>
-                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                          <p className="text-sm text-muted-foreground mt-2">
                             {dashboardKpis.paidOrDeposit} con pago/abono
                           </p>
                         </CardContent>
                       </Card>
-                      <Card className="bg-card border-border">
-                        <CardHeader className="p-3 pb-1">
-                          <CardTitle className="text-sm font-medium text-muted-foreground">
+                      <Card className="bg-card border-border rounded-3xl shadow-sm transition-transform duration-300 hover:-translate-y-0.5">
+                        <CardHeader className="p-4 pb-2">
+                          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-900/60">
+                            <XCircle className="h-5 w-5 text-slate-600 dark:text-slate-300" />
+                          </div>
+                          <CardTitle className="text-lg font-semibold tracking-[0.08em] uppercase text-foreground/75">
                             Canceladas
                           </CardTitle>
                         </CardHeader>
-                        <CardContent className="p-3 pt-0">
-                          <p className="text-2xl font-semibold tabular-nums">
+                        <CardContent className="p-4 pt-0">
+                          <p className="text-5xl leading-none font-bold tabular-nums">
                             {dashboardKpis.cancelled}
                           </p>
+                          <p className="text-sm text-muted-foreground mt-2">del periodo</p>
                         </CardContent>
                       </Card>
-                      <Card className="bg-card border-border border-emerald-500/25">
-                        <CardHeader className="p-3 pb-1">
-                          <CardTitle className="text-sm font-medium text-muted-foreground">
-                            Cupos libres (hoy)
+                      <Card className="bg-card border-border rounded-3xl shadow-sm transition-transform duration-300 hover:-translate-y-0.5">
+                        <CardHeader className="p-4 pb-2">
+                          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-950/40">
+                            <TrendingUp className="h-5 w-5 text-emerald-700 dark:text-emerald-300" />
+                          </div>
+                          <CardTitle className="text-lg font-semibold tracking-[0.08em] uppercase text-foreground/75">
+                            Ingresos
                           </CardTitle>
-                          <CardDescription className="text-[11px] pt-0.5 capitalize">
-                            {new Date().toLocaleDateString('es-CL', {
-                              weekday: 'long',
-                              day: 'numeric',
-                              month: 'long',
-                              year: 'numeric',
-                            })}
-                          </CardDescription>
                         </CardHeader>
-                        <CardContent className="p-3 pt-0 space-y-1">
-                          {todaySlotAvailability.closedReason === 'no_courts' ? (
-                            <p className="text-sm text-muted-foreground">
-                              Agrega canchas para ver disponibilidad.
-                            </p>
-                          ) : todaySlotAvailability.closedReason ===
-                            'no_hours' ? (
-                            <p className="text-sm text-muted-foreground">
-                              Sin horario configurado para hoy o día cerrado.
-                            </p>
-                          ) : (
-                            <>
-                              <p className="text-2xl font-semibold tabular-nums">
-                                <span className="text-primary">
-                                  {todaySlotAvailability.free}
-                                </span>
-                                <span className="text-muted-foreground font-normal text-lg">
-                                  {' '}
-                                  / {todaySlotAvailability.total}
-                                </span>
-                              </p>
-                              <p className="text-[11px] text-muted-foreground leading-snug">
-                                Cupos = cada tramo de{' '}
-                                {venue?.slotDurationMinutes ?? 60} min en cada
-                                cancha ({todaySlotAvailability.numSlots} tramos
-                                × {courts.length}{' '}
-                                {courts.length === 1 ? 'cancha' : 'canchas'}).
-                              </p>
-                              <p className="text-[11px] text-muted-foreground">
-                                Canchas con al menos un cupo libre hoy:{' '}
-                                <span className="text-foreground font-medium tabular-nums">
-                                  {todaySlotAvailability.courtsWithFreeSlot}
-                                </span>{' '}
-                                de {courts.length}
-                              </p>
-                            </>
-                          )}
+                        <CardContent className="p-4 pt-0">
+                          <p className="text-5xl leading-none font-bold tabular-nums">
+                            ${dashboardIncome.compact}
+                          </p>
+                          <p className="text-sm text-muted-foreground mt-2">
+                            CLP del periodo
+                          </p>
                         </CardContent>
                       </Card>
                     </div>
 
+                    <Card className="bg-emerald-500/5 border-emerald-500/20 rounded-2xl shadow-sm">
+                      <CardHeader className="p-3 pb-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <CardTitle className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">
+                              Cupos libres hoy
+                            </CardTitle>
+                            <CardDescription className="text-[12px] pt-0.5 capitalize">
+                              {new Date().toLocaleDateString('es-CL', {
+                                weekday: 'long',
+                                day: 'numeric',
+                                month: 'long',
+                                year: 'numeric',
+                              })}
+                            </CardDescription>
+                          </div>
+                          <Sparkles className="h-4 w-4 text-amber-500 mt-0.5" />
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-3 pt-0 space-y-2">
+                        {todaySlotAvailability.closedReason === 'no_courts' ? (
+                          <p className="text-sm text-muted-foreground">
+                            Agrega canchas para ver disponibilidad.
+                          </p>
+                        ) : todaySlotAvailability.closedReason === 'no_hours' ? (
+                          <p className="text-sm text-muted-foreground">
+                            Sin horario configurado para hoy o día cerrado.
+                          </p>
+                        ) : (
+                          <>
+                            <p className="text-5xl leading-none font-bold tabular-nums">
+                              <span className="text-emerald-700 dark:text-emerald-300">
+                                {todaySlotAvailability.free}
+                              </span>
+                              <span className="text-muted-foreground font-medium text-3xl">
+                                {' '}
+                                / {todaySlotAvailability.total}
+                              </span>
+                            </p>
+                            <div className="h-2 w-full rounded-full bg-border/70 overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-emerald-600 transition-all duration-700"
+                                style={{ width: `${todayOccupancyPct}%` }}
+                              />
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                              <span>{todayOccupancyPct}% ocupado</span>
+                              <span>
+                                {todaySlotAvailability.numSlots} tramos × {courts.length}{' '}
+                                {courts.length === 1 ? 'cancha' : 'canchas'}
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </CardContent>
+                    </Card>
+
                     <Card className="bg-card border-border border-primary/20">
                       <CardHeader className="p-3 pb-2">
-                        <div className="flex items-center gap-2">
-                          <Activity className="h-4 w-4 text-primary" />
-                          <CardTitle className="text-base">Ahora</CardTitle>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Activity className="h-4 w-4 text-primary" />
+                            <CardTitle className="text-base">Ahora</CardTitle>
+                          </div>
+                          <Badge variant="secondary" className="text-[10px] uppercase">
+                            <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            En vivo
+                          </Badge>
                         </div>
                         <CardDescription className="text-xs">
                           Tramo actual según duración de cupos (
-                          {venue?.slotDurationMinutes ?? 60} min) y horario del
-                          centro.
+                          {venue?.slotDurationMinutes ?? 60} min).
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="p-3 pt-0 space-y-2 text-sm">
                         {liveAvailability.slot ? (
                           <>
-                            <p className="text-foreground font-medium">
-                              {liveAvailability.slot.start.toLocaleTimeString(
-                                'es-CL',
-                                { hour: '2-digit', minute: '2-digit' }
-                              )}{' '}
-                              –{' '}
-                              {liveAvailability.slot.end.toLocaleTimeString(
-                                'es-CL',
-                                { hour: '2-digit', minute: '2-digit' }
-                              )}
-                            </p>
-                            {liveAvailability.totalCourts === 0 ? (
-                              <p className="text-muted-foreground">
-                                No hay canchas cargadas.
-                              </p>
-                            ) : (
-                              <p>
-                                <span className="font-semibold text-primary tabular-nums">
-                                  {liveAvailability.freeCount}
-                                </span>{' '}
-                                de {liveAvailability.totalCourts} canchas libres
-                                en este tramo.
-                              </p>
-                            )}
+                            <div className="rounded-md border border-border bg-muted/35 p-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-foreground font-semibold">
+                                  {liveAvailability.slot.start.toLocaleTimeString(
+                                    'es-CL',
+                                    { hour: '2-digit', minute: '2-digit' }
+                                  )}{' '}
+                                  –{' '}
+                                  {liveAvailability.slot.end.toLocaleTimeString('es-CL', {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </p>
+                                <p className="text-right leading-tight">
+                                  <span className="text-xs uppercase text-muted-foreground">
+                                    Libres
+                                  </span>
+                                  <br />
+                                  <span className="font-semibold text-lg tabular-nums text-primary">
+                                    {liveAvailability.freeCount} / {liveAvailability.totalCourts}
+                                  </span>
+                                </p>
+                              </div>
+                            </div>
                           </>
                         ) : (
                           <p className="text-muted-foreground">
-                            Fuera de horario de atención hoy o sin franja
-                            definida para este momento.
+                            Fuera de horario de atención hoy o sin franja definida.
                           </p>
                         )}
                       </CardContent>
@@ -1483,10 +1677,14 @@ export function VenueDashboardScreen() {
                         </select>
                       </div>
                       {visibleHistory.length === 0 ? (
-                        <p className="text-sm text-muted-foreground py-4">
-                          No hay reservas en este periodo con el filtro
-                          seleccionado.
-                        </p>
+                        <Card className="border-dashed">
+                          <CardContent className="py-8 text-center">
+                            <Calendar className="h-5 w-5 text-muted-foreground mx-auto mb-2" />
+                            <p className="text-sm text-muted-foreground">
+                              No hay reservas en este periodo con el filtro seleccionado.
+                            </p>
+                          </CardContent>
+                        </Card>
                       ) : (
                         <ul className="space-y-2">
                           {visibleHistory.map((r) => (
@@ -1555,27 +1753,124 @@ export function VenueDashboardScreen() {
 
             {tab === 'bookings' && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <Label className="text-foreground">Día</Label>
-                  <Input
-                    type="date"
-                    value={dayStr}
-                    onChange={(e) => setDayStr(e.target.value)}
-                    className="w-auto bg-secondary border-border"
-                  />
+                <div className="inline-flex rounded-full border border-border bg-card p-1 shadow-sm">
+                  <Button
+                    size="sm"
+                    className="rounded-full"
+                    variant={bookingsMode === 'day' ? 'default' : 'ghost'}
+                    onClick={() => setBookingsMode('day')}
+                  >
+                    Por día
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="rounded-full"
+                    variant={bookingsMode === 'upcoming' ? 'default' : 'ghost'}
+                    onClick={() => setBookingsMode('upcoming')}
+                  >
+                    Próximas
+                  </Button>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => void copyPublicLink()}>
-                  <Link2 className="w-4 h-4 mr-1" />
-                  Copiar página pública
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowManualForm((v) => !v)}
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  {showManualForm ? 'Ocultar reserva manual' : 'Nueva reserva manual'}
-                </Button>
+
+                {bookingsMode === 'day' ? (
+                  <Card className="bg-card border-border rounded-2xl shadow-sm">
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4 text-primary" />
+                          <Label className="text-base font-semibold text-foreground">
+                            Día
+                          </Label>
+                        </div>
+                        <div className="flex items-center gap-1 rounded-xl bg-muted/60 border border-border px-1 py-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            onClick={() => {
+                              const d = new Date(`${dayStr}T12:00:00`)
+                              d.setDate(d.getDate() - 1)
+                              setDayStr(toDateInputValue(d))
+                              setDayQuickOffset(null)
+                            }}
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <Input
+                            type="date"
+                            value={dayStr}
+                            onChange={(e) => {
+                              setDayStr(e.target.value)
+                              setDayQuickOffset(null)
+                            }}
+                            className="h-8 w-[148px] border-0 bg-transparent px-2 text-center font-semibold shadow-none focus-visible:ring-0"
+                          />
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8"
+                            onClick={() => {
+                              const d = new Date(`${dayStr}T12:00:00`)
+                              d.setDate(d.getDate() + 1)
+                              setDayStr(toDateInputValue(d))
+                              setDayQuickOffset(null)
+                            }}
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { label: 'Hoy', add: 0 },
+                          { label: '3 días', add: 2 },
+                          { label: '7 días', add: 6 },
+                        ].map((chip) => (
+                          <Button
+                            key={chip.label}
+                            size="sm"
+                            variant={dayStr === quickDayValue(chip.add) ? 'default' : 'outline'}
+                            className="rounded-full h-8"
+                            onClick={() => {
+                              setDayStr(quickDayValue(chip.add))
+                              setDayQuickOffset(chip.add)
+                            }}
+                          >
+                            {chip.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : null}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => void copyPublicLink()}
+                    className="h-24 rounded-3xl border-border bg-card shadow-sm text-foreground hover:bg-card/90 px-4"
+                  >
+                    <span className="flex w-full items-center justify-center gap-2.5">
+                      <Link2 className="h-5 w-5 shrink-0" />
+                      <span className="text-2xl leading-[1.1] font-semibold tracking-tight">
+                        Copiar página
+                        <br />
+                        pública
+                      </span>
+                    </span>
+                  </Button>
+                  <Button
+                    onClick={() => setShowManualForm((v) => !v)}
+                    className="h-24 rounded-3xl bg-primary hover:bg-primary/90 shadow-sm px-4"
+                  >
+                    <span className="flex w-full items-center justify-center gap-2.5">
+                      <Plus className="h-6 w-6 shrink-0" />
+                      <span className="text-2xl leading-[1.1] font-semibold tracking-tight">
+                        {showManualForm ? 'Ocultar reserva' : 'Nueva reserva'}
+                      </span>
+                    </span>
+                  </Button>
+                </div>
                 {showManualForm ? (
                   <Card className="bg-card border-border shadow-sm">
                     <CardContent className="p-4 space-y-4">
@@ -1732,23 +2027,48 @@ export function VenueDashboardScreen() {
                     </CardContent>
                   </Card>
                 ) : null}
-                <ul className="space-y-2">
-                  {reservations.filter((r) => r.status !== 'cancelled').length ===
-                  0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      No hay reservas este día.
-                    </p>
-                  ) : (
-                    reservations
-                      .filter((r) => r.status !== 'cancelled')
-                      .map((r) => (
-                        <Card key={r.id} className="bg-card border-border">
-                          <CardContent className="p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-sm">
-                            <div>
-                              <p className="font-medium">
-                                {courtNameById.get(r.courtId) ?? 'Cancha'}
-                              </p>
-                              <p className="text-muted-foreground">
+                {bookingsMode === 'day' ? (
+                  <ul className="space-y-2.5">
+                    {reservationsActiveDay.length === 0 ? (
+                      <Card className="border-dashed">
+                        <CardContent className="py-8 text-center">
+                          <Calendar className="h-5 w-5 text-muted-foreground mx-auto mb-2" />
+                          <p className="text-sm text-muted-foreground">
+                            No hay reservas activas para este día.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      reservationsActiveDay.map((r) => (
+                        <Card
+                          key={r.id}
+                          className={`bg-card border-border rounded-2xl shadow-sm overflow-hidden ${
+                            r.status === 'confirmed'
+                              ? 'border-l-4 border-l-emerald-600'
+                              : 'border-l-4 border-l-amber-500'
+                          }`}
+                        >
+                          <CardContent className="p-3.5 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between text-sm">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2 mb-1">
+                                <Badge variant="secondary" className="rounded-full">
+                                  <MapPin className="w-3 h-3 mr-1" />
+                                  {courtNameById.get(r.courtId) ?? 'Cancha'}
+                                </Badge>
+                                <Badge
+                                  variant={r.status === 'confirmed' ? 'default' : 'outline'}
+                                  className="rounded-full"
+                                >
+                                  {r.status === 'confirmed' ? 'Confirmada' : 'Pendiente'}
+                                </Badge>
+                                {r.paymentStatus === 'paid' ||
+                                r.paymentStatus === 'deposit_paid' ? (
+                                  <Badge variant="secondary" className="rounded-full">
+                                    Pagado
+                                  </Badge>
+                                ) : null}
+                              </div>
+                              <p className="font-semibold text-[1.7rem] leading-none tracking-tight">
                                 {r.startsAt.toLocaleTimeString('es-CL', {
                                   hour: '2-digit',
                                   minute: '2-digit',
@@ -1758,6 +2078,9 @@ export function VenueDashboardScreen() {
                                   hour: '2-digit',
                                   minute: '2-digit',
                                 })}
+                              </p>
+                              <p className="text-muted-foreground text-xs mt-1">
+                                {courtNameById.get(r.courtId) ?? 'Cancha'}
                               </p>
                               {(r.matchOpportunityId || r.bookerUserId) ? (() => {
                                 const m = r.matchOpportunityId
@@ -1789,28 +2112,17 @@ export function VenueDashboardScreen() {
                                     })}, necesitamos el abono/pago. ¿Te envío los datos para transferir o link de pago?`
                                   : `Hola ${org?.name ?? ''}. Soy el centro deportivo ${venue?.name ?? ''}. Para confirmar tu reserva (${timeLabel}) del día ${dateLabel}, necesitamos el abono/pago. ¿Te envío los datos para transferir o link de pago?`
                                 return (
-                                  <div className="mt-2 space-y-1">
-                                    <p className="text-xs text-primary">
-                                      {m
-                                        ? m.title
-                                        : r.matchOpportunityId
-                                          ? `Partido #${r.matchOpportunityId.slice(0, 8)}…`
-                                          : 'Reserva directa'}
+                                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                                    <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                                      <User className="h-3 w-3" />
+                                      {org?.name?.trim() || 'Sin nombre'}
                                     </p>
-                                    {r.notes?.includes('manual_reservation') ? (
-                                      <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                                        Reserva manual (cliente externo)
+                                    {wa ? (
+                                      <p className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                                        <Phone className="h-3 w-3" />
+                                        {wa}
                                       </p>
                                     ) : null}
-                                    <p className="text-[11px] text-muted-foreground">
-                                      {m ? 'Organizador' : 'Reservante'}:{' '}
-                                      <span className="text-foreground font-medium">
-                                        {org?.name?.trim() || 'Sin nombre'}
-                                      </span>
-                                    </p>
-                                    <p className="text-[11px] text-muted-foreground">
-                                      Estado: <span className="text-foreground font-medium">{r.status === 'pending' ? 'Pendiente' : 'Confirmada'}</span>
-                                    </p>
                                     {wa ? (
                                       <Button asChild size="sm" className="mt-1 bg-green-600 hover:bg-green-500 text-white">
                                         <a
@@ -1835,7 +2147,16 @@ export function VenueDashboardScreen() {
                                 )
                               })() : null}
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex w-full sm:w-auto sm:flex-col sm:items-end gap-2">
+                              <div className="hidden sm:block text-right">
+                                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                  Precio
+                                </p>
+                                <p className="text-2xl leading-none font-bold tabular-nums">
+                                  $
+                                  {Math.round(r.pricePerHour ?? 0).toLocaleString('es-CL')}
+                                </p>
+                              </div>
                               {r.status === 'pending' ? (
                                 <Button
                                   variant="default"
@@ -1858,18 +2179,199 @@ export function VenueDashboardScreen() {
                           </CardContent>
                         </Card>
                       ))
-                  )}
-                </ul>
+                    )}
+                  </ul>
+                ) : (
+                  <div className="space-y-3">
+                    <Card className="bg-emerald-500/5 border-emerald-500/20">
+                      <CardContent className="p-4 flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-emerald-700 dark:text-emerald-300 font-semibold">
+                            Reservas activas
+                          </p>
+                          <p className="text-4xl leading-none font-bold tabular-nums mt-1">
+                            {upcomingMetrics.active}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            próximas a jugarse
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                            Ingresos est.
+                          </p>
+                          <p className="text-3xl leading-none font-bold text-emerald-700 dark:text-emerald-300 mt-1">
+                            ${upcomingMetrics.incomeCompact}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground mt-1">CLP</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                    {upcomingLoading ? (
+                      <div className="flex justify-center py-8">
+                        <div className="h-9 w-9 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                      </div>
+                    ) : upcomingGrouped.length === 0 ? (
+                      <Card className="border-dashed">
+                        <CardContent className="py-8 text-center">
+                          <Calendar className="h-5 w-5 text-muted-foreground mx-auto mb-2" />
+                          <p className="text-sm text-muted-foreground">
+                            No hay reservas próximas en las siguientes semanas.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="space-y-3">
+                        {upcomingGrouped.map((group) => (
+                          <div key={group.dateKey} className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-semibold text-foreground capitalize">
+                                  {group.date.toLocaleDateString('es-CL', {
+                                    weekday: 'long',
+                                    day: 'numeric',
+                                    month: 'short',
+                                  })}
+                                </p>
+                              </div>
+                              <Badge variant="secondary" className="rounded-full">
+                                {group.rows.length}{' '}
+                                {group.rows.length === 1 ? 'reserva' : 'reservas'}
+                              </Badge>
+                            </div>
+                            <ul className="space-y-2">
+                              {group.rows.map((r) => {
+                                const m = r.matchOpportunityId
+                                  ? upcomingMatchById.get(r.matchOpportunityId)
+                                  : undefined
+                                const org = m
+                                  ? upcomingOrganizerById.get(m.creatorId)
+                                  : r.bookerUserId
+                                    ? upcomingOrganizerById.get(r.bookerUserId)
+                                    : null
+                                const wa = org?.whatsappPhone?.trim() || null
+                                const msg = m
+                                  ? `Hola ${org?.name ?? ''}. Soy el centro deportivo ${venue?.name ?? ''}. Para confirmar la reserva del partido “${m.title}” (${r.startsAt.toLocaleTimeString('es-CL', {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })}), con fecha ${r.startsAt.toLocaleDateString('es-CL', {
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                      year: 'numeric',
+                                    })}, necesitamos el abono/pago. ¿Te envío los datos para transferir o link de pago?`
+                                  : `Hola ${org?.name ?? ''}. Soy el centro deportivo ${venue?.name ?? ''}. Para confirmar tu reserva (${r.startsAt.toLocaleTimeString('es-CL', {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })}), necesitamos el abono/pago. ¿Te envío los datos para transferir o link de pago?`
+                                return (
+                                  <li key={r.id}>
+                                    <Card
+                                      className={`bg-card border-border rounded-2xl shadow-sm overflow-hidden ${
+                                        r.status === 'confirmed'
+                                          ? 'border-l-4 border-l-emerald-600'
+                                          : 'border-l-4 border-l-amber-500'
+                                      }`}
+                                    >
+                                      <CardContent className="p-3 text-sm flex items-center justify-between gap-3">
+                                        <div>
+                                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                                            <Badge variant="secondary" className="rounded-full">
+                                              <MapPin className="w-3 h-3 mr-1" />
+                                              {courtNameById.get(r.courtId) ?? 'Cancha'}
+                                            </Badge>
+                                            <Badge
+                                              variant={r.status === 'confirmed' ? 'default' : 'outline'}
+                                              className="rounded-full"
+                                            >
+                                              {r.status === 'confirmed'
+                                                ? 'Confirmada'
+                                                : 'Pendiente'}
+                                            </Badge>
+                                          </div>
+                                          <p className="font-semibold text-[1.7rem] leading-none tracking-tight">
+                                            {r.startsAt.toLocaleTimeString('es-CL', {
+                                              hour: '2-digit',
+                                              minute: '2-digit',
+                                            })}{' '}
+                                            –{' '}
+                                            {r.endsAt.toLocaleTimeString('es-CL', {
+                                              hour: '2-digit',
+                                              minute: '2-digit',
+                                            })}
+                                          </p>
+                                          <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1">
+                                            <User className="h-3 w-3" />
+                                            {org?.name?.trim() || 'Sin nombre'}
+                                          </p>
+                                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                                            {r.status === 'pending' ? (
+                                              <Button
+                                                variant="default"
+                                                size="sm"
+                                                disabled={confirmReservationMutation.isPending}
+                                                onClick={() => confirmReservation(r.id)}
+                                              >
+                                                Confirmar (pagado)
+                                              </Button>
+                                            ) : null}
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={cancelReservationMutation.isPending}
+                                              onClick={() => cancelReservation(r.id)}
+                                            >
+                                              Cancelar
+                                            </Button>
+                                            {wa ? (
+                                              <Button
+                                                asChild
+                                                size="sm"
+                                                className="bg-green-600 hover:bg-green-500 text-white"
+                                              >
+                                                <a
+                                                  href={formatWhatsAppLink(wa, msg)}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                >
+                                                  <MessageCircle className="w-4 h-4 mr-1.5" />
+                                                  WhatsApp
+                                                </a>
+                                              </Button>
+                                            ) : (
+                                              <span className="text-[11px] text-muted-foreground">
+                                                Sin WhatsApp registrado
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                            Precio
+                                          </p>
+                                          <p className="text-2xl font-bold tabular-nums">
+                                            $
+                                            {Math.round(r.pricePerHour ?? 0).toLocaleString(
+                                              'es-CL'
+                                            )}
+                                          </p>
+                                        </div>
+                                      </CardContent>
+                                    </Card>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
             {tab === 'profile' && (
               <div className="space-y-6">
-                <p className="text-sm text-muted-foreground">
-                  Dirección, mapa, ciudad y duración de tramos los gestiona el
-                  administrador. Aquí puedes actualizar el nombre visible, el
-                  teléfono de contacto y tu contraseña de acceso.
-                </p>
                 <div className="space-y-3">
                   <div className="space-y-2">
                     <Label htmlFor="venue-profile-name">Nombre del centro</Label>
@@ -1973,40 +2475,99 @@ export function VenueDashboardScreen() {
             )}
 
             {tab === 'courts' && (
-              <div className="space-y-4">
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Nombre cancha"
-                    value={newCourtName}
-                    onChange={(e) => setNewCourtName(e.target.value)}
-                    className="bg-secondary border-border flex-1"
-                  />
-                  <Button
-                    type="button"
-                    disabled={addCourtMutation.isPending}
-                    onClick={() => addCourt()}
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Agregar
-                  </Button>
+              <div className="space-y-4 sm:space-y-5">
+                <Card className="rounded-2xl border-border shadow-sm">
+                  <CardContent className="p-4 space-y-3">
+                    <p className="text-lg font-semibold">Agregar cancha</p>
+                    <div className="flex items-stretch gap-2">
+                      <div className="relative flex-1 min-w-0">
+                        <MapPinned className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                        <Input
+                          placeholder="Nombre cancha"
+                          value={newCourtName}
+                          onChange={(e) => setNewCourtName(e.target.value)}
+                          className="bg-secondary border-border h-11 pl-10"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        className="h-11 px-5 shrink-0 text-2xl font-semibold rounded-2xl"
+                        disabled={addCourtMutation.isPending}
+                        onClick={() => addCourt()}
+                      >
+                        <Plus className="w-5 h-5 mr-1" />
+                        Agregar
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <Card className="rounded-2xl border-border">
+                    <CardContent className="p-4">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1">
+                        <Users className="h-3.5 w-3.5" /> Total
+                      </p>
+                      <p className="mt-2 text-5xl font-bold leading-none tabular-nums">
+                        {courtStats.total}
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card className="rounded-2xl border-emerald-500/25 bg-emerald-500/5">
+                    <CardContent className="p-4">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1">
+                        <Activity className="h-3.5 w-3.5 text-emerald-600" /> Activas
+                      </p>
+                      <p className="mt-2 text-5xl font-bold leading-none tabular-nums text-emerald-700 dark:text-emerald-300">
+                        {courtStats.active}
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card className="rounded-2xl border-border">
+                    <CardContent className="p-4">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1">
+                        <DollarSign className="h-3.5 w-3.5" /> Promedio
+                      </p>
+                      <p className="mt-2 text-5xl font-bold leading-none tabular-nums">
+                        ${courtStats.avgPrice > 0 ? Math.round(courtStats.avgPrice / 1000) : 0}k
+                      </p>
+                    </CardContent>
+                  </Card>
                 </div>
-                <ul className="space-y-2">
-                  {courts.map((c) => (
+
+                <ul className="space-y-3">
+                  {courts.map((c, idx) => (
                     <li
                       key={c.id}
-                      className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg border border-border bg-card px-3 py-2"
+                      className="rounded-2xl border border-border bg-card shadow-sm p-4 space-y-3"
                     >
-                      <span className="text-sm font-medium shrink-0">{c.name}</span>
-                      <div className="flex flex-1 flex-wrap items-center gap-2 justify-end">
-                        <Label className="text-xs text-muted-foreground whitespace-nowrap">
-                          $/hora (CLP)
-                        </Label>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="h-12 w-12 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center font-bold text-xl shrink-0">
+                            {idx + 1}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-2xl leading-none font-semibold truncate">
+                              {c.name}
+                            </p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Futbolito 6vs6 · {venue?.slotDurationMinutes ?? 60} min/tramo
+                            </p>
+                          </div>
+                        </div>
+                        <Badge className="rounded-full">Activa</Badge>
+                      </div>
+
+                      <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-3 py-2.5">
+                        <span className="inline-flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground font-semibold shrink-0">
+                          <DollarSign className="h-3.5 w-3.5" /> CLP / hora
+                        </span>
                         <Input
                           type="number"
                           min={0}
                           step={1000}
-                          className="h-9 w-36 bg-secondary border-border"
-                          placeholder="Opcional"
+                          className="h-9 border-0 bg-transparent shadow-none focus-visible:ring-0 text-right text-2xl font-semibold tabular-nums"
+                          placeholder="0"
                           defaultValue={c.pricePerHour ?? ''}
                           key={`${c.id}-${c.pricePerHour ?? 'x'}`}
                           onBlur={(e) => saveCourtPrice(c.id, e.target.value)}
@@ -2017,14 +2578,15 @@ export function VenueDashboardScreen() {
                           disabled={removeCourtMutation.isPending}
                           onClick={() => removeCourt(c.id)}
                           aria-label="Eliminar"
+                          className="shrink-0 text-destructive hover:text-destructive"
                         >
-                          <Trash2 className="w-4 h-4 text-destructive" />
+                          <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>
                     </li>
                   ))}
                 </ul>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                   Ese valor se usa al reservar cancha (jugadores y centro) y para
                   calcular el reparto entre jugadores.
                 </p>
@@ -2033,9 +2595,12 @@ export function VenueDashboardScreen() {
 
             {tab === 'hours' && (
               <div className="space-y-5">
-                <Card className="gap-0 py-4 shadow-sm">
+                <Card className="gap-0 py-4 shadow-sm rounded-2xl border-emerald-500/25 bg-emerald-500/5">
                   <CardHeader className="px-4 pb-2 pt-0 sm:px-5">
-                    <CardTitle className="text-base">Atajos</CardTitle>
+                    <CardTitle className="text-base inline-flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-emerald-600" />
+                      Atajos
+                    </CardTitle>
                     <CardDescription>
                       Elige apertura y cierre una vez y repítelos en varios días. Luego
                       confirma con «Guardar horario».
@@ -2053,7 +2618,7 @@ export function VenueDashboardScreen() {
                           step={300}
                           value={hoursQuickOpen}
                           onChange={(e) => setHoursQuickOpen(e.target.value)}
-                          className="h-10 w-full min-w-[8rem] bg-secondary border-border sm:w-36"
+                          className="h-11 w-full min-w-[8rem] bg-card border-border sm:w-36 font-semibold"
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -2066,7 +2631,7 @@ export function VenueDashboardScreen() {
                           step={300}
                           value={hoursQuickClose}
                           onChange={(e) => setHoursQuickClose(e.target.value)}
-                          className="h-10 w-full min-w-[8rem] bg-secondary border-border sm:w-36"
+                          className="h-11 w-full min-w-[8rem] bg-card border-border sm:w-36 font-semibold"
                         />
                       </div>
                     </div>
@@ -2075,7 +2640,7 @@ export function VenueDashboardScreen() {
                         type="button"
                         size="sm"
                         variant="secondary"
-                        className="w-full sm:w-auto"
+                        className="w-full sm:w-auto rounded-full"
                         onClick={() =>
                           applyHoursTemplate([0, 1, 2, 3, 4, 5, 6])
                         }
@@ -2086,7 +2651,7 @@ export function VenueDashboardScreen() {
                         type="button"
                         size="sm"
                         variant="secondary"
-                        className="w-full sm:w-auto"
+                        className="w-full sm:w-auto rounded-full"
                         onClick={() => applyHoursTemplate([1, 2, 3, 4, 5])}
                       >
                         Solo lun–vie
@@ -2095,7 +2660,7 @@ export function VenueDashboardScreen() {
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="w-full sm:w-auto"
+                        className="w-full sm:w-auto rounded-full"
                         onClick={() => closeWeekendDays()}
                       >
                         Cerrar sábado y domingo
@@ -2112,19 +2677,31 @@ export function VenueDashboardScreen() {
                       atención
                     </p>
                   </div>
-                  <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+                  <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
                     {([0, 1, 2, 3, 4, 5, 6] as const).map((d) => {
                       const row = hoursByDay[d]
                       const isOpen = Boolean(row)
                       return (
                         <div
                           key={d}
-                          className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:gap-4 sm:py-2.5 sm:pl-4 sm:pr-3"
+                          className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:gap-4 sm:py-3 sm:pl-4 sm:pr-3"
                         >
-                          <div className="flex items-center justify-between gap-3 sm:min-w-[11rem] sm:max-w-[11rem]">
-                            <span className="text-sm font-medium leading-tight">
-                              {WEEKDAY_LONG_ES[d]}
-                            </span>
+                          <div className="flex items-center justify-between gap-3 sm:min-w-[14rem] sm:max-w-[14rem]">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="h-8 w-8 rounded-lg bg-muted inline-flex items-center justify-center text-[11px] font-bold text-primary shrink-0">
+                                {WEEKDAY_SHORT_ES[d]}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium leading-tight">
+                                  {WEEKDAY_LONG_ES[d]}
+                                </p>
+                                <p className="text-[11px] text-muted-foreground">
+                                  {isOpen && row
+                                    ? `${row.open} – ${row.close}`
+                                    : 'Cerrado'}
+                                </p>
+                              </div>
+                            </div>
                             <div className="flex items-center gap-2 shrink-0">
                               <span className="text-xs text-muted-foreground hidden sm:inline">
                                 Abierto
@@ -2174,7 +2751,7 @@ export function VenueDashboardScreen() {
                                       },
                                     }))
                                   }
-                                  className="h-10 flex-1 bg-secondary border-border"
+                                  className="h-10 flex-1 bg-muted/60 border-border font-semibold"
                                 />
                               </div>
                               <div className="flex flex-1 items-center gap-2 min-w-0 sm:max-w-[11rem]">
@@ -2198,7 +2775,7 @@ export function VenueDashboardScreen() {
                                       },
                                     }))
                                   }
-                                  className="h-10 flex-1 bg-secondary border-border"
+                                  className="h-10 flex-1 bg-muted/60 border-border font-semibold"
                                 />
                               </div>
                             </div>
@@ -2214,10 +2791,11 @@ export function VenueDashboardScreen() {
                 </div>
 
                 <Button
-                  className="w-full sm:w-auto min-h-11"
+                  className="w-full min-h-11"
                   disabled={saveHoursMutation.isPending}
                   onClick={() => void saveHours()}
                 >
+                  <Calendar className="h-4 w-4 mr-1.5" />
                   {saveHoursMutation.isPending
                     ? 'Guardando…'
                     : 'Guardar horario'}
