@@ -1680,55 +1680,56 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const leaveMatchOpportunityWithReason = useStableCallback(async (
     opportunityId: string,
     reason: string
-  ) => {
-    if (!currentUser || !isSupabaseConfigured()) return
+  ): Promise<boolean> => {
+    if (!currentUser || !isSupabaseConfigured()) return false
     const ro = isUserReadOnly(currentUser)
     if (ro.readonly) {
       toastReadOnly(ro.reason)
-      return
+      return false
     }
     const cleanReason = reason.trim()
     if (cleanReason.length < 5) {
       toast.error('El motivo debe tener al menos 5 caracteres.')
-      return
+      return false
     }
     const supabase = getBrowserSupabase()
-    if (!supabase) return
+    if (!supabase) return false
     const { data, error } = await supabase.rpc('leave_match_opportunity_with_reason', {
       p_opportunity_id: opportunityId,
       p_reason: cleanReason,
     })
     if (error) {
       toast.error(error.message)
-      return
+      return false
     }
     const payload = data as { ok?: boolean; error?: string; message?: string } | null
     if (!payload?.ok) {
       const code = payload?.error ?? 'unknown'
       if (code === 'too_late_leave') {
         toast.error('Solo puedes salirte hasta 2 horas antes del partido.')
-        return
+        return false
       }
       if (code === 'not_participant') {
         toast.error('No apareces como participante activo en este partido.')
-        return
+        return false
       }
       if (code === 'reason_required') {
         toast.error('El motivo de salida es obligatorio.')
-        return
+        return false
       }
       if (code === 'not_supported_for_type') {
         toast.error('Esta salida aplica para revueltas y partidos de jugadores.')
-        return
+        return false
       }
       toast.error(payload?.message || 'No se pudo salir del partido.')
-      return
+      return false
     }
     const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
     setMatchOpportunities(matchBundle.matchOpportunities)
     setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
     toast.success('Te saliste del partido.')
     void updateLastSeen(supabase, currentUser.id, { force: true })
+    return true
   })
 
   const rescheduleMatchOpportunityWithReason = useStableCallback(async (payload: {

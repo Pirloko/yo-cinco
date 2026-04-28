@@ -309,6 +309,9 @@ export function MatchDetailsScreen() {
   const [kickUserId, setKickUserId] = useState<string | null>(null)
   const [kickReason, setKickReason] = useState('')
   const [kickSubmitting, setKickSubmitting] = useState(false)
+  const [selfLeaveTeamPickOpen, setSelfLeaveTeamPickOpen] = useState(false)
+  const [selfLeaveReason, setSelfLeaveReason] = useState('')
+  const [selfLeaveSubmitting, setSelfLeaveSubmitting] = useState(false)
   const [respondingId, setRespondingId] = useState<string | null>(null)
   const [joinPlayersOpen, setJoinPlayersOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
@@ -720,6 +723,19 @@ export function MatchDetailsScreen() {
 
   const isCreator = currentUser.id === opportunity.creatorId
   const isParticipant = participatingOpportunityIds.includes(opportunity.id)
+  /** Jugador inscrito (no organizador) puede salir con motivo vía RPC (misma ventana que el panel inferior). */
+  const teamPickMayLeaveSelf = (p: OpportunityParticipantRow) => {
+    const isTeamPickOpp =
+      opportunity.type === 'team_pick_public' ||
+      opportunity.type === 'team_pick_private'
+    return (
+      isTeamPickOpp &&
+      currentUser.id === p.id &&
+      !isCreator &&
+      (p.status === 'confirmed' || p.status === 'pending') &&
+      (opportunity.status === 'pending' || opportunity.status === 'confirmed')
+    )
+  }
   /** Misma regla que RLS `can_access_opportunity_thread`: creador o inscrito. */
   const canOpenMatchChat = isCreator || isParticipant
   const gkCount = participants.filter((p) => p.isGoalkeeper).length
@@ -822,6 +838,7 @@ export function MatchDetailsScreen() {
       isCreator &&
       p.id !== opportunity.creatorId &&
       (p.status === 'confirmed' || p.status === 'pending')
+    const mayLeaveSelf = teamPickMayLeaveSelf(p)
     const waHref = organizerWhatsappUrlForParticipant(p)
     const openKickDialog = () => {
       setKickUserId(p.id)
@@ -837,7 +854,7 @@ export function MatchDetailsScreen() {
       </DropdownMenuItem>
     ) : null
     const actions =
-      mayEditLineup || mayKick || waBtn ? (
+      mayEditLineup || mayKick || waBtn || mayLeaveSelf ? (
         <div className="flex items-center justify-end gap-1.5 w-full">
           {waHref ? (
             <Button
@@ -870,9 +887,24 @@ export function MatchDetailsScreen() {
                 </DropdownMenuItem>
               ) : null}
               {waBtn}
-              {mayKick ? (
+              {mayLeaveSelf ? (
                 <>
                   {(mayEditLineup || waBtn) ? <DropdownMenuSeparator /> : null}
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setSelfLeaveReason('')
+                      setSelfLeaveTeamPickOpen(true)
+                    }}
+                  >
+                    Retirarme del partido
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+              {mayKick ? (
+                <>
+                  {(mayEditLineup || waBtn || mayLeaveSelf) ? (
+                    <DropdownMenuSeparator />
+                  ) : null}
                   <DropdownMenuItem variant="destructive" onSelect={openKickDialog}>
                     Expulsar jugador
                   </DropdownMenuItem>
@@ -909,7 +941,7 @@ export function MatchDetailsScreen() {
       ''
     const digits = raw.replace(/\D/g, '')
     if (!digits || !opportunity) return null
-    const msg = `Hola ${venueContact?.name ?? opportunity.venue}. Soy ${currentUser.name} y vengo de la app futmatch (soy el organizador del partido "${opportunity.title}"). Quiero confirmar la reserva de cancha para el ${formatMatchInTimezone(opportunity.dateTime, "d 'de' MMMM")} a las ${formatMatchInTimezone(opportunity.dateTime, 'HH:mm')} hrs. ¿quisiera saber si Está disponible y cómo realizo el pago?`
+    const msg = `Hola ${venueContact?.name ?? opportunity.venue}. Soy ${currentUser.name} y vengo de https://sportmatch.cl (soy el organizador del partido "${opportunity.title}"). Quiero confirmar la reserva de cancha para el ${formatMatchInTimezone(opportunity.dateTime, "d 'de' MMMM")} a las ${formatMatchInTimezone(opportunity.dateTime, 'HH:mm')} hrs. ¿quisiera saber si Está disponible y cómo realizo el pago?`
     return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`
   }, [
     venueContact?.phone,
@@ -1481,6 +1513,7 @@ export function MatchDetailsScreen() {
                     isCreator &&
                     p.id !== opportunity.creatorId &&
                     (p.status === 'confirmed' || p.status === 'pending')
+                  const mayLeaveSelfList = teamPickMayLeaveSelf(p)
                   const waHrefList = organizerWhatsappUrlForParticipant(p)
                   const openKickDialog = () => {
                     setKickUserId(p.id)
@@ -1495,7 +1528,7 @@ export function MatchDetailsScreen() {
                     </DropdownMenuItem>
                   ) : null
                   const actions =
-                    mayEditLineup || mayKick || waBtnList ? (
+                    mayEditLineup || mayKick || waBtnList || mayLeaveSelfList ? (
                       <div className="flex items-center justify-end gap-1.5 w-full">
                         {waHrefList ? (
                           <Button
@@ -1535,9 +1568,24 @@ export function MatchDetailsScreen() {
                               </DropdownMenuItem>
                             ) : null}
                             {waBtnList}
-                            {mayKick ? (
+                            {mayLeaveSelfList ? (
                               <>
                                 {(mayEditLineup || waBtnList) ? (
+                                  <DropdownMenuSeparator />
+                                ) : null}
+                                <DropdownMenuItem
+                                  onSelect={() => {
+                                    setSelfLeaveReason('')
+                                    setSelfLeaveTeamPickOpen(true)
+                                  }}
+                                >
+                                  Retirarme del partido
+                                </DropdownMenuItem>
+                              </>
+                            ) : null}
+                            {mayKick ? (
+                              <>
+                                {(mayEditLineup || waBtnList || mayLeaveSelfList) ? (
                                   <DropdownMenuSeparator />
                                 ) : null}
                                 <DropdownMenuItem
@@ -2101,6 +2149,98 @@ export function MatchDetailsScreen() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={selfLeaveTeamPickOpen}
+        onOpenChange={(o) => {
+          if (!o) {
+            setSelfLeaveTeamPickOpen(false)
+            setSelfLeaveReason('')
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Retirarme del partido</DialogTitle>
+            <DialogDescription>
+              Dejarás tu cupo libre para otro jugador. Indica un motivo (mínimo 5
+              caracteres). Solo puedes salirte hasta 2 horas antes del encuentro.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="flex flex-col gap-2">
+              {TEAM_PICK_SELF_LEAVE_PRESETS.map((label) => (
+                <Button
+                  key={label}
+                  type="button"
+                  variant={selfLeaveReason === label ? 'default' : 'outline'}
+                  size="sm"
+                  className="justify-start h-auto py-2 px-3 text-left text-xs"
+                  onClick={() => setSelfLeaveReason(label)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="self-leave-tp">Motivo (o elige arriba y ajusta aquí)</Label>
+              <Textarea
+                id="self-leave-tp"
+                value={selfLeaveReason}
+                onChange={(e) => setSelfLeaveReason(e.target.value)}
+                placeholder="Mínimo 5 caracteres…"
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={selfLeaveSubmitting}
+              onClick={() => {
+                setSelfLeaveTeamPickOpen(false)
+                setSelfLeaveReason('')
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={
+                selfLeaveSubmitting || selfLeaveReason.trim().length < 5
+              }
+              onClick={() => {
+                void (async () => {
+                  if (selfLeaveReason.trim().length < 5) return
+                  setSelfLeaveSubmitting(true)
+                  try {
+                    const ok = await leaveMatchOpportunityWithReason(
+                      opportunity.id,
+                      selfLeaveReason.trim()
+                    )
+                    if (ok) {
+                      setSelfLeaveTeamPickOpen(false)
+                      setSelfLeaveReason('')
+                      await queryClient.invalidateQueries({
+                        queryKey: queryKeys.matchOpportunity.participants(
+                          selectedMatchOpportunityId
+                        ),
+                      })
+                    }
+                  } finally {
+                    setSelfLeaveSubmitting(false)
+                  }
+                })()
+              }}
+            >
+              {selfLeaveSubmitting ? 'Procesando…' : 'Confirmar salida'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <MatchCompletionPanel
         opportunity={opportunity}
         rivalChallenge={rivalChallengeForOpp}
@@ -2129,6 +2269,15 @@ const TEAM_PICK_KICK_PRESETS = [
   'Cupos completos o rol duplicado',
   'Conducta o conflicto en el grupo',
   'No cumple lo acordado para este partido',
+] as const
+
+/** Alineado con `LEAVE_PRESET_REASONS` en match-completion-panel. */
+const TEAM_PICK_SELF_LEAVE_PRESETS = [
+  'Conflicto de horario o agenda',
+  'Motivos de salud o lesión',
+  'No puedo llegar al lugar o a la hora',
+  'Cambio de planes personales',
+  'Prefiero no jugar este encuentro',
 ] as const
 
 const StatBox = memo(function StatBox({ label, value }: { label: string; value: string }) {

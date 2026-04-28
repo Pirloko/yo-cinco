@@ -117,7 +117,7 @@ type Props = {
   leaveMatchOpportunityWithReason: (
     opportunityId: string,
     reason: string
-  ) => Promise<void>
+  ) => Promise<boolean>
   rescheduleMatchOpportunityWithReason: (payload: {
     opportunityId: string
     venue: string
@@ -322,10 +322,12 @@ export function MatchCompletionPanel({
     if (!reason) return
     setLeaving(true)
     try {
-      await leaveMatchOpportunityWithReason(opportunity.id, reason)
-      setLeaveExpanded(false)
-      setLeaveChoice(null)
-      setLeaveOtherText('')
+      const ok = await leaveMatchOpportunityWithReason(opportunity.id, reason)
+      if (ok) {
+        setLeaveExpanded(false)
+        setLeaveChoice(null)
+        setLeaveOtherText('')
+      }
     } finally {
       setLeaving(false)
     }

@@ -166,7 +166,7 @@ export interface AppContextType {
   leaveMatchOpportunityWithReason: (
     opportunityId: string,
     reason: string
-  ) => Promise<void>
+  ) => Promise<boolean>
   rescheduleMatchOpportunityWithReason: (payload: {
     opportunityId: string
     venue: string
