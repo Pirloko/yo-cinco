@@ -175,6 +175,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const profilePhotoEpochByUserRef = useRef<Record<string, number>>({})
   profilePhotoEpochByUserRef.current = profilePhotoEpochByUser
 
+  /** Evita que una recarga realtime en vuelo pise ids tras `join_team_pick` (orden de llegada REST). */
+  const backgroundMatchBundleTokenRef = useRef(0)
+
   const openProfileEditor = useCallback(() => {
     setOnboardingSource('profile_edit')
     setCurrentScreen('onboarding')
@@ -865,9 +868,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.error(msg)
       return
     }
+    backgroundMatchBundleTokenRef.current += 1
     const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
-    setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+    const mergedParticipatingIds = [
+      ...new Set([
+        ...matchBundle.participatingOpportunityIds,
+        opportunityId,
+      ]),
+    ]
+    setParticipatingOpportunityIds(mergedParticipatingIds)
     setMatchOpportunities(matchBundle.matchOpportunities)
+    backgroundMatchBundleTokenRef.current += 1
     setSelectedChatOpportunityId(opportunityId)
     setCurrentScreen('chat')
     const joinedFresh = matchBundle.matchOpportunities.find((m) => m.id === opportunityId)
@@ -2842,6 +2853,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   usePlayerRealtimeManager({
     currentUser,
     currentUserRef,
+    backgroundMatchBundleTokenRef,
     setMatchOpportunities,
     setParticipatingOpportunityIds,
     setRivalChallenges,

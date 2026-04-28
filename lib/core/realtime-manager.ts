@@ -13,6 +13,8 @@ import { loadOtherPlayersForUser } from '@/lib/services/user.service'
 type Params = {
   currentUser: User | null
   currentUserRef: MutableRefObject<User | null>
+  /** Invalidar recargas en vuelo tras join / otra escritura autoritativa (evita pisar `participatingOpportunityIds`). */
+  backgroundMatchBundleTokenRef: MutableRefObject<number>
   setMatchOpportunities: Dispatch<SetStateAction<MatchOpportunity[]>>
   setParticipatingOpportunityIds: Dispatch<SetStateAction<string[]>>
   setRivalChallenges: Dispatch<SetStateAction<RivalChallenge[]>>
@@ -61,6 +63,7 @@ function hasMeaningfulProfileDelta(
 export function usePlayerRealtimeManager({
   currentUser,
   currentUserRef,
+  backgroundMatchBundleTokenRef,
   setMatchOpportunities,
   setParticipatingOpportunityIds,
   setRivalChallenges,
@@ -107,7 +110,9 @@ export function usePlayerRealtimeManager({
         if (needMatch) {
           tasks.push(
             (async () => {
+              const tokenAtStart = ++backgroundMatchBundleTokenRef.current
               const bundle = await loadPlayerMatchBundle(supabase, u.id)
+              if (tokenAtStart !== backgroundMatchBundleTokenRef.current) return
               setMatchOpportunities(bundle.matchOpportunities)
               setParticipatingOpportunityIds(bundle.participatingOpportunityIds)
               setRivalChallenges(bundle.rivalChallenges)
