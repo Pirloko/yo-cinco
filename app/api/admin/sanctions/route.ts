@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/supabase/require-admin'
 
 /** Cliente con JWT del admin: las RPC `admin_*` comprueban `is_admin()` vía `auth.uid()`. */
@@ -44,7 +43,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: auth.error }, { status: 403 })
     }
     const body = (await req.json()) as Body
-    const admin = createAdminClient()
 
     if (body.action === 'applyCard' || body.action === 'ban') {
       let rpcClient

@@ -399,7 +399,7 @@ export function MatchesScreen() {
       )
       if (error) throw error
     },
-    onSuccess: (_void, _id) => {
+    onSuccess: () => {
       toast.success('Reserva marcada como confirmada.')
       if (currentUser?.id) {
         void queryClient.invalidateQueries({

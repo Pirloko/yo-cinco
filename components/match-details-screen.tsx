@@ -738,7 +738,6 @@ export function MatchDetailsScreen() {
   }
   /** Misma regla que RLS `can_access_opportunity_thread`: creador o inscrito. */
   const canOpenMatchChat = isCreator || isParticipant
-  const gkCount = participants.filter((p) => p.isGoalkeeper).length
   const needed = opportunity.playersNeeded ?? 0
   const joined = opportunity.playersJoined ?? 0
   const privateRevueltaTeam = opportunity.privateRevueltaTeamId

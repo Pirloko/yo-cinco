@@ -42,7 +42,6 @@ import {
 import { RevueltaTeamsPanel } from '@/components/revuelta-teams-panel'
 import { ArrowLeft, Send, Calendar, MapPin, Info } from 'lucide-react'
 import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { prefetchPublicPlayerProfile } from '@/lib/public-player-prefetch'
 import { sessionQueryEnabled } from '@/lib/query-session-enabled'

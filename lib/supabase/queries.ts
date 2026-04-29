@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Gender } from '@/lib/types'
 import type { MatchOpportunity, PublicPlayerProfile, User } from '@/lib/types'
+import type { Level, Position } from '@/lib/types'
 import {
   mapMatchOpportunityFromDb,
   profileRowToUser,
@@ -62,15 +63,17 @@ export async function fetchPublicPlayerProfile(
     p_user_id: userId,
   })
   if (error || !data || !Array.isArray(data) || data.length === 0) return null
-  const r = data[0] as any
+  const r = data[0] as Record<string, unknown>
+  const suspendedUntilRaw = r.mod_suspended_until
+  const bannedAtRaw = r.mod_banned_at
   return {
     id: r.id as string,
     name: (r.name as string) ?? 'Jugador',
     photo: (r.photo_url as string) ?? '',
     cityId: (r.city_id as string) ?? '',
     city: (r.city as string) ?? '',
-    level: r.level,
-    position: r.position,
+    level: (r.level as Level) ?? 'principiante',
+    position: (r.position as Position) ?? 'mediocampista',
     availability: (r.availability as string[]) ?? [],
     statsPlayerWins: (r.stats_player_wins as number) ?? 0,
     statsPlayerDraws: (r.stats_player_draws as number) ?? 0,
@@ -79,8 +82,18 @@ export async function fetchPublicPlayerProfile(
     statsOrganizerWins: (r.stats_organizer_wins as number) ?? 0,
     modYellowCards: (r.mod_yellow_cards as number) ?? 0,
     modRedCards: (r.mod_red_cards as number) ?? 0,
-    modSuspendedUntil: r.mod_suspended_until ? new Date(r.mod_suspended_until) : null,
-    modBannedAt: r.mod_banned_at ? new Date(r.mod_banned_at) : null,
+    modSuspendedUntil:
+      typeof suspendedUntilRaw === 'string' ||
+      typeof suspendedUntilRaw === 'number' ||
+      suspendedUntilRaw instanceof Date
+        ? new Date(suspendedUntilRaw)
+        : null,
+    modBannedAt:
+      typeof bannedAtRaw === 'string' ||
+      typeof bannedAtRaw === 'number' ||
+      bannedAtRaw instanceof Date
+        ? new Date(bannedAtRaw)
+        : null,
   }
 }
 

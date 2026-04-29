@@ -18,6 +18,7 @@ export const queryKeyRoot = {
   teams: ['teams'] as const,
   create: ['create'] as const,
   venueDashboard: ['venueDashboard'] as const,
+  venueBi: ['venueBi'] as const,
 } as const
 
 /** Clave estable para listas de ids en queryKey (orden + dedupe). */
@@ -181,5 +182,42 @@ export const queryKeys = {
     all: queryKeyRoot.venueDashboard,
     ownerBundle: (ownerId: string | null | undefined) =>
       [...queryKeyRoot.venueDashboard, 'ownerBundle', ownerId ?? ''] as const,
+  },
+  venueBi: {
+    all: queryKeyRoot.venueBi,
+    snapshot: (
+      venueId: string | null | undefined,
+      fromIso: string,
+      toIso: string,
+      timezone: string
+    ) =>
+      [
+        ...queryKeyRoot.venueBi,
+        'snapshot',
+        venueId ?? '',
+        fromIso,
+        toIso,
+        timezone,
+      ] as const,
+    incomeSeries: (
+      venueId: string | null | undefined,
+      fromIso: string,
+      toIso: string,
+      timezone: string
+    ) =>
+      [
+        ...queryKeyRoot.venueBi,
+        'incomeSeries',
+        venueId ?? '',
+        fromIso,
+        toIso,
+        timezone,
+      ] as const,
+    courtsBreakdown: (
+      venueId: string | null | undefined,
+      fromIso: string,
+      toIso: string
+    ) =>
+      [...queryKeyRoot.venueBi, 'courtsBreakdown', venueId ?? '', fromIso, toIso] as const,
   },
 } as const

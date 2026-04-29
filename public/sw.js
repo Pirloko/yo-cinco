@@ -1,4 +1,3 @@
-/* eslint-disable no-undef */
 /**
  * Service worker mínimo solo para Web Push.
  * Sin fetch/cache: no interceptamos peticiones ni HTML (evita romper auth/Supabase).
@@ -15,11 +14,13 @@ self.addEventListener('push', (event) => {
       if (typeof parsed.body === 'string') body = parsed.body
       if (parsed.data && typeof parsed.data === 'object') data = { ...data, ...parsed.data }
     }
-  } catch (_) {
+  } catch {
     try {
       const t = event.data?.text()
       if (t) body = t
-    } catch (_) {}
+    } catch {
+      // Ignorar payload no parseable.
+    }
   }
 
   event.waitUntil(
@@ -49,7 +50,9 @@ self.addEventListener('notificationclick', (event) => {
           if (client.url === url && 'focus' in client) {
             return client.focus()
           }
-        } catch (_) {}
+        } catch {
+          // Ignorar clientes no enfocables.
+        }
       }
       if (self.clients.openWindow) {
         return self.clients.openWindow(url)

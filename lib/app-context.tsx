@@ -44,20 +44,15 @@ import {
 import { getBrowserSupabase, isSupabaseConfigured } from '@/lib/supabase/client'
 import { getPublicSiteOrigin } from '@/lib/site-url'
 import {
-  mapMatchOpportunityFromDb,
   DEFAULT_AVATAR,
-  type MatchOpportunityRow,
 } from '@/lib/supabase/mappers'
 import { formatAuthError } from '@/lib/supabase/auth-errors'
 import { payOrganizerToastMessage } from '@/lib/court-pricing'
 import { teamIsInPlayerGeo } from '@/lib/team-geo-filter'
 import {
-  MATCH_OPPORTUNITY_SELECT_WITH_GEO,
-  TEAM_SELECT_WITH_GEO,
   fetchDefaultCityId,
   resolveCityIdFromLabel,
 } from '@/lib/supabase/geo-queries'
-import { TEAM_ROSTER_MAX } from '@/lib/team-roster'
 import {
   userIsConfirmedMemberOfTeam,
   userIsTeamStaffCaptain,
@@ -68,12 +63,10 @@ import {
   tryNavigateCreateAfterPlayerReady,
 } from '@/lib/create-prefill'
 import { buildRandomRevueltaLineup } from '@/lib/revuelta-lineup'
-import { playersJoinRules } from '@/lib/players-seek-profile'
 import {
   DEFAULT_TEAM_PICK_COLOR_A,
   DEFAULT_TEAM_PICK_COLOR_B,
   coerceTeamPickJerseyPresetHex,
-  normalizeTeamPickHexColor,
 } from '@/lib/team-pick-ui'
 import {
   uploadProfileAvatarFile,
@@ -91,7 +84,6 @@ import {
 import { isValidFullPlayerWhatsapp } from '@/lib/player-whatsapp'
 import {
   getAuthUserEmail,
-  isTeamLimitReached,
   isUserReadOnly,
   needsOnboardingProfile,
   toastReadOnly,

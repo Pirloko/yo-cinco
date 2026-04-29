@@ -1,12 +1,9 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono, Nunito } from 'next/font/google'
+import { Nunito } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Providers } from '@/components/providers'
 import { GoogleAnalytics } from '@/components/google-analytics'
 import './globals.css'
-
-const _geist = Geist({ subsets: ['latin'] })
-const _geistMono = Geist_Mono({ subsets: ['latin'] })
 
 /** Sans redondeada (marca / wordmark) — alineada con referencia tipo Nunito / Varela Round */
 const brandRound = Nunito({

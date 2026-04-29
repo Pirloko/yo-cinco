@@ -26,6 +26,7 @@ export async function confirmVenueReservationBookerSelfMatchDetail(
   bookerUserId: string
 ): Promise<{ error: PostgrestError | null }> {
   // DB valida booker_user_id = auth.uid(); `bookerUserId` se mantiene como guard extra.
+  void bookerUserId
   const { error } = await supabase.rpc('confirm_venue_reservation_as_booker', {
     p_reservation_id: reservationId,
     p_note: 'Confirmada por organizador en flujo guiado',
@@ -40,6 +41,7 @@ export async function confirmSoloVenueReservationFromMatchesHub(
   reservationId: string,
   bookerUserId: string
 ): Promise<{ error: PostgrestError | null }> {
+  void bookerUserId
   const { error } = await supabase.rpc('confirm_venue_reservation_as_booker', {
     p_reservation_id: reservationId,
     p_note: 'Confirmado por el jugador (Partidos)',

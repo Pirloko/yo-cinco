@@ -20,7 +20,6 @@ import {
 } from '@/lib/supabase/venue-owner-mutations'
 import {
   insertVenueReservationRow,
-  updateVenueReservationFields,
   cancelVenueReservationAsVenueOwner,
   confirmVenueReservationAsVenueOwner,
 } from '@/lib/supabase/venue-reservation-mutations'
@@ -59,15 +58,12 @@ import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import {
   Activity,
-  AlertCircle,
   BarChart3,
   Calendar,
   ChevronLeft,
   ChevronRight,
-  CheckCircle2,
   Clock,
   DollarSign,
-  Hash,
   KeyRound,
   LayoutGrid,
   Link2,
@@ -80,13 +76,31 @@ import {
   Users,
   User,
   Phone,
-  TrendingUp,
   Trash2,
-  XCircle,
 } from 'lucide-react'
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import { hmToMinutes } from '@/lib/venue-slots'
+import { VenueBiFiltersToolbar } from '@/components/venue-bi/bi-filters-toolbar'
+import { VenueBiKpiCards } from '@/components/venue-bi/bi-kpi-cards'
+import { VenueBiAlertsPanel } from '@/components/venue-bi/bi-alerts-panel'
+import { VenueBiIncomeLineChart } from '@/components/venue-bi/bi-income-line-chart'
+import { VenueBiCourtsBarChart } from '@/components/venue-bi/bi-courts-bar-chart'
+import { useVenueBiFilters } from '@/lib/venue-bi/hooks/use-venue-bi-filters'
+import { useVenueBiSnapshot } from '@/lib/venue-bi/hooks/use-venue-bi-snapshot'
+import { useVenueBiIncomeSeries } from '@/lib/venue-bi/hooks/use-venue-bi-income-series'
+import { useVenueBiCourtsBreakdown } from '@/lib/venue-bi/hooks/use-venue-bi-courts-breakdown'
+import { useVenueBiCsvExport } from '@/lib/venue-bi/hooks/use-venue-bi-csv-export'
+import {
+  venueBiCourtsBreakdownMock,
+  venueBiIncomeSeriesMock,
+  venueBiSnapshotMock,
+} from '@/lib/venue-bi/mock'
+
+const ENABLE_VENUE_BI_MOCK = process.env.NEXT_PUBLIC_VENUE_BI_USE_MOCK === '1'
+const ENABLE_LEGACY_SUMMARY_FALLBACK = true
+/** Filas visibles en "Historial en el periodo" antes de pulsar Cargar más (móvil). */
+const DASHBOARD_HISTORY_PAGE_SIZE = 5
 
 function manualSlotFitsVenueHours(
   dayStr: string,
@@ -314,7 +328,7 @@ export function VenueDashboardScreen() {
   const [courts, setCourts] = useState<VenueCourt[]>([])
   const [weeklyLoaded, setWeeklyLoaded] = useState<VenueWeeklyHour[]>([])
   const [dayStr, setDayStr] = useState(() => toDateInputValue(new Date()))
-  const [dayQuickOffset, setDayQuickOffset] = useState<number | null>(0)
+  const [, setDayQuickOffset] = useState<number | null>(0)
   const [reservations, setReservations] = useState<
     Awaited<ReturnType<typeof fetchVenueReservationsRange>>
   >([])
@@ -369,7 +383,9 @@ export function VenueDashboardScreen() {
   const [historyFilter, setHistoryFilter] = useState<
     'all' | 'pending' | 'confirmed' | 'cancelled'
   >('all')
-  const [historyLimit, setHistoryLimit] = useState(40)
+  const [historyLimit, setHistoryLimit] = useState(DASHBOARD_HISTORY_PAGE_SIZE)
+  const biFilters = useVenueBiFilters()
+  const exportBiCsv = useVenueBiCsvExport()
 
   const [newCourtName, setNewCourtName] = useState('')
   /** Sufijo móvil Chile (+569 ya fijo en UI). */
@@ -456,6 +472,46 @@ export function VenueDashboardScreen() {
     }
     setHoursByDay(hb)
   }, [ownerBundleQuery.data])
+
+  useEffect(() => {
+    if (biFilters.preset === 'today' || biFilters.preset === '7d' || biFilters.preset === '30d') {
+      setDashboardPeriod(biFilters.preset)
+    }
+  }, [biFilters.preset])
+
+  const biSnapshotQuery = useVenueBiSnapshot({
+    venueId: venue?.id,
+    userId: ownerId,
+    fromIso: biFilters.fromIso,
+    toIso: biFilters.toIso,
+  })
+  const biIncomeQuery = useVenueBiIncomeSeries({
+    venueId: venue?.id,
+    userId: ownerId,
+    fromIso: biFilters.fromIso,
+    toIso: biFilters.toIso,
+  })
+  const biCourtsQuery = useVenueBiCourtsBreakdown({
+    venueId: venue?.id,
+    userId: ownerId,
+    fromIso: biFilters.fromIso,
+    toIso: biFilters.toIso,
+  })
+  const biRpcFailed =
+    !ENABLE_VENUE_BI_MOCK &&
+    !biSnapshotQuery.isLoading &&
+    ((!biSnapshotQuery.data &&
+      (biSnapshotQuery.isError || biIncomeQuery.isError || biCourtsQuery.isError)) ||
+      (Boolean(venue?.id) &&
+        !biSnapshotQuery.data &&
+        !biIncomeQuery.data?.length &&
+        !biCourtsQuery.data?.length))
+  const useBiMock = ENABLE_VENUE_BI_MOCK && !biSnapshotQuery.data && !biSnapshotQuery.isLoading
+  const biSnapshot = useBiMock ? venueBiSnapshotMock : biSnapshotQuery.data
+  const biIncomeSeries = useBiMock ? venueBiIncomeSeriesMock : biIncomeQuery.data ?? []
+  const biCourtsBreakdown = useBiMock
+    ? venueBiCourtsBreakdownMock
+    : biCourtsQuery.data ?? []
 
   const loading =
     Boolean(ownerId && isSupabaseConfigured()) && ownerBundleQuery.isPending
@@ -589,30 +645,6 @@ export function VenueDashboardScreen() {
     },
     onSuccess: () => {
       toast.success('Reserva cancelada')
-      invalidateVenueOwnerBundle()
-      refreshBookingsAndDashboard()
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
-
-  const updateReservationFieldsMutation = useMutation({
-    mutationFn: async ({
-      reservationId,
-      payload,
-    }: {
-      reservationId: string
-      payload: Record<string, unknown>
-    }) => {
-      const sb = getBrowserSupabase()
-      if (!sb) throw new Error('Sin conexión')
-      const { error } = await updateVenueReservationFields(
-        sb,
-        reservationId,
-        payload
-      )
-      if (error) throw new Error(error.message)
-    },
-    onSuccess: () => {
       invalidateVenueOwnerBundle()
       refreshBookingsAndDashboard()
     },
@@ -882,21 +914,6 @@ export function VenueDashboardScreen() {
     return `https://wa.me/${digits}?text=${text}`
   }
 
-  const setReservationPayment = async (
-    reservationId: string,
-    payload: Record<string, unknown>
-  ) => {
-    try {
-      await updateReservationFieldsMutation.mutateAsync({
-        reservationId,
-        payload,
-      })
-      return true
-    } catch {
-      return false
-    }
-  }
-
   const confirmReservation = (id: string) => {
     if (!confirm('¿Confirmar esta reserva? (pago recibido)')) return
     confirmReservationMutation.mutate(id)
@@ -1077,47 +1094,8 @@ export function VenueDashboardScreen() {
   }, [])
 
   useEffect(() => {
-    setHistoryLimit(40)
-  }, [dashboardPeriod])
-
-  const dashboardKpis = useMemo(() => {
-    let pending = 0
-    let confirmed = 0
-    let cancelled = 0
-    let paidOrDeposit = 0
-    for (const r of dashboardRows) {
-      if (r.status === 'pending') pending++
-      else if (r.status === 'confirmed') {
-        confirmed++
-        if (r.paymentStatus === 'paid' || r.paymentStatus === 'deposit_paid')
-          paidOrDeposit++
-      } else if (r.status === 'cancelled') cancelled++
-    }
-    return {
-      pending,
-      confirmed,
-      cancelled,
-      paidOrDeposit,
-    }
-  }, [dashboardRows])
-  const dashboardIncome = useMemo(() => {
-    const total = dashboardRows
-      .filter(
-        (r) =>
-          r.status !== 'cancelled' &&
-          (r.paymentStatus === 'paid' || r.paymentStatus === 'deposit_paid')
-      )
-      .reduce(
-        (acc, r) => acc + (r.paidAmount ?? r.depositAmount ?? r.pricePerHour ?? 0),
-        0
-      )
-    const compact = new Intl.NumberFormat('es-CL', {
-      notation: 'compact',
-      compactDisplay: 'short',
-      maximumFractionDigits: 1,
-    }).format(total)
-    return { total, compact }
-  }, [dashboardRows])
+    setHistoryLimit(DASHBOARD_HISTORY_PAGE_SIZE)
+  }, [dashboardPeriod, historyFilter])
 
   /** Siempre día calendario actual (no depende del filtro Hoy/7d/30d). */
   const todaySlotAvailability = useMemo(() => {
@@ -1435,36 +1413,49 @@ export function VenueDashboardScreen() {
           >
             {tab === 'dashboard' && (
               <div className="space-y-4">
-                <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-card p-1.5 w-fit">
-                  {(
-                    [
-                      ['today', 'Hoy'],
-                      ['7d', '7 días'],
-                      ['30d', '30 días'],
-                    ] as const
-                  ).map(([id, label]) => (
-                    <Button
-                      key={id}
-                      size="sm"
-                      variant={dashboardPeriod === id ? 'default' : 'ghost'}
-                      className="rounded-full"
-                      onClick={() =>
-                        setDashboardPeriod(id as 'today' | '7d' | '30d')
-                      }
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                </div>
-                <Card className="border-border bg-card/70">
-                  <CardContent className="p-3 text-[11px] text-muted-foreground leading-snug">
-                    Métricas del periodo elegido. La tarjeta «Hoy» refleja cupos
-                    disponibles en tiempo real según horario del centro y
-                    duración del tramo ({venue?.slotDurationMinutes ?? 60} min).
-                  </CardContent>
-                </Card>
+                <VenueBiFiltersToolbar
+                  preset={biFilters.preset}
+                  setPreset={biFilters.setPreset}
+                  customFrom={biFilters.customFrom}
+                  customTo={biFilters.customTo}
+                  setCustomFrom={biFilters.setCustomFrom}
+                  setCustomTo={biFilters.setCustomTo}
+                  loading={biSnapshotQuery.isLoading}
+                  onExportCsv={() =>
+                    exportBiCsv({
+                      snapshot: biSnapshot,
+                      incomeSeries: biIncomeSeries,
+                      courtsBreakdown: biCourtsBreakdown,
+                      fileBaseName: `resumen-bi-${venue?.name ?? 'centro'}`,
+                    })
+                  }
+                />
+                {biSnapshot ? (
+                  <>
+                    <VenueBiKpiCards snapshot={biSnapshot} />
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                      <VenueBiIncomeLineChart data={biIncomeSeries} />
+                      <VenueBiCourtsBarChart data={biCourtsBreakdown} />
+                    </div>
+                    <VenueBiAlertsPanel alerts={biSnapshot.alerts} />
+                  </>
+                ) : null}
+                {biRpcFailed ? (
+                  <Card className="rounded-2xl border-amber-200/90 bg-amber-50 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:shadow-none">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
+                        Resumen BI temporalmente no disponible
+                      </CardTitle>
+                      <CardDescription className="text-amber-950/80 dark:text-amber-100/80">
+                        No fue posible cargar agregados BI para este rango. Mostramos el
+                        resumen clasico como respaldo temporal.
+                      </CardDescription>
+                    </CardHeader>
+                  </Card>
+                ) : null}
 
-                {dashboardLoading ? (
+                {ENABLE_LEGACY_SUMMARY_FALLBACK &&
+                (dashboardLoading ? (
                   <div className="flex justify-center py-8">
                     <div
                       className="h-9 w-9 animate-spin rounded-full border-2 border-primary border-t-transparent"
@@ -1473,79 +1464,6 @@ export function VenueDashboardScreen() {
                   </div>
                 ) : (
                   <>
-                    <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-                      <Card className="bg-card border-border rounded-3xl shadow-sm transition-transform duration-300 hover:-translate-y-0.5">
-                        <CardHeader className="p-4 pb-2">
-                          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-950/40">
-                            <AlertCircle className="h-5 w-5 text-amber-700 dark:text-amber-300" />
-                          </div>
-                          <CardTitle className="text-lg font-semibold tracking-[0.08em] uppercase text-foreground/75">
-                            Pendientes
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0">
-                          <p className="text-5xl leading-none font-bold tabular-nums">
-                            {dashboardKpis.pending}
-                          </p>
-                          <p className="text-sm text-muted-foreground mt-2">
-                            por confirmar
-                          </p>
-                        </CardContent>
-                      </Card>
-                      <Card className="bg-card border-border rounded-3xl shadow-sm transition-transform duration-300 hover:-translate-y-0.5">
-                        <CardHeader className="p-4 pb-2">
-                          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-950/40">
-                            <CheckCircle2 className="h-5 w-5 text-emerald-700 dark:text-emerald-300" />
-                          </div>
-                          <CardTitle className="text-lg font-semibold tracking-[0.08em] uppercase text-foreground/75">
-                            Confirmadas
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0">
-                          <p className="text-5xl leading-none font-bold tabular-nums">
-                            {dashboardKpis.confirmed}
-                          </p>
-                          <p className="text-sm text-muted-foreground mt-2">
-                            {dashboardKpis.paidOrDeposit} con pago/abono
-                          </p>
-                        </CardContent>
-                      </Card>
-                      <Card className="bg-card border-border rounded-3xl shadow-sm transition-transform duration-300 hover:-translate-y-0.5">
-                        <CardHeader className="p-4 pb-2">
-                          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-900/60">
-                            <XCircle className="h-5 w-5 text-slate-600 dark:text-slate-300" />
-                          </div>
-                          <CardTitle className="text-lg font-semibold tracking-[0.08em] uppercase text-foreground/75">
-                            Canceladas
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0">
-                          <p className="text-5xl leading-none font-bold tabular-nums">
-                            {dashboardKpis.cancelled}
-                          </p>
-                          <p className="text-sm text-muted-foreground mt-2">del periodo</p>
-                        </CardContent>
-                      </Card>
-                      <Card className="bg-card border-border rounded-3xl shadow-sm transition-transform duration-300 hover:-translate-y-0.5">
-                        <CardHeader className="p-4 pb-2">
-                          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-950/40">
-                            <TrendingUp className="h-5 w-5 text-emerald-700 dark:text-emerald-300" />
-                          </div>
-                          <CardTitle className="text-lg font-semibold tracking-[0.08em] uppercase text-foreground/75">
-                            Ingresos
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-4 pt-0">
-                          <p className="text-5xl leading-none font-bold tabular-nums">
-                            ${dashboardIncome.compact}
-                          </p>
-                          <p className="text-sm text-muted-foreground mt-2">
-                            CLP del periodo
-                          </p>
-                        </CardContent>
-                      </Card>
-                    </div>
-
                     <Card className="bg-emerald-500/5 border-emerald-500/20 rounded-2xl shadow-sm">
                       <CardHeader className="p-3 pb-1">
                         <div className="flex items-start justify-between gap-2">
@@ -1738,7 +1656,7 @@ export function VenueDashboardScreen() {
                           size="sm"
                           className="w-full"
                           onClick={() =>
-                            setHistoryLimit((n) => n + 40)
+                            setHistoryLimit((n) => n + DASHBOARD_HISTORY_PAGE_SIZE)
                           }
                         >
                           Cargar más ({dashboardHistoryRows.length - historyLimit}{' '}
@@ -1747,7 +1665,7 @@ export function VenueDashboardScreen() {
                       ) : null}
                     </div>
                   </>
-                )}
+                ))}
               </div>
             )}
 
@@ -2535,38 +2453,36 @@ export function VenueDashboardScreen() {
                   </Card>
                 </div>
 
-                <ul className="space-y-3">
-                  {courts.map((c, idx) => (
+                <ul className="space-y-2.5">
+                  {courts.map((c) => (
                     <li
                       key={c.id}
-                      className="rounded-2xl border border-border bg-card shadow-sm p-4 space-y-3"
+                      className="rounded-2xl border border-border bg-card p-4 space-y-3"
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3 min-w-0">
-                          <div className="h-12 w-12 rounded-2xl bg-primary text-primary-foreground flex items-center justify-center font-bold text-xl shrink-0">
-                            {idx + 1}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-2xl leading-none font-semibold truncate">
-                              {c.name}
-                            </p>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              Futbolito 6vs6 · {venue?.slotDurationMinutes ?? 60} min/tramo
-                            </p>
-                          </div>
+                        <div className="min-w-0 border-l-2 border-primary/25 pl-3">
+                          <p className="text-lg sm:text-xl font-semibold leading-snug truncate">
+                            {c.name}
+                          </p>
+                          <p className="text-sm text-muted-foreground mt-0.5">
+                            Futbolito 6vs6 · {venue?.slotDurationMinutes ?? 60} min/tramo
+                          </p>
                         </div>
-                        <Badge className="rounded-full">Activa</Badge>
+                        <Badge variant="secondary" className="rounded-full shrink-0 font-normal">
+                          Activa
+                        </Badge>
                       </div>
 
-                      <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-3 py-2.5">
-                        <span className="inline-flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground font-semibold shrink-0">
-                          <DollarSign className="h-3.5 w-3.5" /> CLP / hora
+                      <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2">
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+                          <DollarSign className="h-3.5 w-3.5 opacity-70" />
+                          CLP / hora
                         </span>
                         <Input
                           type="number"
                           min={0}
                           step={1000}
-                          className="h-9 border-0 bg-transparent shadow-none focus-visible:ring-0 text-right text-2xl font-semibold tabular-nums"
+                          className="h-9 border-0 bg-transparent shadow-none focus-visible:ring-0 text-right text-lg font-semibold tabular-nums"
                           placeholder="0"
                           defaultValue={c.pricePerHour ?? ''}
                           key={`${c.id}-${c.pricePerHour ?? 'x'}`}
@@ -2577,7 +2493,7 @@ export function VenueDashboardScreen() {
                           size="icon"
                           disabled={removeCourtMutation.isPending}
                           onClick={() => removeCourt(c.id)}
-                          aria-label="Eliminar"
+                          aria-label="Eliminar cancha"
                           className="shrink-0 text-destructive hover:text-destructive"
                         >
                           <Trash2 className="w-4 h-4" />

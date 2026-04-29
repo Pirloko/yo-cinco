@@ -32,7 +32,6 @@ import {
   type EncounterLineupRole,
   type PlayersSeekProfile,
   type SportsVenue,
-  type VenueCourt,
 } from '@/lib/types'
 import { venueCourtPricingHint } from '@/lib/court-pricing'
 import {
@@ -87,7 +86,6 @@ import {
   Swords,
   Crown,
   Award,
-  ChevronRight,
   Search,
   Info,
   Loader2,

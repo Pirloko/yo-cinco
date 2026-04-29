@@ -30,7 +30,6 @@ import type {
   PublicVenueReviewStats,
   SportsVenue,
   VenueCourt,
-  VenueReservationRow,
   VenueWeeklyHour,
 } from '@/lib/types'
 import { VenueCentroReviewsSection } from '@/components/venue-centro-reviews-section'
