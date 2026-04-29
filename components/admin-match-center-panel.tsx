@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { CalendarClock, MapPinned, RefreshCw, Trophy } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -23,6 +24,7 @@ import {
 } from '@/lib/supabase/geo-queries'
 import { fetchSportsVenuesInCity } from '@/lib/supabase/venue-queries'
 import type { Level, SportsVenue } from '@/lib/types'
+import { cn } from '@/lib/utils'
 
 type AdminMatchType = 'open' | 'team_pick_public' | 'team_pick_private'
 type AdminMatchRow = {
@@ -83,7 +85,7 @@ export function AdminMatchCenterPanel() {
 
   const selectedVenue = venues.find((v) => v.id === venueId) ?? null
 
-  const loadAdminMatches = async () => {
+  const loadAdminMatches = useCallback(async () => {
     if (!currentUser?.id) return
     const sb = getBrowserSupabase()
     if (!sb) return
@@ -113,7 +115,7 @@ export function AdminMatchCenterPanel() {
     } finally {
       setLoadingAdminMatches(false)
     }
-  }
+  }, [currentUser?.id])
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return
@@ -123,9 +125,8 @@ export function AdminMatchCenterPanel() {
   }, [])
 
   useEffect(() => {
-    if (!currentUser?.id) return
     void loadAdminMatches()
-  }, [currentUser?.id])
+  }, [loadAdminMatches])
 
   useEffect(() => {
     if (!cityId) {
@@ -237,177 +238,289 @@ export function AdminMatchCenterPanel() {
   }
 
   return (
-    <div className="space-y-4">
-      <Card className="border-primary/30">
-        <CardHeader>
-          <CardTitle>Crear partido Sportmatch (admin)</CardTitle>
-          <CardDescription>
-            Flujo exclusivo admin: región, ciudad, centro, fecha/hora y modo.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Región</Label>
-              <Select value={regionId || undefined} onValueChange={setRegionId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona región" />
-                </SelectTrigger>
-                <SelectContent>
-                  {regions.map((r) => (
-                    <SelectItem key={r.id} value={r.id}>
-                      {r.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Ciudad</Label>
-              <Select value={cityId || undefined} onValueChange={setCityId} disabled={!regionId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona ciudad" />
-                </SelectTrigger>
-                <SelectContent>
-                  {cities.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 rounded-2xl border border-border/80 bg-gradient-to-br from-muted/50 via-card to-card p-4 ring-1 ring-black/[0.04] dark:ring-white/[0.06] sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
+            <Trophy className="h-5 w-5" aria-hidden />
           </div>
-          <div className="space-y-2">
-            <Label>Centro deportivo</Label>
-            <Select value={venueId || undefined} onValueChange={setVenueId} disabled={!cityId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecciona centro" />
-              </SelectTrigger>
-              <SelectContent>
-                {venues.map((v) => (
-                  <SelectItem key={v.id} value={v.id}>
-                    {v.name} - {v.city}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="min-w-0 space-y-1">
+            <p className="text-base font-semibold tracking-tight text-foreground">
+              Partidos creados por la cuenta admin
+            </p>
+            <p className="text-xs leading-relaxed text-muted-foreground sm:max-w-2xl">
+              Publica revueltas o partidos con selección de equipos y gestiona cada uno desde el
+              mismo detalle que ven organizadores y jugadores en la app.
+            </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Fecha</Label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Hora</Label>
-              <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label>Título</Label>
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Ej: Revuelta nocturna Sportmatch"
-            />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Modo de partido</Label>
-              <Select value={mode} onValueChange={(v) => setMode(v as AdminMatchType)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="open">Revuelta</SelectItem>
-                  <SelectItem value="team_pick_public">Selección pública</SelectItem>
-                  <SelectItem value="team_pick_private">Selección privada</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Nivel</Label>
-              <Select value={level} onValueChange={(v) => setLevel(v as Level)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {LEVEL_OPTIONS.map((lvl) => (
-                    <SelectItem key={lvl} value={lvl}>
-                      {lvl}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          {mode !== 'open' ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Color equipo A</Label>
-                <Input value={colorA} onChange={(e) => setColorA(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Color equipo B</Label>
-                <Input value={colorB} onChange={(e) => setColorB(e.target.value)} />
-              </div>
-            </div>
-          ) : null}
-          <div className="space-y-2">
-            <Label>Descripción (opcional)</Label>
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Detalles para los jugadores..."
-            />
-          </div>
-          <Button type="button" onClick={() => void createAdminMatch()} disabled={creating}>
-            {creating ? 'Publicando...' : 'Publicar partido Sportmatch'}
-          </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Partidos creados por Sportmatch</CardTitle>
-          <CardDescription>
-            Abre el detalle del partido para gestionarlo con la misma experiencia visual del
-            organizador/jugador (participantes, equipos, suspensión, reprogramación, etc.).
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loadingAdminMatches ? (
-            <p className="text-sm text-muted-foreground">Cargando partidos…</p>
-          ) : adminMatches.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Aún no hay partidos creados.</p>
-          ) : (
-            <div className="space-y-2">
-              {adminMatches.map((m) => (
-                <div
-                  key={m.id}
-                  className="rounded-lg border border-border bg-card/40 px-3 py-2.5"
-                >
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">{m.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {modeLabel(m.type)} - {m.location} -{' '}
-                        {new Date(m.dateTime).toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary">{modeLabel(m.type)}</Badge>
-                      <Button type="button" size="sm" onClick={() => openMatchDetail(m.id)}>
-                        Abrir detalle
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+      <div className="grid gap-6 xl:grid-cols-2 xl:items-start">
+        <Card className="overflow-hidden border-border shadow-sm ring-1 ring-black/[0.04] dark:ring-white/[0.06]">
+          <CardHeader className="space-y-1 border-b border-border/80 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-4 py-4 sm:px-6">
+            <div className="flex items-center gap-2">
+              <MapPinned className="h-4 w-4 text-primary" aria-hidden />
+              <CardTitle className="text-lg">Nuevo partido</CardTitle>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <CardDescription className="text-xs sm:text-sm">
+              Elige ubicación, fecha y modo. Se reserva cancha según la configuración del centro.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5 p-4 sm:p-6">
+            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Ubicación
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Región</Label>
+                  <Select value={regionId || undefined} onValueChange={setRegionId}>
+                    <SelectTrigger className="h-10 bg-background">
+                      <SelectValue placeholder="Selecciona región" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {regions.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Ciudad</Label>
+                  <Select
+                    value={cityId || undefined}
+                    onValueChange={setCityId}
+                    disabled={!regionId}
+                  >
+                    <SelectTrigger className="h-10 bg-background">
+                      <SelectValue placeholder="Selecciona ciudad" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cities.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="mt-3 space-y-1.5">
+                <Label className="text-xs">Centro deportivo</Label>
+                <Select value={venueId || undefined} onValueChange={setVenueId} disabled={!cityId}>
+                  <SelectTrigger className="h-10 bg-background">
+                    <SelectValue placeholder="Selecciona centro" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {venues.map((v) => (
+                      <SelectItem key={v.id} value={v.id}>
+                        {v.name} — {v.city}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Fecha y hora
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Fecha</Label>
+                  <Input
+                    type="date"
+                    className="h-10 bg-background"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Hora</Label>
+                  <Input
+                    type="time"
+                    className="h-10 bg-background"
+                    value={time}
+                    onChange={(e) => setTime(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Título</Label>
+              <Input
+                className="h-10 bg-background"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Ej: Revuelta nocturna Sportmatch"
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Modo de partido</Label>
+                <Select value={mode} onValueChange={(v) => setMode(v as AdminMatchType)}>
+                  <SelectTrigger className="h-10 bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open">Revuelta</SelectItem>
+                    <SelectItem value="team_pick_public">Selección pública</SelectItem>
+                    <SelectItem value="team_pick_private">Selección privada</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Nivel</Label>
+                <Select value={level} onValueChange={(v) => setLevel(v as Level)}>
+                  <SelectTrigger className="h-10 bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LEVEL_OPTIONS.map((lvl) => (
+                      <SelectItem key={lvl} value={lvl}>
+                        {lvl}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {mode !== 'open' ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Color equipo A</Label>
+                  <Input
+                    className="h-10 bg-background font-mono text-sm"
+                    value={colorA}
+                    onChange={(e) => setColorA(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Color equipo B</Label>
+                  <Input
+                    className="h-10 bg-background font-mono text-sm"
+                    value={colorB}
+                    onChange={(e) => setColorB(e.target.value)}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Descripción (opcional)</Label>
+              <Textarea
+                className="min-h-[88px] resize-y bg-background"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Detalles para los jugadores…"
+              />
+            </div>
+
+            <Button
+              type="button"
+              className="w-full sm:w-auto"
+              onClick={() => void createAdminMatch()}
+              disabled={creating}
+            >
+              {creating ? 'Publicando…' : 'Publicar partido Sportmatch'}
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="overflow-hidden border-border shadow-sm ring-1 ring-black/[0.04] dark:ring-white/[0.06]">
+          <CardHeader className="flex flex-col gap-3 border-b border-border/80 bg-muted/25 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-6">
+            <div className="min-w-0 space-y-1">
+              <div className="flex items-center gap-2">
+                <CalendarClock className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                <CardTitle className="text-lg">Tus partidos publicados</CardTitle>
+              </div>
+              <CardDescription className="text-xs sm:text-sm">
+                Más recientes primero. Abre el detalle para participantes, equipos y moderación.
+              </CardDescription>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              disabled={loadingAdminMatches || !currentUser?.id}
+              onClick={() => void loadAdminMatches()}
+            >
+              <RefreshCw
+                className={cn('h-3.5 w-3.5', loadingAdminMatches && 'animate-spin')}
+              />
+              Actualizar
+            </Button>
+          </CardHeader>
+          <CardContent className="p-4 sm:p-6">
+            {loadingAdminMatches ? (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                Cargando partidos…
+              </p>
+            ) : adminMatches.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-muted/15 px-4 py-10 text-center">
+                <p className="text-sm font-medium text-foreground">Aún no hay partidos</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Usa el bloque «Nuevo partido» en esta misma pantalla para publicar el primero.
+                </p>
+              </div>
+            ) : (
+              <ul className="space-y-3">
+                {adminMatches.map((m) => {
+                  const when = (() => {
+                    try {
+                      return new Date(m.dateTime).toLocaleString('es-CL', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })
+                    } catch {
+                      return m.dateTime
+                    }
+                  })()
+                  return (
+                    <li
+                      key={m.id}
+                      className="rounded-xl border border-border/80 bg-card/90 p-4 shadow-sm transition-colors hover:border-primary/25 hover:bg-muted/20"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <p className="font-medium leading-snug text-foreground">{m.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            <span className="font-medium text-foreground/80">{m.location}</span>
+                            {m.venue ? (
+                              <>
+                                {' '}
+                                · <span>{m.venue}</span>
+                              </>
+                            ) : null}
+                          </p>
+                          <p className="text-xs tabular-nums text-muted-foreground">{when}</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-col sm:items-end">
+                          <Badge variant="secondary" className="font-normal">
+                            {modeLabel(m.type)}
+                          </Badge>
+                          <Button type="button" size="sm" onClick={() => openMatchDetail(m.id)}>
+                            Abrir detalle
+                          </Button>
+                        </div>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }

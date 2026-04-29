@@ -9,6 +9,7 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Globe2,
+  LayoutDashboard,
   Layers,
   Loader2,
   MapPinned,
@@ -16,6 +17,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Settings2,
   Trash2,
   X,
 } from 'lucide-react'
@@ -45,6 +47,8 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Progress } from '@/components/ui/progress'
 import {
   getBrowserSessionAccessToken,
   isSupabaseConfigured,
@@ -112,6 +116,35 @@ function GeoSubsection({
   )
 }
 
+function GeoKpiCard({
+  label,
+  value,
+  hint,
+  className,
+}: {
+  label: string
+  value: string
+  hint?: string
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-xl border border-border/80 bg-card/90 p-3 shadow-sm ring-1 ring-black/[0.03] dark:ring-white/[0.05]',
+        className
+      )}
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p className="mt-1 text-lg font-semibold tabular-nums tracking-tight text-foreground sm:text-xl">
+        {value}
+      </p>
+      {hint ? <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{hint}</p> : null}
+    </div>
+  )
+}
+
 type GeoCountryRow = {
   id: string
   iso_code: string
@@ -132,6 +165,8 @@ type GeoCityRow = {
   slug: string
   is_active: boolean
 }
+
+type CatalogQualityFocus = 'none' | 'empty_slug' | 'dup_slug'
 
 async function adminJsonFetch(
   path: string,
@@ -178,8 +213,12 @@ export function AdminGeoCatalogPanel() {
   const [citiesInactiveOnly, setCitiesInactiveOnly] = useState(false)
   const [selectedCityIds, setSelectedCityIds] = useState<Set<string>>(() => new Set())
   const [regionSectionQuery, setRegionSectionQuery] = useState('')
+  const [regionsEmptyOnly, setRegionsEmptyOnly] = useState(false)
   const [cityCollapsibleKey, setCityCollapsibleKey] = useState(0)
   const [defaultExpandAllCityRegions, setDefaultExpandAllCityRegions] = useState(false)
+  const [geoPanelTab, setGeoPanelTab] = useState<'resumen' | 'gestionar'>('resumen')
+  const [catalogFocus, setCatalogFocus] = useState<CatalogQualityFocus>('none')
+  const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -197,6 +236,7 @@ export function AdminGeoCatalogPanel() {
       setCountries(nextCountries)
       setRegions(nextRegions)
       setCities(j.cities ?? [])
+      setLastLoadedAt(new Date())
       setNewRegion((prev) =>
         prev.countryId
           ? prev
@@ -296,9 +336,91 @@ export function AdminGeoCatalogPanel() {
     return `${c?.name ?? '?'} — ${r.name} (${r.code})`
   }
 
+  const slugDuplicateKeys = useMemo(() => {
+    const bySlug = new Map<string, number>()
+    for (const c of cities) {
+      const s = (c.slug ?? '').trim().toLowerCase()
+      if (!s) continue
+      bySlug.set(s, (bySlug.get(s) ?? 0) + 1)
+    }
+    return new Set(
+      [...bySlug.entries()].filter(([, n]) => n > 1).map(([slugKey]) => slugKey)
+    )
+  }, [cities])
+
+  const citiesWithEmptySlug = useMemo(
+    () => cities.filter((c) => !(c.slug ?? '').trim()),
+    [cities]
+  )
+
+  const citiesWithDuplicateSlug = useMemo(
+    () =>
+      cities.filter((c) => {
+        const s = (c.slug ?? '').trim().toLowerCase()
+        return s.length > 0 && slugDuplicateKeys.has(s)
+      }),
+    [cities, slugDuplicateKeys]
+  )
+
+  const regionsWithoutCities = useMemo(() => {
+    const withCity = new Set(cities.map((c) => c.region_id))
+    return regions.filter((r) => !withCity.has(r.id))
+  }, [regions, cities])
+
+  const regionHealthRows = useMemo(() => {
+    return regions
+      .map((r) => {
+        const regCities = cities.filter((c) => c.region_id === r.id)
+        const active = regCities.filter((c) => c.is_active).length
+        const total = regCities.length
+        const country = countries.find((c) => c.id === r.country_id)
+        let status: 'empty' | 'bad' | 'warn' | 'ok' = 'ok'
+        if (total === 0) status = 'empty'
+        else if (active === 0) status = 'bad'
+        else if (active < total) status = 'warn'
+        const pct = total === 0 ? 0 : Math.round((active / total) * 100)
+        return { region: r, country, total, active, pct, status }
+      })
+      .sort((a, b) => {
+        const order = { empty: 0, bad: 1, warn: 2, ok: 3 }
+        const d = order[a.status] - order[b.status]
+        if (d !== 0) return d
+        return a.region.name.localeCompare(b.region.name, 'es')
+      })
+  }, [regions, cities, countries])
+
+  const geoCatalogStats = useMemo(() => {
+    const cActive = countries.filter((c) => c.is_active).length
+    const rActive = regions.filter((r) => r.is_active).length
+    const ciActive = cities.filter((c) => c.is_active).length
+    const ciInactive = cities.length - ciActive
+    const pctCitiesActive =
+      cities.length === 0 ? 0 : Math.round((ciActive / cities.length) * 100)
+    return {
+      cActive,
+      cTotal: countries.length,
+      rActive,
+      rTotal: regions.length,
+      ciActive,
+      ciInactive,
+      ciTotal: cities.length,
+      pctCitiesActive,
+      emptySlug: citiesWithEmptySlug.length,
+      dupSlug: citiesWithDuplicateSlug.length,
+      regionsNoCities: regionsWithoutCities.length,
+    }
+  }, [countries, regions, cities, citiesWithEmptySlug.length, citiesWithDuplicateSlug.length, regionsWithoutCities.length])
+
   const filteredCities = useMemo(() => {
     let list = cities
     if (citiesInactiveOnly) list = list.filter((c) => !c.is_active)
+    if (catalogFocus === 'empty_slug') list = list.filter((c) => !(c.slug ?? '').trim())
+    if (catalogFocus === 'dup_slug') {
+      list = list.filter((c) => {
+        const s = (c.slug ?? '').trim().toLowerCase()
+        return s.length > 0 && slugDuplicateKeys.has(s)
+      })
+    }
     if (cityRegionFilter) list = list.filter((c) => c.region_id === cityRegionFilter)
     const q = cityQuery.trim().toLowerCase()
     if (q) {
@@ -313,7 +435,15 @@ export function AdminGeoCatalogPanel() {
       })
     }
     return list
-  }, [cities, citiesInactiveOnly, cityRegionFilter, cityQuery, regions])
+  }, [
+    cities,
+    citiesInactiveOnly,
+    catalogFocus,
+    slugDuplicateKeys,
+    cityRegionFilter,
+    cityQuery,
+    regions,
+  ])
 
   const bulkActivateSelected = async () => {
     const ids = [...selectedCityIds]
@@ -345,15 +475,20 @@ export function AdminGeoCatalogPanel() {
   )
 
   const filteredRegionsForList = useMemo(() => {
+    let list = regions
+    if (regionsEmptyOnly) {
+      const emptyIds = new Set(regionsWithoutCities.map((r) => r.id))
+      list = list.filter((r) => emptyIds.has(r.id))
+    }
     const q = regionSectionQuery.trim().toLowerCase()
-    if (!q) return regions
-    return regions.filter(
+    if (!q) return list
+    return list.filter(
       (r) =>
         r.name.toLowerCase().includes(q) ||
         r.code.toLowerCase().includes(q) ||
         (countries.find((c) => c.id === r.country_id)?.name.toLowerCase().includes(q) ?? false)
     )
-  }, [regions, regionSectionQuery, countries])
+  }, [regions, regionSectionQuery, countries, regionsEmptyOnly, regionsWithoutCities])
 
   const inactiveFilteredCityIds = useMemo(
     () => filteredCities.filter((c) => !c.is_active).map((c) => c.id),
@@ -405,24 +540,69 @@ export function AdminGeoCatalogPanel() {
   }, [filteredCities, regions])
 
   const hasCityFilters =
-    cityQuery.trim().length > 0 || !!cityRegionFilter || citiesInactiveOnly
+    cityQuery.trim().length > 0 ||
+    !!cityRegionFilter ||
+    citiesInactiveOnly ||
+    catalogFocus !== 'none'
 
   const clearCityFilters = () => {
     setCityQuery('')
     setCityRegionFilter('')
     setCitiesInactiveOnly(false)
+    setCatalogFocus('none')
   }
 
+  const goToInactiveCities = () => {
+    setGeoPanelTab('gestionar')
+    setCityQuery('')
+    setCityRegionFilter('')
+    setCatalogFocus('none')
+    setCitiesInactiveOnly(true)
+    setRegionsEmptyOnly(false)
+  }
+
+  const goToCatalogQuality = (focus: Exclude<CatalogQualityFocus, 'none'>) => {
+    setGeoPanelTab('gestionar')
+    setCityQuery('')
+    setCityRegionFilter('')
+    setCitiesInactiveOnly(false)
+    setCatalogFocus(focus)
+    setRegionsEmptyOnly(false)
+  }
+
+  const jumpToRegionCities = (regionId: string) => {
+    setGeoPanelTab('gestionar')
+    setCityQuery('')
+    setCatalogFocus('none')
+    setCitiesInactiveOnly(false)
+    setCityRegionFilter(regionId)
+    setRegionsEmptyOnly(false)
+  }
+
+  const lastLoadedLabel = lastLoadedAt
+    ? lastLoadedAt.toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })
+    : '—'
+
   return (
-    <Card className="bg-card border-border">
-      <CardContent className="p-4 space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <MapPinned className="h-5 w-5 text-primary" />
-            <div>
-              <p className="font-medium text-foreground">Catálogo geográfico</p>
-              <p className="text-xs text-muted-foreground">
-                País → región → ciudad. Desactivar oculta la opción en selects sin borrar datos.
+    <Card className="border-border bg-card">
+      <CardContent className="space-y-5 p-4 sm:p-5">
+        <div className="flex flex-col gap-4 rounded-2xl border border-border/80 bg-gradient-to-br from-muted/40 via-card to-card p-4 ring-1 ring-black/[0.04] dark:ring-white/[0.06] sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
+              <MapPinned className="h-5 w-5" aria-hidden />
+            </div>
+            <div className="min-w-0 space-y-1">
+              <p className="text-base font-semibold tracking-tight text-foreground">
+                Geo · cobertura y catálogo
+              </p>
+              <p className="text-xs leading-relaxed text-muted-foreground sm:max-w-xl">
+                Dónde está el catálogo (país → región → ciudad), qué está activo en la app y qué
+                conviene revisar. La gestión completa está en la pestaña{' '}
+                <span className="font-medium text-foreground">Gestionar catálogo</span>.
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                Última actualización:{' '}
+                <span className="font-medium text-foreground">{lastLoadedLabel}</span>
               </p>
             </div>
           </div>
@@ -430,6 +610,7 @@ export function AdminGeoCatalogPanel() {
             type="button"
             variant="outline"
             size="sm"
+            className="shrink-0"
             disabled={loading || saving}
             onClick={() => void load()}
           >
@@ -444,7 +625,285 @@ export function AdminGeoCatalogPanel() {
             Cargando…
           </div>
         ) : (
-          <>
+          <Tabs
+            value={geoPanelTab}
+            onValueChange={(v) => setGeoPanelTab(v as 'resumen' | 'gestionar')}
+            className="gap-4"
+          >
+            <TabsList className="flex h-auto w-full max-w-full flex-nowrap justify-start gap-1 overflow-x-auto rounded-xl border border-border bg-muted/40 p-1.5 [scrollbar-width:thin]">
+              <TabsTrigger
+                value="resumen"
+                className="shrink-0 gap-1.5 px-3 py-2 text-xs sm:text-sm"
+              >
+                <LayoutDashboard className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                Resumen
+              </TabsTrigger>
+              <TabsTrigger
+                value="gestionar"
+                className="shrink-0 gap-1.5 px-3 py-2 text-xs sm:text-sm"
+              >
+                <Settings2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                Gestionar catálogo
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="resumen" className="mt-0 space-y-6">
+              <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06] p-4 dark:bg-emerald-500/[0.08]">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900/80 dark:text-emerald-200/90">
+                  Cobertura del catálogo
+                </p>
+                <p className="mt-1 text-[11px] text-emerald-900/70 dark:text-emerald-200/70">
+                  Registros activos frente al total cargado en base de datos.
+                </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <GeoKpiCard
+                    label="Países activos"
+                    value={`${geoCatalogStats.cActive} / ${geoCatalogStats.cTotal}`}
+                    hint="Visibles en selects cuando el país está activo."
+                    className="border-emerald-500/20 bg-background/80"
+                  />
+                  <GeoKpiCard
+                    label="Regiones activas"
+                    value={`${geoCatalogStats.rActive} / ${geoCatalogStats.rTotal}`}
+                    hint="Regiones con interruptor activo."
+                    className="border-emerald-500/20 bg-background/80"
+                  />
+                  <GeoKpiCard
+                    label="Ciudades activas"
+                    value={`${geoCatalogStats.ciActive} / ${geoCatalogStats.ciTotal}`}
+                    hint={`${geoCatalogStats.pctCitiesActive}% del catálogo de ciudades.`}
+                    className="border-emerald-500/20 bg-background/80"
+                  />
+                  <GeoKpiCard
+                    label="Ciudades inactivas"
+                    value={String(geoCatalogStats.ciInactive)}
+                    hint="Ocultas en selects; datos no se borran."
+                    className="border-emerald-500/20 bg-background/80"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-rose-500/25 bg-rose-500/[0.06] p-4 dark:bg-rose-500/[0.08]">
+                <p className="text-xs font-semibold uppercase tracking-wide text-rose-900/80 dark:text-rose-200/90">
+                  Calidad del catálogo
+                </p>
+                <p className="mt-1 text-[11px] text-rose-900/70 dark:text-rose-200/70">
+                  Inconsistencias que suelen afectar SEO, enlaces o listados.
+                </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <GeoKpiCard
+                    label="Slug vacío"
+                    value={String(geoCatalogStats.emptySlug)}
+                    hint="Riesgo de URLs o enlaces rotos."
+                    className="border-rose-500/20 bg-background/80"
+                  />
+                  <GeoKpiCard
+                    label="Slugs duplicados"
+                    value={String(geoCatalogStats.dupSlug)}
+                    hint="Misma clave en varias ciudades; revisar nombres o slugs."
+                    className="border-rose-500/20 bg-background/80"
+                  />
+                  <GeoKpiCard
+                    label="Regiones sin ciudades"
+                    value={String(geoCatalogStats.regionsNoCities)}
+                    hint="Región creada pero sin comunas cargadas."
+                    className="border-rose-500/20 bg-background/80"
+                  />
+                  <GeoKpiCard
+                    label="Total ciudades"
+                    value={String(geoCatalogStats.ciTotal)}
+                    hint="Filas en geo_cities."
+                    className="border-rose-500/20 bg-background/80"
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border/80 bg-muted/20 px-4 py-3">
+                <p className="text-xs font-medium text-foreground">Demanda y centros</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                  Indicadores como jugadores por centro o fill rate dependen de datos operativos
+                  (perfiles, reservas, canchas). Este panel se centra en el{' '}
+                  <span className="font-medium text-foreground">catálogo geográfico</span> que
+                  alimenta la app; si quieres un mapa de demanda real, se puede enlazar en una
+                  siguiente iteración.
+                </p>
+              </div>
+
+              <GeoSubsection
+                title="Salud por región"
+                icon={Layers}
+                badge={String(regions.length)}
+                subtitle="Ciudades por región, cuántas están activas y un estado rápido. Toca una fila para abrir esas ciudades en Gestionar."
+              >
+                <div className="max-h-[min(55vh,480px)] overflow-auto rounded-lg border border-border/70 [scrollbar-width:thin]">
+                  <table className="w-full min-w-[640px] border-collapse text-sm">
+                    <thead>
+                      <tr className="sticky top-0 z-10 border-b border-border bg-muted/95 backdrop-blur-sm">
+                        <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground">
+                          Región
+                        </th>
+                        <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground">
+                          País
+                        </th>
+                        <th className="px-3 py-2.5 text-right text-xs font-semibold text-muted-foreground">
+                          Ciudades
+                        </th>
+                        <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground">
+                          Activas
+                        </th>
+                        <th className="px-3 py-2.5 text-left text-xs font-semibold text-muted-foreground">
+                          Estado
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {regionHealthRows.map((row) => {
+                        const st =
+                          row.status === 'empty'
+                            ? {
+                                label: 'Sin ciudades',
+                                className:
+                                  'bg-slate-500/15 text-slate-800 dark:text-slate-200',
+                              }
+                            : row.status === 'bad'
+                              ? {
+                                  label: 'Sin activas',
+                                  className: 'bg-destructive/15 text-destructive',
+                                }
+                              : row.status === 'warn'
+                                ? {
+                                    label: 'Revisar',
+                                    className:
+                                      'bg-amber-500/15 text-amber-900 dark:text-amber-200',
+                                  }
+                                : {
+                                    label: 'OK',
+                                    className:
+                                      'bg-emerald-500/15 text-emerald-900 dark:text-emerald-200',
+                                  }
+                        return (
+                          <tr
+                            key={row.region.id}
+                            className="cursor-pointer border-b border-border/60 transition-colors hover:bg-muted/50"
+                            onClick={() => jumpToRegionCities(row.region.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                jumpToRegionCities(row.region.id)
+                              }
+                            }}
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`Abrir ciudades de ${row.region.name}`}
+                          >
+                            <td className="px-3 py-2 font-medium text-foreground">
+                              {row.region.name}
+                              <code className="ml-2 text-[10px] text-muted-foreground">
+                                {row.region.code}
+                              </code>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-muted-foreground">
+                              {row.country?.name ?? '—'}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                              {row.total}
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-2">
+                                <Progress value={row.pct} className="h-2 flex-1" />
+                                <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">
+                                  {row.pct}%
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground">
+                                {row.active} activas
+                              </span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <span
+                                className={cn(
+                                  'inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium',
+                                  st.className
+                                )}
+                              >
+                                {st.label}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </GeoSubsection>
+
+              <div>
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Catálogo · cosas para revisar
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <button
+                    type="button"
+                    onClick={() => goToInactiveCities()}
+                    className="rounded-xl border border-border/80 bg-card p-3 text-left shadow-sm ring-1 ring-black/[0.03] transition-colors hover:bg-muted/40 dark:ring-white/[0.05]"
+                  >
+                    <p className="text-[11px] font-medium text-muted-foreground">
+                      Ciudades inactivas
+                    </p>
+                    <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+                      {geoCatalogStats.ciInactive}
+                    </p>
+                    <p className="mt-1 text-[11px] text-primary">Ir a ciudades →</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goToCatalogQuality('empty_slug')}
+                    disabled={geoCatalogStats.emptySlug === 0}
+                    className="rounded-xl border border-border/80 bg-card p-3 text-left shadow-sm ring-1 ring-black/[0.03] transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50 dark:ring-white/[0.05]"
+                  >
+                    <p className="text-[11px] font-medium text-muted-foreground">Sin slug</p>
+                    <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+                      {geoCatalogStats.emptySlug}
+                    </p>
+                    <p className="mt-1 text-[11px] text-primary">Filtrar lista →</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goToCatalogQuality('dup_slug')}
+                    disabled={geoCatalogStats.dupSlug === 0}
+                    className="rounded-xl border border-border/80 bg-card p-3 text-left shadow-sm ring-1 ring-black/[0.03] transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50 dark:ring-white/[0.05]"
+                  >
+                    <p className="text-[11px] font-medium text-muted-foreground">
+                      Slugs duplicados
+                    </p>
+                    <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+                      {geoCatalogStats.dupSlug}
+                    </p>
+                    <p className="mt-1 text-[11px] text-primary">Filtrar lista →</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGeoPanelTab('gestionar')
+                      setRegionSectionQuery('')
+                      setRegionsEmptyOnly(true)
+                    }}
+                    disabled={geoCatalogStats.regionsNoCities === 0}
+                    className="rounded-xl border border-border/80 bg-card p-3 text-left shadow-sm ring-1 ring-black/[0.03] transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50 dark:ring-white/[0.05]"
+                  >
+                    <p className="text-[11px] font-medium text-muted-foreground">
+                      Regiones sin ciudades
+                    </p>
+                    <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+                      {geoCatalogStats.regionsNoCities}
+                    </p>
+                    <p className="mt-1 text-[11px] text-primary">Filtrar lista →</p>
+                  </button>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="gestionar" className="mt-0 space-y-4">
             <div className="grid gap-6 xl:grid-cols-[minmax(0,380px)_minmax(0,1fr)] xl:items-start">
               <div className="flex min-w-0 flex-col gap-6">
                 <GeoSubsection
@@ -553,6 +1012,22 @@ export function AdminGeoCatalogPanel() {
                   </button>
                 ) : null}
               </div>
+              {regionsEmptyOnly ? (
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2">
+                  <p className="text-[11px] text-foreground">
+                    Mostrando solo regiones sin ninguna ciudad en el catálogo.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setRegionsEmptyOnly(false)}
+                  >
+                    Ver todas las regiones
+                  </Button>
+                </div>
+              ) : null}
               <div className="flex flex-wrap gap-2 items-end">
                 <div className="space-y-1 min-w-[160px]">
                   <Label className="text-xs">País</Label>
@@ -732,6 +1207,24 @@ export function AdminGeoCatalogPanel() {
 
               <div className="space-y-3 rounded-xl border border-border/70 bg-muted/20 p-3 sm:p-4">
                 <p className="text-xs font-medium text-foreground">Buscar y filtrar</p>
+                {catalogFocus !== 'none' ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2">
+                    <p className="text-[11px] text-foreground">
+                      {catalogFocus === 'empty_slug'
+                        ? 'Mostrando solo ciudades sin slug.'
+                        : 'Mostrando ciudades con slug duplicado.'}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setCatalogFocus('none')}
+                    >
+                      Quitar filtro de calidad
+                    </Button>
+                  </div>
+                ) : null}
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
                   <div className="relative min-w-0 flex-1 space-y-1">
                     <Label className="text-xs">Buscar ciudad o comuna</Label>
@@ -1015,7 +1508,8 @@ export function AdminGeoCatalogPanel() {
                 </GeoSubsection>
               </div>
             </div>
-          </>
+            </TabsContent>
+          </Tabs>
         )}
       </CardContent>
     </Card>

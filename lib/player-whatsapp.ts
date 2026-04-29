@@ -48,6 +48,26 @@ export function whatsappWaMeBaseHref(
   return digits ? `https://wa.me/${digits}` : null
 }
 
+/** wa.me desde valor típico en `profiles.whatsapp_phone` (variantes chilenas). */
+export function whatsappWaMeHrefFromProfilePhone(
+  stored: string | null | undefined
+): string | null {
+  const parsed = parseVenuePhoneChile(stored)
+  if (!parsed.valid || !parsed.value) return null
+  return whatsappWaMeBaseHref(parsed.value)
+}
+
+/** Enlace WhatsApp Web/App con mensaje inicial (respuesta admin a comentario, etc.). */
+export function whatsappWaMeWithPrefill(
+  storedProfilePhone: string | null | undefined,
+  text: string
+): string | null {
+  const base = whatsappWaMeHrefFromProfilePhone(storedProfilePhone)
+  if (!base) return null
+  const t = text.trim().slice(0, 1500)
+  return `${base}?text=${encodeURIComponent(t)}`
+}
+
 export function extractWhatsappSuffix8(stored: string | undefined | null): string {
   const raw = (stored ?? '').trim().replace(/\s/g, '')
   if (!raw) return ''

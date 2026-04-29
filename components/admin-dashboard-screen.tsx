@@ -18,6 +18,7 @@ import {
   KeyRound,
   LogOut,
   Mail,
+  MessageCircle,
   MessageSquare,
   MapPinned,
   Pause,
@@ -36,6 +37,7 @@ import {
 import { AppScreenBrandHeading } from '@/components/app-screen-brand-heading'
 import { GeoLocationSelect } from '@/components/geo-location-select'
 import { AdminGeoCatalogPanel } from '@/components/admin-geo-catalog-panel'
+import { AdminCeoOverview } from '@/components/admin-ceo-overview'
 import { AdminPlayersDashboardPanel } from '@/components/admin-players-dashboard-panel'
 import { AdminMatchCenterPanel } from '@/components/admin-match-center-panel'
 import { ThemeMenuButton } from '@/components/theme-controls'
@@ -46,6 +48,7 @@ import {
 } from '@/lib/supabase/client'
 import {
   fetchAppUserFeedbackForAdmin,
+  type AppUserFeedbackProfile,
   type AppUserFeedbackRow,
 } from '@/lib/supabase/app-feedback-queries'
 import { formatAuthError } from '@/lib/supabase/auth-errors'
@@ -91,16 +94,30 @@ import {
   isCompleteWhatsappSuffix,
   PLAYER_WHATSAPP_PREFIX,
   sanitizeWhatsappSuffixInput,
+  whatsappWaMeWithPrefill,
 } from '@/lib/player-whatsapp'
 import {
   isValidEmailFormat,
   normalizeAdminEmail,
 } from '@/lib/supabase/admin-venue-owner'
-import {
-  fetchParticipantsForOpportunity,
-  fetchMatchOpportunityParticipantLeaveReasons,
-  type OpportunityParticipantRow,
-} from '@/lib/supabase/message-queries'
+import type { AdminCeoBusinessSnapshot } from '@/lib/admin/ceo-snapshot'
+
+type AppFeedbackRowWithProfile = AppUserFeedbackRow & {
+  profiles: AppUserFeedbackProfile | null
+}
+
+function buildAppFeedbackWhatsappDraft(row: AppFeedbackRowWithProfile): string {
+  const first = row.profiles?.name?.trim().split(/\s+/)[0] ?? ''
+  const greet = first ? `Hola ${first},` : 'Hola,'
+  const date = new Date(row.created_at).toLocaleString('es-CL', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  })
+  const body = row.message.trim().replace(/\s+/g, ' ')
+  const maxSnippet = 320
+  const snippet = body.length > maxSnippet ? `${body.slice(0, maxSnippet)}…` : body
+  return `${greet} te escribimos desde Sportmatch por tu mensaje en la app (${date}):\n\n«${snippet}»\n\n`
+}
 
 type AdminMetrics = {
   range: RangeKey
@@ -227,6 +244,9 @@ export function AdminDashboardScreen() {
   const { openPublicProfile } = useAppUI()
   const [loading, setLoading] = useState(true)
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null)
+  const [ceoSnapshot, setCeoSnapshot] = useState<AdminCeoBusinessSnapshot | null>(null)
+  const [ceoLoading, setCeoLoading] = useState(true)
+  const [ceoError, setCeoError] = useState<string | null>(null)
   const [range, setRange] = useState<RangeKey>('month')
   const [creating, setCreating] = useState(false)
   const [reports, setReports] = useState<AdminPlayerReport[]>([])
@@ -283,55 +303,8 @@ export function AdminDashboardScreen() {
   const [resFilterRegion, setResFilterRegion] = useState('all')
   const [resFilterCity, setResFilterCity] = useState('all')
   const [resFilterVenue, setResFilterVenue] = useState('all')
-  const [appFeedbackRows, setAppFeedbackRows] = useState<AppUserFeedbackRow[]>([])
+  const [appFeedbackRows, setAppFeedbackRows] = useState<AppFeedbackRowWithProfile[]>([])
   const [appFeedbackLoading, setAppFeedbackLoading] = useState(false)
-  const [matchOppLookupId, setMatchOppLookupId] = useState('')
-  const [matchOppLookupLoading, setMatchOppLookupLoading] = useState(false)
-  const [matchOppLookupTitle, setMatchOppLookupTitle] = useState<string | null>(null)
-  const [matchOppLookupRows, setMatchOppLookupRows] = useState<
-    OpportunityParticipantRow[] | null
-  >(null)
-
-  const loadMatchOppParticipants = useCallback(async () => {
-    const id = matchOppLookupId.trim()
-    if (!id) {
-      toast.error('Ingresa el UUID del partido.')
-      return
-    }
-    if (!isSupabaseConfigured()) return
-    const sb = getBrowserSupabase()
-    if (!sb) return
-    setMatchOppLookupLoading(true)
-    setMatchOppLookupRows(null)
-    setMatchOppLookupTitle(null)
-    try {
-      const { data: mo, error: moErr } = await sb
-        .from('match_opportunities')
-        .select('title')
-        .eq('id', id)
-        .maybeSingle()
-      if (moErr) {
-        toast.error(moErr.message)
-        return
-      }
-      setMatchOppLookupTitle(
-        typeof mo?.title === 'string' && mo.title.trim() ? mo.title.trim() : '—'
-      )
-      const parts = await fetchParticipantsForOpportunity(sb, id)
-      const reasons = await fetchMatchOpportunityParticipantLeaveReasons(sb, id)
-      const merged = parts.map((p) => {
-        if (p.status !== 'cancelled') return p
-        const r = reasons.get(p.id)
-        return r ? { ...p, cancelledReason: r.cancelledReason } : p
-      })
-      setMatchOppLookupRows(merged)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'No se pudo cargar el partido.')
-    } finally {
-      setMatchOppLookupLoading(false)
-    }
-  }, [matchOppLookupId])
-
   const reservationFilterLists = useMemo(() => {
     const empty = {
       regions: [] as Array<{ id: string; name: string }>,
@@ -740,8 +713,40 @@ export function AdminDashboardScreen() {
     }
   }
 
+  const loadCeoOverview = async (nextRange = range) => {
+    setCeoLoading(true)
+    setCeoError(null)
+    try {
+      const authHeaders: Record<string, string> = {}
+      if (isSupabaseConfigured()) {
+        const token = await getBrowserSessionAccessToken()
+        if (token) authHeaders.Authorization = `Bearer ${token}`
+      }
+      const r = await fetch(`/api/admin/business-overview?range=${nextRange}`, {
+        headers: authHeaders,
+      })
+      const json = (await r.json()) as {
+        ok?: boolean
+        snapshot?: AdminCeoBusinessSnapshot
+        error?: string
+        message?: string
+      }
+      if (!r.ok || !json.snapshot) {
+        throw new Error(json.error ?? json.message ?? 'No se pudo cargar la vista de negocio')
+      }
+      setCeoSnapshot(json.snapshot)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Error al cargar vista de negocio'
+      setCeoError(msg)
+      setCeoSnapshot(null)
+    } finally {
+      setCeoLoading(false)
+    }
+  }
+
   useEffect(() => {
     void loadMetrics(range)
+    void loadCeoOverview(range)
   }, [range])
 
   const totalType = useMemo(() => {
@@ -797,6 +802,7 @@ export function AdminDashboardScreen() {
         mapsUrl: '',
       }))
       await loadMetrics()
+      await loadCeoOverview()
       await loadAdminVenues()
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Error al crear usuario centro'
@@ -1088,7 +1094,7 @@ export function AdminDashboardScreen() {
             <AppScreenBrandHeading
               className="min-w-0 flex-1"
               title="Panel Admin"
-              subtitle="Reservas, jugadores, centros, moderación y geo."
+              subtitle="Resumen de negocio, jugadores, partidos, reservas, centros y moderación."
               titleClassName="text-base sm:text-xl md:text-2xl"
             />
           </div>
@@ -1170,10 +1176,10 @@ export function AdminDashboardScreen() {
             <Card className="gap-0 overflow-hidden border-border py-0 shadow-sm">
               <CardHeader className="border-b border-border bg-secondary/20 px-4 py-4 sm:px-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <CardTitle className="text-lg">Métricas del período</CardTitle>
-                    <CardDescription>
-                      Elige el rango y actualiza para ver números al día.
+                  <div className="max-w-xl sm:max-w-2xl">
+                    <CardTitle className="text-lg sm:text-xl">Resumen · vista de negocio</CardTitle>
+                    <CardDescription className="mt-2 text-pretty text-xs leading-relaxed sm:text-sm">
+                      De arriba a abajo: cada bloque trae un <strong className="text-foreground">título claro</strong>, una <strong className="text-foreground">pregunta</strong> que dice qué estás midiendo y un <strong className="text-foreground">texto de apoyo</strong> con el contexto. Elige el rango de fechas para alinear todos los números; más abajo está el detalle operativo de reservas del mismo período.
                     </CardDescription>
                   </div>
                   <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
@@ -1201,13 +1207,19 @@ export function AdminDashboardScreen() {
                         variant="secondary"
                         size="sm"
                         className="h-8 shrink-0"
-                        onClick={() => void loadMetrics(range)}
-                        disabled={loading}
+                        onClick={() => {
+                          void loadMetrics(range)
+                          void loadCeoOverview(range)
+                        }}
+                        disabled={loading || ceoLoading}
                         aria-label="Actualizar métricas"
                         title="Actualizar métricas"
                       >
                         <RefreshCw
-                          className={cn('h-3.5 w-3.5 sm:mr-1.5', loading && 'animate-spin')}
+                          className={cn(
+                            'h-3.5 w-3.5 sm:mr-1.5',
+                            (loading || ceoLoading) && 'animate-spin'
+                          )}
                         />
                         <span className="hidden sm:inline">Actualizar</span>
                       </Button>
@@ -1216,19 +1228,47 @@ export function AdminDashboardScreen() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-6 p-4 sm:p-6">
+                <AdminCeoOverview
+                  snapshot={ceoSnapshot}
+                  loading={ceoLoading}
+                  error={ceoError}
+                />
+
+                <Separator className="my-2" />
+
+                <div className="rounded-2xl border border-border/80 bg-muted/20 px-4 py-4 sm:px-5">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="text-[10px] font-semibold uppercase tracking-wide">
+                      Operación
+                    </Badge>
+                  </div>
+                  <h3 className="text-base font-bold text-foreground sm:text-lg">
+                    Reservas de canchas y tipos de partido
+                  </h3>
+                  <p className="mt-1 text-sm font-medium text-primary">
+                    ¿Cómo se está usando la red de centros en este mismo período?
+                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground sm:text-sm">
+                    Aquí ves <strong className="text-foreground">conteos de reservas</strong> (pendiente,
+                    confirmada, cancelada), cuántas quedaron confirmadas por el libro directamente y cómo se
+                    distribuyen entre revuelta, rival, «yo + cinco» o reserva sin partido. Úsalo para
+                    operación diaria; la salud del marketplace está en los bloques superiores.
+                  </p>
+                </div>
+
                 {loading || !metrics ? (
-                  <p className="text-sm text-muted-foreground">Cargando métricas…</p>
+                  <p className="text-sm text-muted-foreground">Cargando reservas…</p>
                 ) : (
                   <>
                     <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
                       <MetricTile
                         icon={<BarChart3 className="h-5 w-5" />}
-                        label="Reservas"
+                        label="Reservas (período)"
                         value={metrics.totals.reservations}
                       />
                       <MetricTile
                         icon={<Building2 className="h-5 w-5" />}
-                        label="Centros activos"
+                        label="Centros en catálogo"
                         value={metrics.totals.centers}
                       />
                       <MetricTile
@@ -1261,16 +1301,19 @@ export function AdminDashboardScreen() {
                       />
                       <MetricTile
                         icon={<Trophy className="h-5 w-5" />}
-                        label="Total tipificadas"
+                        label="Reservas tipificadas"
                         value={totalType}
                       />
                     </div>
 
                     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                       <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                        <h3 className="mb-3 text-sm font-semibold text-foreground">
-                          Tipos de reserva / partido
+                        <h3 className="text-sm font-bold text-foreground">
+                          Origen de cada reserva
                         </h3>
+                        <p className="mb-3 mt-1 text-[11px] leading-snug text-muted-foreground">
+                          Clasificación según el tipo de partido vinculado (o si es solo bloqueo de cancha).
+                        </p>
                         <div className="grid grid-cols-2 gap-2">
                           <TypePill label="Revuelta" value={metrics.byType.open} />
                           <TypePill label="Rival vs rival" value={metrics.byType.rival} />
@@ -1282,10 +1325,13 @@ export function AdminDashboardScreen() {
                         </div>
                       </div>
                       <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+                        <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
                           <Trophy className="h-4 w-4 text-amber-500" />
-                          Centros más reservados
+                          Centros con más movimiento
                         </h3>
+                        <p className="mb-3 mt-1 text-[11px] leading-snug text-muted-foreground">
+                          Ranking por cantidad de reservas con hora de juego en el período (top 5).
+                        </p>
                         <ul className="space-y-2 text-sm text-muted-foreground">
                           {metrics.topVenues.length === 0 ? (
                             <li>Sin reservas en este período.</li>
@@ -1335,84 +1381,8 @@ export function AdminDashboardScreen() {
             <AdminPlayersDashboardPanel />
           </TabsContent>
 
-          <TabsContent value="partidos" className="mt-0 space-y-4">
+          <TabsContent value="partidos" className="mt-0">
             <AdminMatchCenterPanel />
-            <Card className="gap-0 overflow-hidden border-border py-0 shadow-sm">
-              <CardHeader className="border-b border-border bg-secondary/20 px-4 py-4 sm:px-6">
-                <CardTitle className="text-lg">Consulta partido</CardTitle>
-                <CardDescription>
-                  Pega el UUID de <span className="font-mono">match_opportunities</span> para ver
-                  participantes y el motivo cuando alguien se salió (vía RPC privilegiada).
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4 p-4 sm:p-6">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Input
-                    className="font-mono text-sm"
-                    placeholder="p. ej. a1b2c3d4-…"
-                    value={matchOppLookupId}
-                    onChange={(e) => setMatchOppLookupId(e.target.value)}
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                  />
-                  <Button
-                    type="button"
-                    disabled={matchOppLookupLoading}
-                    onClick={() => void loadMatchOppParticipants()}
-                    className="shrink-0"
-                  >
-                    {matchOppLookupLoading ? (
-                      <>
-                        <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" />
-                        Cargando…
-                      </>
-                    ) : (
-                      'Cargar'
-                    )}
-                  </Button>
-                </div>
-                {matchOppLookupTitle != null ? (
-                  <p className="text-sm font-medium text-foreground">
-                    Título: {matchOppLookupTitle}
-                  </p>
-                ) : null}
-                {matchOppLookupRows != null && matchOppLookupRows.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Sin filas de participantes.</p>
-                ) : null}
-                {matchOppLookupRows != null && matchOppLookupRows.length > 0 ? (
-                  <ul className="space-y-2">
-                    {matchOppLookupRows.map((p) => (
-                      <li
-                        key={p.id}
-                        className="rounded-lg border border-border bg-card/60 px-3 py-2.5"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-sm font-medium text-foreground">{p.name}</span>
-                          <Badge variant="secondary" className="capitalize text-xs">
-                            {p.status === 'creator'
-                              ? 'Organizador'
-                              : p.status === 'confirmed'
-                                ? 'Confirmado'
-                                : p.status === 'pending'
-                                  ? 'Pendiente'
-                                  : p.status === 'invited'
-                                    ? 'Invitado'
-                                    : 'Cancelado'}
-                          </Badge>
-                        </div>
-                        {p.status === 'cancelled' && p.cancelledReason ? (
-                          <p className="mt-1.5 text-xs text-muted-foreground leading-snug">
-                            <span className="font-medium text-foreground/90">Motivo salida:</span>{' '}
-                            {p.cancelledReason}
-                          </p>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </CardContent>
-            </Card>
           </TabsContent>
 
           <TabsContent value="reservas" className="mt-0">
@@ -2373,7 +2343,9 @@ export function AdminDashboardScreen() {
                   <div>
                     <CardTitle className="text-lg">Sugerencias, opiniones y errores</CardTitle>
                     <CardDescription>
-                      Mensajes enviados desde Perfil → «Sugerencias, opiniones, errores».
+                      Mensajes enviados desde Perfil → «Sugerencias, opiniones, errores». Podés abrir un
+                      chat privado por WhatsApp (texto sugerido) si el jugador tiene número válido en su
+                      perfil, o ver su ficha en la app.
                     </CardDescription>
                   </div>
                   <Button
@@ -2406,37 +2378,77 @@ export function AdminDashboardScreen() {
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    {appFeedbackRows.map((row) => (
-                      <div
-                        key={row.id}
-                        className="rounded-xl border border-border bg-card p-4 shadow-sm"
-                      >
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0 flex-1 space-y-2">
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(row.created_at).toLocaleString('es-CL')}
-                              {row.app_version ? (
-                                <span className="ml-2">
-                                  · app v{row.app_version}
-                                </span>
-                              ) : null}
-                            </p>
-                            <p className="whitespace-pre-wrap text-sm text-foreground">
-                              {row.message}
-                            </p>
+                    {appFeedbackRows.map((row) => {
+                      const waUrl = whatsappWaMeWithPrefill(
+                        row.profiles?.whatsapp_phone ?? null,
+                        buildAppFeedbackWhatsappDraft(row)
+                      )
+                      return (
+                        <div
+                          key={row.id}
+                          className="rounded-xl border border-border bg-card p-4 shadow-sm"
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0 flex-1 space-y-2">
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(row.created_at).toLocaleString('es-CL')}
+                                {row.app_version ? (
+                                  <span className="ml-2">· app v{row.app_version}</span>
+                                ) : null}
+                                {row.profiles?.name ? (
+                                  <span className="ml-2 font-medium text-foreground/80">
+                                    · {row.profiles.name}
+                                  </span>
+                                ) : null}
+                              </p>
+                              <p className="whitespace-pre-wrap text-sm text-foreground">
+                                {row.message}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+                              {waUrl ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="gap-1.5 border-[#25D366]/55 bg-[#25D366]/12 text-[#0a5c36] hover:bg-[#25D366]/22 dark:text-[#4ade80]"
+                                  asChild
+                                >
+                                  <a
+                                    href={waUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    <MessageCircle className="h-3.5 w-3.5" />
+                                    WhatsApp
+                                  </a>
+                                </Button>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="shrink-0"
+                                  disabled
+                                  title="Sin WhatsApp válido en el perfil (+569 y 8 dígitos). Abrí la ficha y pedile que complete el número."
+                                >
+                                  <MessageCircle className="mr-1.5 h-3.5 w-3.5 opacity-50" />
+                                  WhatsApp
+                                </Button>
+                              )}
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="shrink-0"
+                                onClick={() => openPublicProfile(row.user_id)}
+                              >
+                                Ver perfil
+                              </Button>
+                            </div>
                           </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="shrink-0"
-                            onClick={() => openPublicProfile(row.user_id)}
-                          >
-                            Ver perfil
-                          </Button>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </CardContent>

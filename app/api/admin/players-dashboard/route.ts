@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 
+import { parseAdminPlayersBusinessSnapshot } from '@/lib/admin/ceo-snapshot'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireAdmin } from '@/lib/supabase/require-admin'
 
-type PlayerRange = 'today' | '7d' | '15d' | '30d'
+type PlayerRange = 'today' | '7d' | '15d' | '30d' | '90d'
 
 const ONLINE_WINDOW_MS = 3 * 60 * 1000
 
@@ -22,6 +23,9 @@ function buildFromDate(range: PlayerRange): Date {
       return d
     case '30d':
       d.setDate(d.getDate() - 30)
+      return d
+    case '90d':
+      d.setDate(d.getDate() - 90)
       return d
     default:
       d.setDate(d.getDate() - 30)
@@ -47,7 +51,7 @@ export async function GET(req: Request) {
     const regionId = url.searchParams.get('regionId')?.trim() || ''
     const cityId = url.searchParams.get('cityId')?.trim() || ''
 
-    if (!['today', '7d', '15d', '30d'].includes(range)) {
+    if (!['today', '7d', '15d', '30d', '90d'].includes(range)) {
       return NextResponse.json({ error: 'Rango inválido' }, { status: 400 })
     }
 
@@ -71,6 +75,7 @@ export async function GET(req: Request) {
           regionId: regionId || null,
           cityId: cityId || null,
           from: buildFromDate(range).toISOString(),
+          onlineWindowMinutes: ONLINE_WINDOW_MS / 60000,
           kpis: {
             totalActivePlayers: 0,
             createdToday: 0,
@@ -84,6 +89,8 @@ export async function GET(req: Request) {
           organizerEvents: [],
           playerDirectory: [],
           playerDirectoryTotal: 0,
+          business: null,
+          businessError: null,
         })
       }
     }
@@ -312,6 +319,14 @@ export async function GET(req: Request) {
       }
     })
 
+    const cityIdsForRpc =
+      cityIdsFilter && cityIdsFilter.length > 0 ? cityIdsFilter : null
+    const { data: bizRaw, error: bizErr } = await admin.rpc(
+      'admin_players_business_snapshot',
+      { p_city_ids: cityIdsForRpc }
+    )
+    const business = bizErr ? null : parseAdminPlayersBusinessSnapshot(bizRaw)
+
     return NextResponse.json({
       range,
       regionId: regionId || null,
@@ -331,6 +346,8 @@ export async function GET(req: Request) {
       organizerEvents,
       playerDirectory,
       playerDirectoryTotal: playerDirectoryTotal ?? 0,
+      business,
+      businessError: bizErr ? bizErr.message : null,
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Error inesperado'
