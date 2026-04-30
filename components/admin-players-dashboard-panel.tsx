@@ -191,7 +191,7 @@ function PlayersSection({
           </Badge>
           <h2
             id={`players-dash-${sectionId}`}
-            className="text-base font-bold leading-tight text-foreground sm:text-lg"
+            className="font-brand-heading text-base leading-tight text-foreground sm:text-lg"
           >
             {title}
           </h2>
@@ -430,12 +430,12 @@ export function AdminPlayersDashboardPanel() {
             </Badge>
             <CardTitle className="text-xl sm:text-2xl">Jugadores</CardTitle>
             <CardDescription className="max-w-3xl text-pretty text-xs leading-relaxed sm:text-sm">
-              Quién <strong className="text-foreground">usa la app de verdad</strong>, quién{' '}
+              Identifica quién <strong className="text-foreground">usa la app activamente</strong>, quién{' '}
               <strong className="text-foreground">llega a jugar</strong>, quién{' '}
               <strong className="text-foreground">vuelve</strong> y quién{' '}
-              <strong className="text-foreground">se enfría</strong>. Usa región y ciudad para acotar el
-              universo; el rango de días afecta las listas de «novedades» al final. Los datos se
-              actualizan solos cada 45 segundos.
+              <strong className="text-foreground">pierde ritmo</strong>. Usa región y ciudad para acotar
+              la vista; el rango de días afecta las listas de novedades al final. Los datos se
+              actualizan cada 45 segundos.
             </CardDescription>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
@@ -528,7 +528,7 @@ export function AdminPlayersDashboardPanel() {
             <Loader2 className="h-4 w-4 animate-spin" /> Cargando…
           </p>
         ) : !data ? (
-          <p className="text-sm text-muted-foreground">Sin datos.</p>
+          <p className="text-sm text-muted-foreground">No hay datos para este filtro.</p>
         ) : (
           <>
             <div className="rounded-xl border border-border/80 bg-muted/25 px-4 py-3 sm:px-5">
@@ -545,7 +545,7 @@ export function AdminPlayersDashboardPanel() {
                   <LayoutGrid className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold text-foreground sm:text-base">
+                  <h2 className="font-brand-heading text-sm text-foreground sm:text-base">
                     Cómo leer esta pantalla
                   </h2>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground sm:text-sm">
@@ -667,7 +667,7 @@ export function AdminPlayersDashboardPanel() {
                     <div className="mt-4 rounded-xl border border-violet-500/20 bg-card/90 p-4 shadow-sm">
                       <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <h3 className="text-sm font-bold text-foreground">Top jugadores activos</h3>
+                          <h3 className="font-brand-heading text-sm text-foreground">Top jugadores activos</h3>
                           <p className="text-[11px] text-muted-foreground sm:text-xs">
                             Quiénes más partidos completados llevan (ranking interno, máx. 10).
                           </p>
@@ -844,7 +844,7 @@ export function AdminPlayersDashboardPanel() {
                   <Badge variant="outline" className="mb-1 text-[10px] font-semibold uppercase">
                     Directorio
                   </Badge>
-                  <h3 className="text-base font-bold text-foreground sm:text-lg">
+                  <h3 className="font-brand-heading text-base text-foreground sm:text-lg">
                     Listado de jugadores
                   </h3>
                   <p className="text-xs leading-relaxed text-muted-foreground sm:text-sm">
@@ -941,7 +941,7 @@ export function AdminPlayersDashboardPanel() {
               <Badge variant="secondary" className="text-[10px] font-semibold uppercase">
                 Detalle del período
               </Badge>
-              <h3 className="text-base font-bold text-foreground sm:text-lg">
+              <h3 className="font-brand-heading text-base text-foreground sm:text-lg">
                 Novedades recientes en el rango seleccionado
               </h3>
               <p className="max-w-3xl text-xs leading-relaxed text-muted-foreground sm:text-sm">
@@ -955,7 +955,7 @@ export function AdminPlayersDashboardPanel() {
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
               <div className="rounded-xl border border-border bg-card p-4 shadow-sm lg:col-span-1">
-                <h3 className="mb-1 text-sm font-bold text-foreground">
+                <h3 className="font-brand-heading mb-1 text-sm text-foreground">
                   Personas que se registraron
                 </h3>
                 <p className="mb-3 text-[11px] text-muted-foreground">
@@ -982,7 +982,7 @@ export function AdminPlayersDashboardPanel() {
               </div>
 
               <div className="rounded-xl border border-border bg-card p-4 shadow-sm lg:col-span-1">
-                <h3 className="mb-1 text-sm font-bold text-foreground">Equipos recién creados</h3>
+                <h3 className="font-brand-heading mb-1 text-sm text-foreground">Equipos recién creados</h3>
                 <p className="mb-3 text-[11px] text-muted-foreground">
                   Nombre del equipo y capitán; útil para ver dinámica social.
                 </p>
@@ -1010,7 +1010,7 @@ export function AdminPlayersDashboardPanel() {
               </div>
 
               <div className="rounded-xl border border-border bg-card p-4 shadow-sm lg:col-span-1">
-                <h3 className="mb-1 text-sm font-bold text-foreground">Partidos publicados</h3>
+                <h3 className="font-brand-heading mb-1 text-sm text-foreground">Partidos publicados</h3>
                 <p className="mb-3 text-[11px] text-muted-foreground">
                   Título, tipo y quién organiza; mueve el marketplace visible.
                 </p>

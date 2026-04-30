@@ -103,7 +103,7 @@ function Section({
             </div>
             <h3
               id={`admin-ceo-${sectionId}`}
-              className="text-base font-bold leading-tight text-foreground sm:text-lg"
+              className="font-brand-heading text-base leading-tight text-foreground sm:text-lg"
             >
               {title}
             </h3>
@@ -167,7 +167,7 @@ export function AdminCeoOverview({ snapshot, loading, error }: Props) {
       <div className="flex items-start gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
         <div>
-          <p className="font-semibold">No se pudo cargar el resumen</p>
+          <p className="font-brand-heading">No se pudo cargar el resumen</p>
           <p className="mt-1 text-destructive/90">{error}</p>
         </div>
       </div>
@@ -190,7 +190,7 @@ export function AdminCeoOverview({ snapshot, loading, error }: Props) {
             <LayoutDashboard className="h-5 w-5 text-primary" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-base font-bold text-foreground sm:text-lg">
+            <h2 className="font-brand-heading text-base text-foreground sm:text-lg">
               Qué está pasando en la plataforma
             </h2>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground sm:text-sm">

@@ -85,7 +85,9 @@ function OnboardingStepHero({
           <Sparkles className="w-3.5 h-3.5" />
           Paso {stepNum} de 3
         </p>
-        <h2 className="text-lg font-bold text-foreground mt-0.5 leading-tight">{title}</h2>
+        <h2 className="font-brand-heading mt-0.5 text-lg leading-tight text-foreground">
+          {title}
+        </h2>
         {subtitle ? (
           <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{subtitle}</p>
         ) : null}

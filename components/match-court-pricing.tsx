@@ -26,7 +26,7 @@ export function MatchCourtPricingBlock({
 
   if (variant === 'compact') {
     return (
-      <div className="flex items-start gap-2 rounded-lg border border-amber-900/15 bg-amber-400/20 px-2.5 py-2 text-xs font-medium text-amber-950 dark:border-amber-400/30 dark:bg-amber-950/50 dark:text-amber-50">
+      <div className="font-brand-heading flex items-start gap-2 rounded-lg border border-amber-900/15 bg-amber-400/20 px-2.5 py-2 text-xs text-amber-950 dark:border-amber-400/30 dark:bg-amber-950/50 dark:text-amber-50">
         <Banknote className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-700 dark:text-amber-400" />
         <span>
           Total cancha {formatClp(total)} · Tu parte ~{formatClp(share)}
@@ -37,18 +37,18 @@ export function MatchCourtPricingBlock({
 
   return (
     <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
-      <p className="text-xs font-medium text-foreground flex items-center gap-2">
+      <p className="font-brand-heading flex items-center gap-2 text-xs text-foreground">
         <Banknote className="w-4 h-4 text-amber-400" />
         Costo de cancha
       </p>
       <div className="grid grid-cols-2 gap-2 text-sm">
         <div>
           <p className="text-[11px] text-muted-foreground">Total estimado</p>
-          <p className="font-semibold text-foreground">{formatClp(total)}</p>
+          <p className="font-brand-heading tabular-nums text-foreground">{formatClp(total)}</p>
         </div>
         <div>
           <p className="text-[11px] text-muted-foreground">Por jugador (aprox.)</p>
-          <p className="font-semibold text-foreground">{formatClp(share)}</p>
+          <p className="font-brand-heading tabular-nums text-foreground">{formatClp(share)}</p>
         </div>
       </div>
       {notice ? (
@@ -68,7 +68,7 @@ export function JoinPayOrganizerNotice({
   const msg = payOrganizerFullNotice(opportunity)
   if (!msg) return null
   return (
-    <div className="rounded-lg border border-amber-900/15 bg-amber-400/20 px-3 py-2.5 text-sm font-medium leading-snug text-amber-950 dark:border-amber-400/30 dark:bg-amber-950/50 dark:text-amber-50">
+    <div className="font-brand-heading rounded-lg border border-amber-900/15 bg-amber-400/20 px-3 py-2.5 text-sm leading-snug text-amber-950 dark:border-amber-400/30 dark:bg-amber-950/50 dark:text-amber-50">
       {msg}
     </div>
   )

@@ -95,7 +95,7 @@ export function RevueltaTeamsPanel({
           }
         />
         <div className="min-w-0">
-          <p className="font-semibold text-foreground text-sm">{label}</p>
+          <p className="font-brand-heading text-sm text-foreground">{label}</p>
           <p className="text-[11px] text-muted-foreground">
             {userIds.length} jugador(es)
           </p>
@@ -114,7 +114,7 @@ export function RevueltaTeamsPanel({
                 alt=""
                 className="w-7 h-7 rounded-full object-cover border border-border shrink-0"
               />
-              <span className="truncate">
+              <span className="font-brand-heading truncate">
                 {pr?.name ?? 'Jugador'}
                 {pr?.gk ? ' 🧤' : ''}
               </span>
@@ -136,8 +136,8 @@ export function RevueltaTeamsPanel({
       <h3
         className={
           compact
-            ? 'text-xs font-semibold text-foreground uppercase tracking-wide'
-            : 'font-medium text-foreground'
+            ? 'font-brand-heading text-xs text-foreground uppercase tracking-wide'
+            : 'font-brand-heading text-foreground'
         }
       >
         Equipos sorteados
@@ -170,7 +170,7 @@ export function RevueltaTeamsPanel({
         opportunity.status !== 'completed' && (
         <div className="space-y-3 border-t border-border pt-3">
           {!compact && (
-            <p className="text-xs font-medium text-muted-foreground">
+            <p className="font-brand-heading text-xs text-muted-foreground">
               Colores de camiseta
             </p>
           )}

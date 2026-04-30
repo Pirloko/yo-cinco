@@ -895,7 +895,7 @@ export function MatchDetailsScreen() {
                       setSelfLeaveTeamPickOpen(true)
                     }}
                   >
-                    Retirarme del partido
+                    Salir del partido
                   </DropdownMenuItem>
                 </>
               ) : null}
@@ -905,7 +905,7 @@ export function MatchDetailsScreen() {
                     <DropdownMenuSeparator />
                   ) : null}
                   <DropdownMenuItem variant="destructive" onSelect={openKickDialog}>
-                    Expulsar jugador
+                    Quitar jugador del partido
                   </DropdownMenuItem>
                 </>
               ) : null}
@@ -1014,11 +1014,11 @@ export function MatchDetailsScreen() {
             />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-bold text-foreground md:text-2xl">
+            <h1 className="font-brand-heading truncate text-xl text-foreground md:text-2xl">
               Hola, {currentUser?.name?.split(' ')[0] || 'Jugador'}
             </h1>
-            <p className="truncate text-sm text-muted-foreground">
-              Encuentra tu partido perfecto
+            <p className="truncate text-sm leading-snug text-muted-foreground">
+              Encuentra tu próximo partido
             </p>
           </div>
         </div>
@@ -1027,9 +1027,9 @@ export function MatchDetailsScreen() {
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div className="min-w-0">
-            <h2 className="text-xl font-bold text-foreground">Detalle del partido</h2>
+            <h2 className="font-brand-heading text-xl text-foreground">Detalle del partido</h2>
             <p className="text-xs text-muted-foreground">
-              Información completa y estado
+              Información completa y estado actual
             </p>
           </div>
         </div>
@@ -1039,7 +1039,7 @@ export function MatchDetailsScreen() {
         <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-xl font-semibold text-foreground">{opportunity.title}</h2>
+              <h2 className="font-brand-heading text-xl text-foreground">{opportunity.title}</h2>
               {opportunity.teamName && (
                 <p className="text-sm text-muted-foreground">{opportunity.teamName}</p>
               )}
@@ -1062,15 +1062,14 @@ export function MatchDetailsScreen() {
             (isCreator || isParticipant) &&
             opportunity.joinCode && (
               <div className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-2.5 space-y-1">
-                <p className="text-xs font-medium text-foreground">
-                  Código para invitar jugadores
+                <p className="font-brand-heading text-xs text-foreground">
+                  Código para invitar al partido
                 </p>
                 <p className="text-2xl font-mono font-bold tracking-[0.35em] text-primary">
                   {opportunity.joinCode}
                 </p>
                 <p className="text-[11px] text-muted-foreground leading-snug">
-                  Comparte este código por fuera de la app; quien se una debe ingresarlo
-                  al unirse.
+                  Comparte este código fuera de la app; quien quiera entrar deberá ingresarlo al unirse.
                   {!isCreator ? (
                     <span className="block mt-1">
                       Solo lo ven quienes ya están en el partido (confianza del grupo).
@@ -1080,21 +1079,21 @@ export function MatchDetailsScreen() {
               </div>
             )}
 
-          <div className="grid grid-cols-1 gap-2 text-sm text-muted-foreground">
+          <div className="grid grid-cols-1 gap-2 font-brand-heading text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-primary" />
+              <Calendar className="w-4 h-4 shrink-0 text-primary" />
               {formatMatchInTimezone(opportunity.dateTime, "EEEE d 'de' MMMM")}
             </div>
             <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-primary" />
+              <Clock className="w-4 h-4 shrink-0 text-primary" />
               {formatMatchInTimezone(opportunity.dateTime, 'HH:mm')} hrs
             </div>
             <div className="flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-primary" />
+              <MapPin className="w-4 h-4 shrink-0 text-primary" />
               {opportunity.venue}, {opportunity.location}
             </div>
             <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-primary" />
+              <Users className="w-4 h-4 shrink-0 text-primary" />
               {opportunity.playersJoined ?? 0}
               {opportunity.playersNeeded ? `/${opportunity.playersNeeded}` : ''}{' '}
               jugadores
@@ -1107,7 +1106,7 @@ export function MatchDetailsScreen() {
                 </p>
                 {playersSeekProfileLabel(opportunity.playersSeekProfile) && (
                   <p>
-                    <span className="text-foreground font-medium">
+                    <span className="font-brand-heading text-foreground">
                       {playersSeekProfileLabel(opportunity.playersSeekProfile)}
                     </span>
                     {opportunity.playersSeekProfile === 'gk_and_field' && (
@@ -1121,7 +1120,7 @@ export function MatchDetailsScreen() {
               <div className="text-xs text-muted-foreground pl-6 space-y-0.5">
                 <p>
                   Cupos libres:{' '}
-                  <span className="text-foreground font-medium">
+                  <span className="font-brand-heading text-foreground">
                     {Math.max(0, needed - joined)}
                   </span>
                 </p>
@@ -1133,7 +1132,7 @@ export function MatchDetailsScreen() {
                 <div className="text-xs text-muted-foreground pl-6 space-y-0.5">
                   <p>
                     Selección de equipos (A y B). Cupos libres:{' '}
-                    <span className="text-foreground font-medium">
+                    <span className="font-brand-heading text-foreground">
                       {Math.max(0, needed - joined)}
                     </span>
                   </p>
@@ -1165,7 +1164,7 @@ export function MatchDetailsScreen() {
                       <TicketCheck className="h-6 w-6" strokeWidth={2} />
                     </div>
                     <div className="min-w-0 flex-1 space-y-1">
-                      <p className="text-sm font-semibold text-foreground leading-tight">
+                      <p className="font-brand-heading text-sm leading-tight text-foreground">
                         Cancha confirmada
                       </p>
                       <p className="text-xs text-muted-foreground leading-snug">
@@ -1176,10 +1175,10 @@ export function MatchDetailsScreen() {
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground border-t border-primary/15 pt-2.5">
-                    <span className="text-foreground/80 font-medium">
+                    <span className="font-brand-heading text-foreground/80">
                       Fuente de confirmación:{' '}
                     </span>
-                    <span className="text-foreground font-medium">
+                    <span className="font-brand-heading text-foreground">
                       {reservationState.confirmationSource === 'booker_self'
                         ? 'Organizador (autoconfirmada)'
                         : reservationState.confirmationSource === 'venue_owner'
@@ -1192,7 +1191,7 @@ export function MatchDetailsScreen() {
                 </>
               ) : (
                 <>
-                  <p className="text-xs font-medium text-foreground">
+                  <p className="font-brand-heading text-xs text-foreground">
                     Estado de reserva de cancha:{' '}
                     {reservationState.status === 'pending'
                       ? 'Pendiente'
@@ -1226,7 +1225,7 @@ export function MatchDetailsScreen() {
                         size="sm"
                         onClick={() => void handleSelfConfirmReservation()}
                         disabled={selfConfirmReservationMutation.isPending}
-                        className="bg-primary text-primary-foreground hover:bg-primary/90"
+                        className="font-brand bg-primary text-primary-foreground hover:bg-primary/90"
                       >
                         {selfConfirmReservationMutation.isPending
                           ? 'Confirmando...'
@@ -1251,7 +1250,7 @@ export function MatchDetailsScreen() {
               opportunity.status === 'confirmed') &&
             (isCreator || isParticipant) ? (
             <div className="rounded-xl border border-dashed border-border bg-muted/30 p-3 space-y-2">
-              <p className="text-xs font-medium text-foreground">
+              <p className="font-brand-heading text-xs text-foreground">
                 Reserva de cancha en la app
               </p>
               {isCreator ? (
@@ -1299,7 +1298,7 @@ export function MatchDetailsScreen() {
             (opportunity.status === 'pending' ||
               opportunity.status === 'confirmed') && (
               <div className="rounded-xl border border-border bg-secondary/30 p-3 space-y-2">
-                <p className="text-xs font-medium text-foreground">
+                <p className="font-brand-heading text-xs text-foreground">
                   Invitar jugadores
                 </p>
                 <p className="text-xs text-muted-foreground">
@@ -1311,10 +1310,10 @@ export function MatchDetailsScreen() {
               </div>
             )}
 
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Shield className="w-4 h-4 text-primary shrink-0" />
+          <div className="font-brand-heading flex flex-wrap items-center gap-2 text-sm">
+            <Shield className="w-4 h-4 shrink-0 text-primary" />
             <span className="text-muted-foreground">Organizador:</span>
-            <span className="text-foreground font-medium">{opportunity.creatorName}</span>
+            <span className="text-foreground">{opportunity.creatorName}</span>
             {organizerOrganizedCount !== null && !isSystemOrganizer && (
               <Badge
                 variant="secondary"
@@ -1327,7 +1326,7 @@ export function MatchDetailsScreen() {
           </div>
           {opportunity.status === 'cancelled' && opportunity.suspendedReason && (
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
-              <p className="text-xs uppercase tracking-wide text-red-300 mb-1">
+              <p className="font-brand-heading mb-1 text-xs uppercase tracking-wide text-red-300">
                 Partido suspendido
               </p>
               <p className="text-sm text-red-100">{opportunity.suspendedReason}</p>
@@ -1343,31 +1342,31 @@ export function MatchDetailsScreen() {
               const { colorA, colorB } = teamPickColorsForUi(opportunity)
               return (
                 <div className="rounded-xl border border-border/80 bg-secondary/35 px-3 py-2.5 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-foreground">
+                  <p className="font-brand-heading text-xs uppercase tracking-wide text-foreground">
                     Colores camiseta
                   </p>
                   <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-x-6 sm:gap-y-2">
                     <div className="flex min-w-0 flex-1 items-center gap-2">
-                      <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                      <span className="font-brand-heading shrink-0 whitespace-nowrap text-xs text-muted-foreground">
                         Equipo A
                       </span>
                       <TeamPickShieldShape
                         fill={colorA}
                         className="h-8 w-6 shrink-0 drop-shadow-sm"
                       />
-                      <span className="text-sm font-medium text-foreground truncate">
+                      <span className="font-brand-heading truncate text-sm text-foreground">
                         {teamPickJerseyPresetLabel(colorA)}
                       </span>
                     </div>
                     <div className="flex min-w-0 flex-1 items-center gap-2">
-                      <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                      <span className="font-brand-heading shrink-0 whitespace-nowrap text-xs text-muted-foreground">
                         Equipo B
                       </span>
                       <TeamPickShieldShape
                         fill={colorB}
                         className="h-8 w-6 shrink-0 drop-shadow-sm"
                       />
-                      <span className="text-sm font-medium text-foreground truncate">
+                      <span className="font-brand-heading truncate text-sm text-foreground">
                         {teamPickJerseyPresetLabel(colorB)}
                       </span>
                     </div>
@@ -1375,7 +1374,7 @@ export function MatchDetailsScreen() {
                 </div>
               )
             })()}
-          <h3 className="font-medium text-foreground mb-3">Participantes</h3>
+          <h3 className="font-brand-heading mb-3 text-foreground">Participantes</h3>
           {(opportunity.type === 'team_pick_public' ||
             opportunity.type === 'team_pick_private') &&
             isCreator && (
@@ -1389,7 +1388,7 @@ export function MatchDetailsScreen() {
             <div className="rounded-xl border border-primary/35 bg-primary/10 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground">
+                  <p className="font-brand-heading text-sm text-foreground">
                     Cupos disponibles: {freeSlots}
                   </p>
                   <p className="text-xs text-muted-foreground">
@@ -1400,7 +1399,7 @@ export function MatchDetailsScreen() {
                 <Button
                   type="button"
                   size="sm"
-                  className="gap-1.5"
+                  className="font-brand gap-1.5"
                   onClick={() => setInviteOpen(true)}
                 >
                   <UserPlus className="h-4 w-4" />
@@ -1410,7 +1409,7 @@ export function MatchDetailsScreen() {
             </div>
           ) : null}
           {loadingParticipants ? (
-            <p className="text-sm text-muted-foreground">Cargando participantes...</p>
+            <p className="text-sm text-muted-foreground">Cargando participantes…</p>
           ) : participantsShownInRoster.length > 0 ? (
             opportunity.type === 'team_pick_public' ||
             opportunity.type === 'team_pick_private' ? (
@@ -1432,7 +1431,7 @@ export function MatchDetailsScreen() {
                             className="rounded-xl border border-border bg-secondary/15 p-3 space-y-3 min-w-0"
                           >
                             <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-border/60">
-                              <span className="flex items-center gap-2 text-sm font-semibold text-foreground min-w-0">
+                              <span className="font-brand-heading flex min-w-0 items-center gap-2 text-sm text-foreground">
                                 <TeamPickShieldShape
                                   fill={color}
                                   className="h-9 w-7 shrink-0 drop-shadow-sm"
@@ -1466,7 +1465,7 @@ export function MatchDetailsScreen() {
                 })()}
                 {teamPickListSplit.unassigned.length > 0 ? (
                   <div className="space-y-2 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
-                    <p className="text-xs font-medium text-amber-800 dark:text-amber-200">
+                    <p className="font-brand-heading text-xs text-amber-800 dark:text-amber-200">
                       Sin bando asignado
                     </p>
                     <div className="space-y-2">
@@ -1478,7 +1477,7 @@ export function MatchDetailsScreen() {
                 ) : null}
                 {teamPickListSplit.cancelledOnly.length > 0 ? (
                   <div className="space-y-2 border-t border-border pt-4">
-                    <p className="text-xs font-medium text-destructive/90">
+                    <p className="font-brand-heading text-xs text-destructive/90">
                       Bajas / cancelados
                     </p>
                     <div className="space-y-2">
@@ -1578,7 +1577,7 @@ export function MatchDetailsScreen() {
                                     setSelfLeaveTeamPickOpen(true)
                                   }}
                                 >
-                                  Retirarme del partido
+                                  Salir del partido
                                 </DropdownMenuItem>
                               </>
                             ) : null}
@@ -1591,7 +1590,7 @@ export function MatchDetailsScreen() {
                                   variant="destructive"
                                   onSelect={openKickDialog}
                                 >
-                                  Expulsar jugador
+                                  Quitar jugador del partido
                                 </DropdownMenuItem>
                               </>
                             ) : null}
@@ -1619,7 +1618,7 @@ export function MatchDetailsScreen() {
           )}
           {freeSlots > 0 ? (
             <div className="space-y-2 border-t border-border pt-3">
-              <p className="text-xs font-medium text-muted-foreground">
+              <p className="font-brand-heading text-xs text-muted-foreground">
                 Cupos libres ({freeSlots})
               </p>
               <div className="space-y-2">
@@ -1634,7 +1633,7 @@ export function MatchDetailsScreen() {
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="gap-1.5"
+                        className="font-brand gap-1.5"
                         onClick={() => setInviteOpen(true)}
                       >
                         <UserPlus className="h-3.5 w-3.5" />
@@ -1652,7 +1651,7 @@ export function MatchDetailsScreen() {
           (opportunity.status === 'pending' ||
             opportunity.status === 'confirmed') && (
             <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
-              <h3 className="font-medium text-foreground flex items-center gap-2">
+              <h3 className="font-brand-heading flex items-center gap-2 text-foreground">
                 <Shield className="w-4 h-4 text-primary" aria-hidden />
                 Solicitudes de jugadores externos
               </h3>
@@ -1679,7 +1678,7 @@ export function MatchDetailsScreen() {
                           className="w-8 h-8 rounded-full object-cover border border-border"
                         />
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">
+                          <p className="font-brand-heading truncate text-sm text-foreground">
                             {r.requesterName}
                           </p>
                           <p className="text-xs text-muted-foreground">
@@ -1729,7 +1728,7 @@ export function MatchDetailsScreen() {
         {canRequestPrivateRevuelta && (
           <Button
             type="button"
-            className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
+            className="font-brand w-full bg-accent text-accent-foreground hover:bg-accent/90"
             onClick={() => setJoinRevueltaOpen(true)}
           >
             Solicitar ingreso
@@ -1743,7 +1742,7 @@ export function MatchDetailsScreen() {
         {canJoinRevuelta && (
           <Button
             type="button"
-            className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
+            className="font-brand w-full bg-accent text-accent-foreground hover:bg-accent/90"
             onClick={() => setJoinRevueltaOpen(true)}
           >
             Unirme a la revuelta
@@ -1753,7 +1752,7 @@ export function MatchDetailsScreen() {
         {canJoinPlayersSearch && (
           <Button
             type="button"
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+            className="font-brand w-full bg-primary text-primary-foreground hover:bg-primary/90"
             onClick={() => setJoinPlayersOpen(true)}
           >
             Postular
@@ -1763,7 +1762,7 @@ export function MatchDetailsScreen() {
         {canJoinTeamPick && (
           <Button
             type="button"
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+            className="font-brand w-full bg-primary text-primary-foreground hover:bg-primary/90"
             onClick={() => setJoinTeamPickOpen(true)}
           >
             Unirme (selección de equipos)
@@ -1773,7 +1772,7 @@ export function MatchDetailsScreen() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Button
             onClick={openChat}
-            className="w-full"
+            className="font-brand w-full"
             disabled={!canOpenMatchChat}
             title={
               canOpenMatchChat
@@ -1802,7 +1801,7 @@ export function MatchDetailsScreen() {
         {(opportunity.status === 'completed' ||
           (ratingSummary?.count ?? 0) > 0) && (
           <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
-            <h3 className="font-medium text-foreground">Calificaciones del partido</h3>
+            <h3 className="font-brand-heading text-foreground">Calificaciones del partido</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <StatBox
                 label="Reseñas"
@@ -1963,10 +1962,10 @@ export function MatchDetailsScreen() {
             </div>
             <div className="max-h-[340px] space-y-2 overflow-y-auto pr-1">
               {inviteCandidatesQuery.isFetching ? (
-                <p className="text-sm text-muted-foreground">Cargando jugadores...</p>
+                <p className="text-sm text-muted-foreground">Cargando jugadores…</p>
               ) : inviteCandidatesFiltered.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No hay jugadores disponibles para invitar en este momento.
+                  No hay jugadores disponibles para invitar por ahora.
                 </p>
               ) : (
                 inviteCandidatesFiltered.map((u) => (
@@ -1981,7 +1980,7 @@ export function MatchDetailsScreen() {
                         className="h-9 w-9 rounded-full border border-border object-cover"
                       />
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-foreground">
+                        <p className="font-brand-heading truncate text-sm text-foreground">
                           {u.name}
                         </p>
                         <p className="truncate text-xs text-muted-foreground">
@@ -2064,7 +2063,7 @@ export function MatchDetailsScreen() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Expulsar jugador</DialogTitle>
+            <DialogTitle>Quitar jugador del partido</DialogTitle>
             <DialogDescription>
               El jugador dejará de estar inscrito. Cuenta un motivo claro (mínimo 5
               caracteres).
@@ -2142,7 +2141,7 @@ export function MatchDetailsScreen() {
                 })()
               }}
             >
-              {kickSubmitting ? 'Procesando…' : 'Confirmar expulsión'}
+              {kickSubmitting ? 'Procesando…' : 'Confirmar salida del jugador'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2159,7 +2158,7 @@ export function MatchDetailsScreen() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Retirarme del partido</DialogTitle>
+            <DialogTitle>Salir del partido</DialogTitle>
             <DialogDescription>
               Dejarás tu cupo libre para otro jugador. Indica un motivo (mínimo 5
               caracteres). Solo puedes salirte hasta 2 horas antes del encuentro.
@@ -2234,7 +2233,7 @@ export function MatchDetailsScreen() {
                 })()
               }}
             >
-              {selfLeaveSubmitting ? 'Procesando…' : 'Confirmar salida'}
+              {selfLeaveSubmitting ? 'Procesando…' : 'Confirmar mi salida'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2283,7 +2282,7 @@ const StatBox = memo(function StatBox({ label, value }: { label: string; value: 
   return (
     <div className="rounded-xl border border-border bg-secondary/40 p-2">
       <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className="text-sm font-semibold text-foreground">{value}</p>
+      <p className="font-brand-heading text-sm text-foreground">{value}</p>
     </div>
   )
 })
@@ -2325,7 +2324,7 @@ const ParticipantListItem = memo(function ParticipantListItem({
               alt={participant.name}
               className="w-8 h-8 rounded-full object-cover border border-border"
             />
-            <span className="text-sm text-foreground truncate hover:underline">
+            <span className="font-brand-heading truncate text-sm text-foreground hover:underline">
               {participant.name}
               {(opportunityType === 'open' ||
                 opportunityType === 'players' ||

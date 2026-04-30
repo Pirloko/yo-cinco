@@ -84,13 +84,13 @@ export function JoinRevueltaDialog({
 
   const availabilityText = useMemo(() => {
     if (!opportunity) return ''
-    if (full) return 'No quedan cupos.'
+    if (full) return 'No quedan cupos disponibles.'
     if (fieldLeft <= 0 && gkLeft > 0) return 'Solo quedan cupos de arquero.'
     if (gkLeft <= 0 && fieldLeft > 0) return 'Quedan cupos de jugadores.'
     if (gkLeft > 0 && fieldLeft > 0) {
       return `Quedan ${fieldLeft} de jugadores y ${gkLeft} de arquero.`
     }
-    return 'Cupos disponibles.'
+    return 'Hay cupos disponibles.'
   }, [opportunity, full, fieldLeft, gkLeft])
 
   if (!opportunity) return null
@@ -118,7 +118,7 @@ export function JoinRevueltaDialog({
           <DialogDescription>
             {mode === 'request'
               ? `${opportunity.title} — revuelta privada de equipo. Elige rol; el organizador del partido aceptará o rechazará tu solicitud. No pasas a ser miembro del plantel.`
-              : `${opportunity.title} — selecciona tu rol.`}
+              : `${opportunity.title} — elige cómo quieres jugar.`}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2 text-sm text-muted-foreground">
@@ -141,7 +141,7 @@ export function JoinRevueltaDialog({
             disabled={submitting || full || fieldLeft <= 0}
             onClick={() => void handleJoin(false)}
           >
-            Jugador de campo
+            Entrar como jugador de campo
           </Button>
           <Button
             type="button"
@@ -150,7 +150,7 @@ export function JoinRevueltaDialog({
             disabled={submitting || full || gkLeft <= 0}
             onClick={() => void handleJoin(true)}
           >
-            Arquero 🧤
+            Entrar como arquero 🧤
           </Button>
         </DialogFooter>
       </DialogContent>

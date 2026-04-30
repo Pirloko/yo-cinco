@@ -1,0 +1,48 @@
+INVENTARIO DE TEXTOS - FASE 1
+Objetivo: mapear modulos de mayor impacto UX para iniciar reescritura ordenada.
+Estado: inicial (expandible)
+
+PRIORIDAD ALTA - LANDING / ACCESO
+- components/landing-page.tsx
+- components/brand-mark.tsx
+- components/auth-screen.tsx
+- components/home-screen.tsx
+
+PRIORIDAD ALTA - FLUJOS DE PARTIDO
+- components/match-details-screen.tsx
+- components/admin-match-center-panel.tsx
+- lib/team-pick-ui.ts
+- components/team-pick-*.tsx (si aplica en el proyecto)
+
+PRIORIDAD ALTA - NAVEGACION Y CTA GLOBALES
+- components/app-screen-brand-heading.tsx
+- components/*navigation*.tsx
+- componentes con Tabs principales de app/admin
+
+PRIORIDAD MEDIA - PERFIL Y COMUNICACION
+- components/profile-screen.tsx
+- components/admin-dashboard-screen.tsx (seccion comentarios app)
+- componentes de notificaciones/invitaciones
+
+PRIORIDAD MEDIA - ADMIN OPERATIVO
+- components/admin-dashboard-screen.tsx
+- components/admin-players-dashboard-panel.tsx
+- components/admin-geo-catalog-panel.tsx
+- components/admin-ceo-overview.tsx
+
+PRIORIDAD MEDIA - ESTADOS Y MENSAJES
+- Textos de botones
+- Empty states
+- Dialogos de confirmacion
+- Mensajes de exito/error mostrados al usuario
+
+CRITERIO DE EJECUCION
+1) Reescribir primero titulos, subtitulos y CTAs principales.
+2) Luego placeholders, ayudas y estados vacios.
+3) Finalmente mensajes de error/confirmacion.
+
+CRITERIO DE ACEPTACION POR MODULO
+- Consistencia de tono (tu, directo, claro).
+- Terminologia canonica respetada.
+- Botones breves y accionables.
+- Sin cambios de logica ni comportamiento.

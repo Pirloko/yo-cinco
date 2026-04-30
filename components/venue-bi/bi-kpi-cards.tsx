@@ -109,7 +109,7 @@ export function VenueBiKpiCards({ snapshot }: { snapshot: VenueBiSnapshot }) {
               </CardTitle>
             </CardHeader>
             <CardContent className="px-3 pb-3 pt-0 sm:px-5 sm:pb-4">
-              <p className={`text-[30px] leading-none sm:text-3xl font-semibold tabular-nums ${it.cls}`}>
+              <p className={`font-brand-heading text-[30px] leading-none tabular-nums sm:text-3xl ${it.cls}`}>
                 {it.value}
               </p>
             </CardContent>

@@ -62,7 +62,7 @@ export function VenueOnboardingScreen() {
           }
           title="Alta de centro"
           subtitle="Datos públicos de tu recinto"
-          titleClassName="text-lg font-semibold"
+          titleClassName="text-lg"
         />
       </header>
 

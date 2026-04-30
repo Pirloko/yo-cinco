@@ -280,7 +280,7 @@ export function VenueCentroClient({
                 <Calendar className="h-5 w-5" aria-hidden />
               </div>
               <div>
-                <h2 className="text-base font-semibold tracking-tight text-foreground">
+                <h2 className="font-brand-heading text-base tracking-tight text-foreground">
                   Horarios disponibles
                 </h2>
                 <p className="text-xs text-muted-foreground">{dow}</p>
@@ -391,7 +391,7 @@ export function VenueCentroClient({
                   <Button
                     type="button"
                     size="lg"
-                    className="h-11 w-full font-semibold shadow-sm"
+                    className="font-brand h-11 w-full shadow-sm"
                     onClick={() => {
                       if (hasSession) {
                         proceedCreateLoggedIn(selectedSlot.start)

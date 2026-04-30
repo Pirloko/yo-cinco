@@ -13,7 +13,7 @@ type BrandMarkProps = {
   className?: string
   /** Miniatura de `/logohome.webp` alineada con el wordmark del hero */
   showLogo?: boolean
-  /** Misma cadencia que el texto curvo “SportMatch” (tracking + sans bold) */
+  /** Wordmark de marca: Oswald + cadencia deportiva (tracking, skew suave) */
   wordmarkTypography?: boolean
 }
 
@@ -49,7 +49,7 @@ export function BrandMark({
         className={cn(
           'text-foreground',
           wordmarkTypography
-            ? 'font-brand-round text-xl font-extrabold tracking-[0.06em] md:text-2xl'
+            ? 'font-brand inline-block -skew-x-3 text-xl md:text-2xl'
             : cn(
                 'font-sans font-bold tracking-tight',
                 size === 'sm' ? 'text-lg' : 'text-xl'

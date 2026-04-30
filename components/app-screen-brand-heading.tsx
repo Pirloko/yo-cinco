@@ -58,7 +58,7 @@ export function AppScreenBrandHeading({
           {titleAs === 'p' ? (
             <p
               className={cn(
-                'truncate font-bold text-foreground',
+                'font-brand-heading truncate text-foreground',
                 eyebrow && 'mt-0.5',
                 titleClassName ?? 'text-2xl'
               )}
@@ -68,7 +68,7 @@ export function AppScreenBrandHeading({
           ) : (
             <h1
               className={cn(
-                'truncate font-bold text-foreground',
+                'font-brand-heading truncate text-foreground',
                 eyebrow && 'mt-0.5',
                 titleClassName ?? 'text-2xl'
               )}

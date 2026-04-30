@@ -105,7 +105,7 @@
 --------------------------------------------------------------------------------
 
   app/
-    layout.tsx              Metadatos, fuentes (Nunito marca), Providers, Analytics Vercel
+    layout.tsx              Metadatos, fuentes (Oswald marca), Providers, Analytics Vercel
     page.tsx                Shell principal: cliente único; enrutado por currentScreen (app-context)
     globals.css             Estilos globales + Tailwind
     swipe/page.tsx          Ruta /swipe

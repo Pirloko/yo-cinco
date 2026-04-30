@@ -1,0 +1,193 @@
+PLAN MAESTRO - REESCRITURA TOTAL DE TEXTOS UX (SPORTMATCH)
+
+ESTADO:
+- Activo
+- Versión: 1.0
+- Alcance: todo el producto (web/app) en textos visibles para usuario y admin
+
+
+BLOQUE 0 - OBJETIVO GENERAL
+Objetivo:
+- Reescribir todos los textos del proyecto de forma ordenada, consistente y orientada a UX.
+- Mantener experiencia excelente: claridad, confianza, tono humano, y acciones obvias.
+
+Principios:
+- Claro > creativo.
+- Breve > recargado.
+- Acción > ambigüedad.
+- Consistencia terminológica en todo el sistema.
+
+
+BLOQUE 1 - REGLAS CRITICAS (NO NEGOCIABLES)
+Reglas:
+- NO modificar lógica, hooks, estado, APIs, Supabase, RPC, permisos ni comportamiento.
+- NO cambiar estructura de componentes ni layout (salvo microajustes de texto si desborda).
+- NO renombrar componentes ni rutas.
+- SOLO modificar contenido textual (copy), etiquetas, placeholders, ayudas, títulos, estados y errores.
+- Mantener semántica del flujo actual (si una acción publica, el texto no debe sugerir guardar borrador).
+
+Seguridad de migración:
+- No hacer reemplazos globales ciegos.
+- Cada cambio textual se valida en su contexto funcional.
+- Si hay duda de significado en un texto crítico, marcar para revisión antes de cambiar.
+
+
+BLOQUE 2 - VOZ Y TONO DEL PRODUCTO
+Definición base:
+- Idioma: Español.
+- Tratamiento: tú.
+- Tono: cercano, claro, confiable, directo.
+- Personalidad: deportiva, moderna, ágil; sin sonar agresivo.
+
+Estilo:
+- Frases cortas.
+- Verbos de acción ("Publicar", "Confirmar", "Revisar", "Activar").
+- Evitar tecnicismos internos (RPC, IDs internos, etc.) en UI de usuario final.
+- Usar mensajes de error accionables ("No se pudo guardar. Intenta de nuevo.").
+
+
+BLOQUE 3 - DICCIONARIO DE TERMINOS CANONICOS
+Objetivo:
+- Unificar nomenclatura para evitar confusiones.
+
+Terminos base (propuestos):
+- partido
+- revuelta
+- selección de equipos (pública/privada)
+- centro deportivo (no mezclar con "venue" en UI)
+- ciudad, región, país
+- organizador, jugador, invitado
+- pendiente, confirmado, cancelado, resuelto
+- comentarios app, sugerencias
+
+Regla:
+- Una vez definido un término, mantenerlo en todo el proyecto.
+
+
+BLOQUE 4 - INVENTARIO GLOBAL DE TEXTOS
+Objetivo:
+- Detectar todos los textos visibles para priorizar trabajo.
+
+Fuentes a auditar:
+- Componentes UI (`components/**`)
+- Pantallas app (`*screen*`, `landing`, `auth`, `profile`, `match`)
+- Panel admin
+- Mensajes de error/success (toasts)
+- Empty states
+- Placeholders e inputs
+- Botones y acciones
+- Dialogs/confirmaciones
+
+Resultado:
+- Mapa de archivos con textos por módulo.
+
+
+BLOQUE 5 - PRIORIZACION POR IMPACTO UX
+Orden de intervención:
+1) Navegación y CTAs principales.
+2) Onboarding / Landing / Auth.
+3) Flujos de partido (crear, unirse, gestionar, cancelar).
+4) Perfil y comunicación (comentarios, notificaciones).
+5) Admin (módulos operativos).
+6) Mensajes secundarios y microcopys residuales.
+
+Meta:
+- Primero mejorar lo que más afecta comprensión y conversión.
+
+
+BLOQUE 6 - REESCRITURA POR MODULOS (EJECUCION)
+Estrategia:
+- Ejecutar por lotes pequeños para evitar desorden.
+- Un módulo por iteración, con revisión visual al cierre de cada uno.
+
+Formato por módulo:
+- Título actual -> Título nuevo
+- Texto actual -> Texto nuevo
+- Botones/acciones actuales -> nuevas etiquetas
+- Estados vacíos -> nuevos textos
+- Errores -> nuevos mensajes accionables
+
+Regla:
+- No cerrar un módulo sin validar consistencia interna.
+
+
+BLOQUE 7 - GUIA DE MICROCOPY (PRACTICA)
+Botones:
+- Máximo 2-3 palabras cuando sea posible.
+- Verbo al inicio ("Crear partido", "Ver detalle", "Guardar cambios").
+
+Placeholders:
+- Dar ejemplo concreto y breve.
+- Evitar placeholder ambiguo ("Escribe aquí...").
+
+Errores:
+- Estructura sugerida:
+  - Qué pasó
+  - Qué puede hacer el usuario ahora
+
+Estados vacíos:
+- Explicar por qué está vacío + siguiente paso recomendado.
+
+Confirmaciones:
+- Claras y tranquilizadoras ("Cambios guardados", "Partido publicado").
+
+
+BLOQUE 8 - QA DE EXPERIENCIA DE USUARIO
+Checklist por módulo:
+- ¿Se entiende qué hacer en menos de 3 segundos?
+- ¿El texto coincide con la acción real?
+- ¿Hay consistencia de términos con el resto de pantallas?
+- ¿No hay textos demasiado largos para móvil?
+- ¿Errores y estados vacíos orientan al siguiente paso?
+
+Checklist global:
+- Sin mezcla de tonos/formalidades.
+- Sin spanglish innecesario.
+- Sin mensajes técnicos expuestos al usuario final.
+
+
+BLOQUE 9 - CONTROL DE RIESGO
+Riesgos:
+- Cambiar texto con significado funcional incorrecto.
+- Inconsistencias entre módulos.
+- Saturación de copy (más texto, peor UX).
+
+Mitigación:
+- Cambios incrementales.
+- Revisión contextual antes de guardar cada archivo.
+- Verificación visual continua en móvil y desktop.
+
+
+BLOQUE 10 - ENTREGABLES
+Entregables obligatorios:
+- Textos reescritos por módulos con consistencia total.
+- Guía editorial viva en repositorio.
+- Lista de decisiones de término y tono.
+- Resumen final de archivos tocados.
+
+
+BLOQUE 11 - CRITERIO DE EXITO
+Se considera completado cuando:
+- Todos los textos principales del producto fueron revisados y mejorados.
+- El usuario entiende flujos clave con menos fricción.
+- Los errores/estados vacíos son accionables.
+- Terminología consistente de punta a punta.
+- No hubo cambios en lógica ni comportamiento.
+
+
+BLOQUE 12 - PLAN DE EJECUCION INMEDIATA
+Fase 1 (arranque):
+- Definir guía editorial final (tono + diccionario canónico).
+- Crear inventario inicial de textos por módulo.
+
+Fase 2:
+- Reescribir módulos de alto impacto (Landing/Auth/CTAs/Match core).
+
+Fase 3:
+- Reescribir Admin + mensajes secundarios.
+
+Fase 4:
+- QA final transversal + ajustes de consistencia.
+
+Nota operativa:
+- Iniciar implementación ahora por Fase 1 y continuar en iteraciones.

@@ -370,7 +370,7 @@ export function ProfileScreen() {
             className="min-w-0 flex-1"
             title="Perfil"
             titleAs="p"
-            titleClassName="text-lg font-semibold tracking-tight sm:text-xl"
+            titleClassName="text-lg tracking-tight sm:text-xl"
           />
           <Button
             type="button"
@@ -455,7 +455,7 @@ export function ProfileScreen() {
             </div>
           ) : null}
           <div className="flex flex-col items-center">
-            <h1 className="mb-6 w-full text-center text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            <h1 className="font-brand-heading mb-6 w-full text-center text-2xl tracking-tight text-foreground sm:text-3xl">
               Hola,{' '}
               <span className="text-primary">{profileFirstName}</span>
             </h1>
@@ -526,7 +526,7 @@ export function ProfileScreen() {
             )}
 
             {profileShowFullNameHeading ? (
-              <h2 className="mt-4 text-lg font-bold text-foreground text-center border-t border-border/60 pt-4 w-full">
+              <h2 className="font-brand-heading mt-4 text-lg text-foreground text-center border-t border-border/60 pt-4 w-full">
                 {currentUser.name}
               </h2>
             ) : null}

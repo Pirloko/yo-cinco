@@ -106,7 +106,11 @@ export function AuthScreen() {
         >
           <ArrowLeft className="w-5 h-5" />
         </Button>
-        <BrandMark size="sm" textClassName="text-lg font-bold" />
+        <BrandMark
+          size="sm"
+          wordmarkTypography
+          textClassName="text-foreground"
+        />
         <div className="ml-auto flex items-center">
           <ThemeMenuButton />
         </div>
@@ -137,14 +141,14 @@ export function AuthScreen() {
           <div className="text-center space-y-2">
             {isLogin ? (
               <p className="text-pretty text-lg font-medium leading-relaxed text-foreground md:text-xl">
-                Ingresa tus datos para iniciar sesión o inicia sesión con Google.
+                Inicia sesión con tu email o continúa con Google.
               </p>
             ) : (
               <>
-                <h1 className="text-3xl font-bold text-foreground">Crear cuenta</h1>
+                <h1 className="font-brand-heading text-3xl text-foreground">Crear cuenta</h1>
                 <p className="text-muted-foreground">
-                  Regístrate con email o Google. Luego completarás WhatsApp y género en el
-                  siguiente paso.
+                  Regístrate con email o Google. Luego completarás tu WhatsApp y
+                  tu perfil en el siguiente paso.
                 </p>
               </>
             )}
@@ -195,13 +199,13 @@ export function AuthScreen() {
 
             {/* Password */}
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-foreground">Contrasena</Label>
+              <Label htmlFor="password" className="text-foreground">Contraseña</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <Input
                   id="password"
                   type="password"
-                  placeholder="Tu contrasena"
+                  placeholder="Tu contraseña"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-10 h-12 bg-secondary border-border text-foreground placeholder:text-muted-foreground"
@@ -220,10 +224,10 @@ export function AuthScreen() {
             {/* Submit Button */}
             <Button 
               type="submit" 
-              className="w-full h-12 text-lg bg-primary text-primary-foreground hover:bg-primary/90"
+              className="font-brand w-full h-12 text-lg bg-primary text-primary-foreground hover:bg-primary/90"
               disabled={isLoading || googleLoading}
             >
-              {isLoading ? 'Cargando...' : isLogin ? 'Iniciar sesion' : 'Crear cuenta'}
+              {isLoading ? 'Cargando…' : isLogin ? 'Iniciar sesión' : 'Crear cuenta'}
             </Button>
           </form>
 
@@ -235,8 +239,8 @@ export function AuthScreen() {
               className="text-muted-foreground hover:text-primary transition-colors"
             >
               {isLogin 
-                ? 'No tienes cuenta? Registrate' 
-                : 'Ya tienes cuenta? Inicia sesion'}
+                ? '¿No tienes cuenta? Regístrate' 
+                : '¿Ya tienes cuenta? Inicia sesión'}
             </button>
           </div>
         </div>

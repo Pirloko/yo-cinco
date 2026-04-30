@@ -755,7 +755,7 @@ export function CreateScreen() {
             <CheckCircle className="w-10 h-10 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">
+            <h1 className="font-brand-heading text-2xl text-foreground">
               {matchType === 'reserve' ? 'Reserva creada' : 'Publicado!'}
             </h1>
             <p className="text-muted-foreground mt-2">
@@ -907,7 +907,7 @@ export function CreateScreen() {
                 </Card>
 
                 <div className="text-center space-y-2">
-                  <h2 className="text-2xl font-bold text-foreground">
+                  <h2 className="font-brand-heading text-2xl text-foreground">
                     Qué quieres hacer?
                   </h2>
                   <p className="text-muted-foreground">
@@ -1003,7 +1003,7 @@ export function CreateScreen() {
                   Otras opciones
                 </Button>
                 <div className="text-center space-y-2">
-                  <h2 className="text-2xl font-bold text-foreground">
+                  <h2 className="font-brand-heading text-2xl text-foreground">
                     Tipo de partido
                   </h2>
                   <p className="text-sm text-muted-foreground leading-relaxed px-1">
@@ -1076,7 +1076,7 @@ export function CreateScreen() {
         {step === 2 && matchType === 'rival' && (
           <div className="space-y-6">
             <div className="text-center space-y-2">
-              <h2 className="text-2xl font-bold text-foreground">Selecciona tu equipo</h2>
+              <h2 className="font-brand-heading text-2xl text-foreground">Selecciona tu equipo</h2>
               <p className="text-muted-foreground">Elige el equipo que desafiara</p>
             </div>
 
@@ -1150,7 +1150,7 @@ export function CreateScreen() {
         {step === 3 && matchType === 'rival' && selectedTeam && (
           <div className="space-y-6">
             <div className="text-center space-y-2">
-              <h2 className="text-2xl font-bold text-foreground">Selecciona rival</h2>
+              <h2 className="font-brand-heading text-2xl text-foreground">Selecciona rival</h2>
               <p className="text-muted-foreground">
                 <span className="text-primary font-medium">{selectedTeam.name}</span> puede desafiar directo o publicar búsqueda abierta
               </p>
@@ -1287,7 +1287,7 @@ export function CreateScreen() {
                   <p className="font-semibold text-foreground text-sm">{selectedTeam.name}</p>
                 </div>
                 <div className="px-4">
-                  <span className="text-2xl font-bold text-accent">VS</span>
+                  <span className="font-brand-heading text-2xl text-accent">VS</span>
                 </div>
                 <div className="text-center">
                   <div className="w-16 h-16 rounded-xl bg-muted overflow-hidden mx-auto mb-2">
@@ -1309,7 +1309,7 @@ export function CreateScreen() {
             </div>
 
             <div className="text-center">
-              <h2 className="text-xl font-bold text-foreground">Detalles del desafio</h2>
+              <h2 className="font-brand-heading text-xl text-foreground">Detalles del desafio</h2>
             </div>
 
             <div className="space-y-4">
@@ -1490,7 +1490,7 @@ export function CreateScreen() {
         {step === 2 && matchType === 'players' && (
           <div className="space-y-6">
             <div className="text-center space-y-2">
-              <h2 className="text-2xl font-bold text-foreground">
+              <h2 className="font-brand-heading text-2xl text-foreground">
                 ¿Cuántos jugadores necesitas?
               </h2>
               <p className="text-sm text-muted-foreground">
@@ -1516,7 +1516,7 @@ export function CreateScreen() {
                 >
                   -
                 </Button>
-                <span className="text-3xl font-bold text-foreground w-14 text-center">
+                <span className="font-brand-heading text-3xl text-foreground w-14 text-center">
                   {formData.playersNeeded}
                 </span>
                 <Button
@@ -1548,7 +1548,7 @@ export function CreateScreen() {
         {step === 3 && matchType === 'players' && (
           <div className="space-y-6">
             <div className="text-center space-y-2">
-              <h2 className="text-2xl font-bold text-foreground">
+              <h2 className="font-brand-heading text-2xl text-foreground">
                 ¿Qué te falta completar?
               </h2>
               <p className="text-sm text-muted-foreground">
@@ -1602,7 +1602,7 @@ export function CreateScreen() {
         {showCasualForm && matchType && (
           <div className="space-y-6">
             <div className="text-center space-y-2">
-              <h2 className="text-xl font-bold text-foreground">
+              <h2 className="font-brand-heading text-xl text-foreground">
                 {matchType === 'players' && 'Detalles de la busqueda'}
                 {matchType === 'open' && 'Detalles de la revuelta'}
                 {(matchType === 'team_pick_public' ||
@@ -1813,7 +1813,7 @@ export function CreateScreen() {
                     >
                       -
                     </Button>
-                    <span className="text-2xl font-bold text-foreground w-12 text-center">
+                    <span className="font-brand-heading text-2xl text-foreground w-12 text-center">
                       {formData.playersNeeded}
                     </span>
                     <Button
@@ -2033,7 +2033,7 @@ export function CreateScreen() {
         {showReserveForm && (
           <div className="space-y-6">
             <div className="text-center space-y-2">
-              <h2 className="text-xl font-bold text-foreground">Reserva rápida</h2>
+              <h2 className="font-brand-heading text-xl text-foreground">Reserva rápida</h2>
               <p className="text-sm text-muted-foreground">
                 Reserva una cancha sin crear partido.
               </p>
@@ -2337,7 +2337,7 @@ function TypeCard({
       </div>
       <div className="text-left flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-semibold text-lg text-foreground">{title}</h3>
+          <h3 className="font-brand-heading text-lg text-foreground">{title}</h3>
           {disabled && unavailableLabel ? (
             <Badge
               variant="outline"

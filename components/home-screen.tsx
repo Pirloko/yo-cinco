@@ -196,11 +196,11 @@ export function HomeScreen() {
               />
             </div>
             <div className="min-w-0">
-              <h1 className="truncate text-xl font-bold text-foreground md:text-2xl">
+              <h1 className="font-brand-heading truncate text-xl text-foreground md:text-2xl">
                 Hola, {currentUser?.name?.split(' ')[0] || 'Jugador'}
               </h1>
-              <p className="truncate text-sm text-muted-foreground">
-                Encuentra tu partido perfecto
+              <p className="truncate text-sm leading-snug text-muted-foreground">
+                Encuentra tu próximo partido
               </p>
             </div>
           </div>
@@ -238,7 +238,7 @@ export function HomeScreen() {
           <QuickActionCard
             icon={<Sparkles className="w-6 h-6" />}
             label="Todos"
-            cta="Ver oportunidades"
+            cta="Ver todos"
             selected={activeFilter === 'all'}
             color="bg-primary/10 text-primary border-primary/30"
             onClick={() => setActiveFilter('all')}
@@ -253,8 +253,8 @@ export function HomeScreen() {
           />
           <QuickActionCard
             icon={<Shuffle className="w-6 h-6" />}
-            label="Partido revuelta"
-            cta="Entra a jugar"
+            label="Revueltas"
+            cta="Entrar a jugar"
             selected={activeFilter === 'open'}
             color="bg-accent/10 text-accent border-accent/30"
             onClick={() => setActiveFilter('open')}
@@ -262,7 +262,7 @@ export function HomeScreen() {
           <QuickActionCard
             icon={<Swords className="w-6 h-6" />}
             label="Selección de equipos"
-            cta="Elige equipo A o B y tu posición."
+            cta="Elige equipo y posición"
             selected={activeFilter === 'team_pick'}
             color="bg-primary/10 text-primary border-primary/30"
             onClick={() => setActiveFilter('team_pick')}
@@ -272,13 +272,13 @@ export function HomeScreen() {
         <div className="mt-4 rounded-2xl border border-border bg-card/60 p-4 space-y-3">
           <div className="flex items-center gap-2">
             <Swords className="w-5 h-5 text-primary shrink-0" aria-hidden />
-            <h3 className="text-sm font-semibold text-foreground">
-              Selección de equipos privado: ¿tienes el código?
+            <h3 className="font-brand-heading text-sm leading-snug text-foreground">
+              Selección privada: ¿tienes el código?
             </h3>
           </div>
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            Ingresa los 4 dígitos que te pasó el organizador. Puedes unirte aunque el
-            partido no aparezca en tu listado.
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Ingresa los 4 dígitos que te compartió el organizador.
+            Puedes unirte aunque no lo veas en tu listado.
           </p>
           <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
             <Input
@@ -295,7 +295,7 @@ export function HomeScreen() {
             />
             <Button
               type="button"
-              className="sm:w-auto"
+              className="font-brand sm:w-auto"
               disabled={
                 teamPickByCodeBusy || teamPickCodeInput.replace(/\D/g, '').length !== 4
               }
@@ -335,8 +335,8 @@ export function HomeScreen() {
       {/* Match Feed */}
       <div className="px-4 space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg font-semibold text-foreground">
-            Oportunidades cerca de ti
+          <h2 className="font-brand-heading text-lg text-foreground sm:text-xl">
+            Partidos cerca de ti
           </h2>
           <RegionCityFilterSelect
             cities={cityFilterOptions}
@@ -387,8 +387,8 @@ export function HomeScreen() {
             >
               ⚽
             </div>
-            <p className="text-base font-bold text-foreground">
-              No hay partidos disponibles
+            <p className="font-brand-heading text-base text-foreground">
+              No hay partidos por ahora
             </p>
           </div>
         )}
@@ -499,7 +499,9 @@ export function HomeScreen() {
       {rivalPickOppId && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end">
           <div className="w-full rounded-t-2xl bg-card border-t border-border p-4 space-y-3">
-            <p className="font-semibold text-foreground">Selecciona tu equipo para desafiar</p>
+            <p className="font-brand-heading text-base text-foreground">
+              Selecciona tu equipo para desafiar
+            </p>
             {staffTeamsForRival.map((team) => (
               <button
                 key={team.id}
@@ -555,8 +557,8 @@ function QuickActionCard({
       } ${color}`}
     >
       {icon}
-      <span className="text-sm font-semibold">{label}</span>
-      <span className="text-[11px] opacity-90">{cta}</span>
+      <span className="font-brand-heading text-sm leading-tight">{label}</span>
+      <span className="text-[11px] leading-snug opacity-90">{cta}</span>
     </button>
   )
 }

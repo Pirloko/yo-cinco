@@ -170,11 +170,11 @@ export function JoinTeamPickDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Unirme — selección de equipos</DialogTitle>
+          <DialogTitle>Unirme a selección de equipos</DialogTitle>
           <DialogDescription>
-            Elige equipo A o B y tu rol. Hay máximo 6 por equipo (1 arquero y 5 de campo).
+            Elige equipo A o B y tu rol. El máximo es 6 por equipo (1 arquero y 5 de campo).
             {isPrivate
-              ? ' Este partido es privado: necesitas el código de 4 dígitos que te comparte el organizador.'
+              ? ' Este partido es privado: necesitas el código de 4 dígitos que te comparta el organizador.'
               : null}
           </DialogDescription>
         </DialogHeader>
@@ -188,11 +188,10 @@ export function JoinTeamPickDialog({
               <p className="text-muted-foreground">Cargando cupos…</p>
             ) : slotsError ? (
               <p className="text-amber-700 dark:text-amber-300 leading-snug">
-                No se pudieron cargar los cupos. Cierra y vuelve a abrir, o prueba de nuevo más
-                tarde.
+                No pudimos cargar los cupos. Cierra y vuelve a abrir, o inténtalo de nuevo más tarde.
               </p>
             ) : bothSidesFull ? (
-              <p className="text-muted-foreground">Ambos equipos están completos.</p>
+              <p className="text-muted-foreground">Los dos equipos ya están completos.</p>
             ) : (
               (['A', 'B'] as const).map((side) => {
                 const s = slots[side]
@@ -301,7 +300,7 @@ export function JoinTeamPickDialog({
             </div>
             {sideFull && slotsReady ? (
               <p className="text-xs text-destructive">
-                Este equipo ya está completo. Elige el otro bando.
+                Este equipo ya está completo. Elige el otro lado.
               </p>
             ) : null}
           </div>
@@ -333,14 +332,12 @@ export function JoinTeamPickDialog({
             </div>
             {gkTakenOnSide && slotsReady ? (
               <p className="text-xs text-muted-foreground leading-snug">
-                Ya hay arquero en el equipo {pickTeam}. Elige otra posición u otro bando si
-                hay cupo de arquero.
+                Ya hay arquero en el equipo {pickTeam}. Elige otra posición u otro equipo si queda cupo de arquero.
               </p>
             ) : null}
             {fieldFullOnSide && !gkTakenOnSide && slotsReady ? (
               <p className="text-xs text-muted-foreground leading-snug">
-                Cupo de campo lleno en el equipo {pickTeam}. Puedes ir de arquero si aún hay
-                cupo.
+                Los cupos de campo del equipo {pickTeam} ya están llenos. Puedes entrar como arquero si aún hay cupo.
               </p>
             ) : null}
           </div>
@@ -358,7 +355,7 @@ export function JoinTeamPickDialog({
             Cancelar
           </Button>
           <Button type="button" disabled={!canSubmit} onClick={() => void handleSubmit()}>
-            {submitting ? 'Uniendo…' : 'Confirmar'}
+            {submitting ? 'Uniéndome…' : 'Unirme'}
           </Button>
         </DialogFooter>
       </DialogContent>

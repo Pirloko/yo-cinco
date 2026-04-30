@@ -179,7 +179,7 @@ export function ExploreScreen() {
               value={String(horizonDays)}
               onValueChange={(v) => setHorizonDays(Number(v))}
             >
-              <SelectTrigger className="h-12 w-full sm:w-[140px] bg-secondary border-border">
+              <SelectTrigger className="font-brand-heading h-12 w-full text-sm sm:w-[140px] bg-secondary border-border">
                 <SelectValue placeholder="Ventana" />
               </SelectTrigger>
               <SelectContent>
@@ -196,7 +196,7 @@ export function ExploreScreen() {
 
       {displayedVenues.length > 0 ? (
         <section className="px-4 pt-4 pb-2 space-y-2">
-          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <h2 className="font-brand-heading flex items-center gap-2 text-sm text-foreground">
             <Building2 className="w-4 h-4 text-primary" />
             Centros deportivos
           </h2>
@@ -230,7 +230,7 @@ export function ExploreScreen() {
       )}
 
       <section className="px-4 py-4 space-y-3">
-        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+        <h2 className="font-brand-heading flex items-center gap-2 text-sm text-foreground">
           <Clock className="w-4 h-4 text-primary" />
           Próximos horarios disponibles
         </h2>

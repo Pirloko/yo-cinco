@@ -25,13 +25,13 @@ export function LandingPage() {
           size="md"
           showLogo
           wordmarkTypography
-          textClassName="text-foreground dark:text-white"
+          textClassName="text-foreground"
         />
         <div className="flex items-center gap-1">
           <ThemeMenuButton />
           <Button
             variant="ghost"
-            className="text-muted-foreground hover:text-foreground"
+            className="font-brand inline-block -skew-x-3 text-xl text-foreground hover:bg-foreground/5 hover:text-foreground md:text-2xl dark:hover:bg-white/10"
             onClick={() => setCurrentScreen('auth')}
           >
             Iniciar sesión
@@ -42,32 +42,32 @@ export function LandingPage() {
       <main className="flex flex-1 flex-col">
         {/* Hero: copy + CTAs */}
         <section className="mx-auto w-full max-w-4xl px-4 pb-6 pt-10 text-center md:pt-14">
-          <h1 className="text-balance text-4xl font-bold tracking-tight text-foreground md:text-6xl lg:text-7xl">
-            <span className="block">Encuentra tu</span>
+          <h1 className="font-brand-heading text-balance text-4xl leading-[1.08] tracking-tight text-foreground md:text-6xl md:leading-[1.06] lg:text-7xl">
+            <span className="block">Encuentra tu próximo</span>
             <span className="block text-primary">partido hoy</span>
           </h1>
 
-          <p className="mx-auto mt-6 max-w-2xl text-pretty text-base text-muted-foreground md:text-lg lg:text-xl">
-            La plataforma de matchmaking para fútbol amateur 6 vs 6. Conecta con
-            rivales, encuentra jugadores y únete a partidos abiertos.
+          <p className="mx-auto mt-6 max-w-2xl text-pretty text-base leading-relaxed text-muted-foreground md:text-lg lg:text-xl">
+            Juega fútbol amateur 6 vs 6 en tu zona. Conecta con rivales,
+            completa tu equipo y únete a partidos abiertos en minutos.
           </p>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row sm:gap-5">
             <Button
               size="lg"
-              className="h-14 min-w-[200px] rounded-full px-10 text-base font-semibold shadow-lg shadow-primary/25 md:text-lg"
+              className="font-brand h-14 min-w-[200px] rounded-full px-10 text-base shadow-lg shadow-primary/25 md:text-lg"
               onClick={() => setCurrentScreen('auth')}
             >
-              Comenzar ahora
+              Empezar ahora
               <ChevronRight className="ml-2 h-5 w-5" />
             </Button>
             <Button
               size="lg"
               variant="outline"
-              className="h-14 min-w-[200px] rounded-full border-2 border-border bg-secondary/80 px-10 text-base font-medium text-foreground backdrop-blur-sm hover:bg-secondary md:text-lg"
+              className="font-brand h-14 min-w-[200px] rounded-full border-2 border-border bg-secondary/80 px-10 text-base text-foreground backdrop-blur-sm hover:bg-secondary md:text-lg"
               onClick={() => setCurrentScreen('auth')}
             >
-              Ver partidos
+              Explorar partidos
             </Button>
           </div>
         </section>
@@ -101,18 +101,18 @@ export function LandingPage() {
           <div className="grid grid-cols-1 gap-5 md:grid-cols-3 md:gap-6">
             <FeatureCard
               icon={<Target className="h-7 w-7" strokeWidth={2} />}
-              title="Busca rival"
-              description="Tu equipo vs otro equipo. Programa partidos competitivos."
+              title="Encuentra rival"
+              description="Tu equipo contra otro equipo. Coordina partidos competitivos."
             />
             <FeatureCard
               icon={<Users className="h-7 w-7" strokeWidth={2} />}
               title="Encuentra jugadores"
-              description="¿Te faltan jugadores? Completa tu equipo fácilmente."
+              description="¿Te falta gente? Completa tu equipo de forma rápida."
             />
             <FeatureCard
               icon={<Shuffle className="h-7 w-7" strokeWidth={2} />}
               title="Revueltas abiertas"
-              description="Únete a partidos abiertos y conoce nuevos jugadores."
+              description="Súmate a partidos abiertos y conoce nuevos jugadores."
             />
           </div>
         </section>
@@ -122,15 +122,15 @@ export function LandingPage() {
       <div className="border-t border-border bg-muted/30 py-10 dark:bg-secondary/40">
         <div className="mx-auto grid max-w-4xl grid-cols-3 gap-6 px-4 text-center">
           <div>
-            <div className="text-2xl font-bold text-accent md:text-3xl">500+</div>
+            <div className="font-brand-heading text-2xl text-accent md:text-3xl">500+</div>
             <div className="mt-1 text-sm text-muted-foreground">Jugadores</div>
           </div>
           <div>
-            <div className="text-2xl font-bold text-accent md:text-3xl">120+</div>
+            <div className="font-brand-heading text-2xl text-accent md:text-3xl">120+</div>
             <div className="mt-1 text-sm text-muted-foreground">Partidos / mes</div>
           </div>
           <div>
-            <div className="text-2xl font-bold text-accent md:text-3xl">15</div>
+            <div className="font-brand-heading text-2xl text-accent md:text-3xl">15</div>
             <div className="mt-1 text-sm text-muted-foreground">Canchas</div>
           </div>
         </div>
@@ -138,7 +138,10 @@ export function LandingPage() {
 
       <footer className="border-t border-border py-6 px-4">
         <div className="mx-auto flex max-w-4xl flex-col items-center justify-between gap-4 md:flex-row">
-          <BrandMark size="sm" textClassName="font-semibold text-base" />
+          <BrandMark
+            size="sm"
+            textClassName="font-brand-heading text-base text-foreground"
+          />
           <p className="text-sm text-muted-foreground">
             2026 SPORTMATCH. Hecho en Chile.
           </p>
@@ -187,9 +190,9 @@ function CurvedArchWordmark() {
         </defs>
 
         <text
-          className="arch-wordmark__text font-brand-round font-extrabold"
+          className="arch-wordmark__text font-brand"
           fill={`url(#${gradId})`}
-          letterSpacing="0.06em"
+          letterSpacing="0.07em"
         >
           <textPath href={`#${pathId}`} startOffset="50%" textAnchor="middle">
             SportMatch
@@ -268,7 +271,7 @@ function FeatureCard({
       <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-primary/15 text-primary ring-1 ring-primary/20">
         {icon}
       </div>
-      <h3 className="mb-2 text-lg font-semibold text-foreground">{title}</h3>
+      <h3 className="font-brand-heading mb-2 text-lg text-foreground">{title}</h3>
       <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
     </div>
   )

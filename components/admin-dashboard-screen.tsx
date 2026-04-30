@@ -1094,7 +1094,7 @@ export function AdminDashboardScreen() {
             <AppScreenBrandHeading
               className="min-w-0 flex-1"
               title="Panel Admin"
-              subtitle="Resumen de negocio, jugadores, partidos, reservas, centros y moderación."
+              subtitle="Gestiona negocio, jugadores, partidos, reservas, centros y moderación."
               titleClassName="text-base sm:text-xl md:text-2xl"
             />
           </div>
@@ -1104,7 +1104,7 @@ export function AdminDashboardScreen() {
               variant="default"
               size="sm"
               onClick={() => setAdminTab('partidos')}
-              className="shrink-0"
+              className="font-brand shrink-0"
             >
               <CalendarDays className="mr-1.5 h-4 w-4" />
               Crear partido
@@ -1144,7 +1144,7 @@ export function AdminDashboardScreen() {
             </TabsTrigger>
             <TabsTrigger value="centro" className="shrink-0 gap-1.5 px-2.5 py-2 text-xs sm:px-3 sm:text-sm">
               <UserPlus className="h-4 w-4 shrink-0" />
-              <span className="whitespace-nowrap">+ nuevo centro</span>
+              <span className="whitespace-nowrap">Nuevo centro</span>
             </TabsTrigger>
             <TabsTrigger value="moderacion" className="shrink-0 gap-1.5 px-2.5 py-2 text-xs sm:px-3 sm:text-sm">
               <Gavel className="h-4 w-4 shrink-0" />
@@ -1177,9 +1177,10 @@ export function AdminDashboardScreen() {
               <CardHeader className="border-b border-border bg-secondary/20 px-4 py-4 sm:px-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="max-w-xl sm:max-w-2xl">
-                    <CardTitle className="text-lg sm:text-xl">Resumen · vista de negocio</CardTitle>
+                    <CardTitle className="text-lg sm:text-xl">Resumen de negocio</CardTitle>
                     <CardDescription className="mt-2 text-pretty text-xs leading-relaxed sm:text-sm">
-                      De arriba a abajo: cada bloque trae un <strong className="text-foreground">título claro</strong>, una <strong className="text-foreground">pregunta</strong> que dice qué estás midiendo y un <strong className="text-foreground">texto de apoyo</strong> con el contexto. Elige el rango de fechas para alinear todos los números; más abajo está el detalle operativo de reservas del mismo período.
+                      Revisa indicadores clave del período y usa el rango de fechas para alinear
+                      todos los números. Más abajo encontrarás el detalle operativo de reservas.
                     </CardDescription>
                   </div>
                   <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
@@ -1242,7 +1243,7 @@ export function AdminDashboardScreen() {
                       Operación
                     </Badge>
                   </div>
-                  <h3 className="text-base font-bold text-foreground sm:text-lg">
+                  <h3 className="font-brand-heading text-base text-foreground sm:text-lg">
                     Reservas de canchas y tipos de partido
                   </h3>
                   <p className="mt-1 text-sm font-medium text-primary">
@@ -1308,7 +1309,7 @@ export function AdminDashboardScreen() {
 
                     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                       <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                        <h3 className="text-sm font-bold text-foreground">
+                        <h3 className="font-brand-heading text-sm text-foreground">
                           Origen de cada reserva
                         </h3>
                         <p className="mb-3 mt-1 text-[11px] leading-snug text-muted-foreground">
@@ -1325,7 +1326,7 @@ export function AdminDashboardScreen() {
                         </div>
                       </div>
                       <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                        <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
+                        <h3 className="font-brand-heading flex items-center gap-2 text-sm text-foreground">
                           <Trophy className="h-4 w-4 text-amber-500" />
                           Centros con más movimiento
                         </h3>
@@ -2123,7 +2124,7 @@ export function AdminDashboardScreen() {
                       ) : (
                         <>
                           <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-                          Actualizar lista
+                          Actualizar
                         </>
                       )}
                     </Button>
@@ -2133,7 +2134,7 @@ export function AdminDashboardScreen() {
               <CardContent className="space-y-4 p-4 sm:p-6">
                 {reports.length === 0 ? (
                   <p className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
-                    {reportsLoading ? 'Cargando reportes…' : 'No hay reportes en esta vista.'}
+                    {reportsLoading ? 'Cargando reportes…' : 'No hay reportes en esta vista por ahora.'}
                   </p>
                 ) : (
                   <div className="space-y-4">
@@ -2156,7 +2157,7 @@ export function AdminDashboardScreen() {
                           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                             <div className="min-w-0 flex-1 space-y-3">
                               <div>
-                                <p className="font-semibold text-foreground">
+                                <p className="font-brand-heading text-base text-foreground">
                                   {playerReportReasonLabel(r.reason)}
                                 </p>
                                 <p className="text-xs text-muted-foreground mt-1">
@@ -2181,7 +2182,7 @@ export function AdminDashboardScreen() {
                                     <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                                       Reportado · ver perfil
                                     </p>
-                                    <p className="truncate font-semibold text-foreground">
+                                    <p className="font-brand-heading truncate text-foreground">
                                       {rep?.name ?? 'Usuario'}
                                     </p>
                                     {isBanned ? (
@@ -2343,7 +2344,7 @@ export function AdminDashboardScreen() {
                   <div>
                     <CardTitle className="text-lg">Sugerencias, opiniones y errores</CardTitle>
                     <CardDescription>
-                      Mensajes enviados desde Perfil → «Sugerencias, opiniones, errores». Podés abrir un
+                      Mensajes enviados desde Perfil → «Sugerencias, opiniones, errores». Puedes abrir un
                       chat privado por WhatsApp (texto sugerido) si el jugador tiene número válido en su
                       perfil, o ver su ficha en la app.
                     </CardDescription>

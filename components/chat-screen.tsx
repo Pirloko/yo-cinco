@@ -491,7 +491,7 @@ export function ChatScreen() {
               />
             </div>
             <div className="min-w-0">
-              <h1 className="font-semibold text-foreground truncate">
+              <h1 className="font-brand-heading text-base text-foreground truncate md:text-lg">
                 {opportunity.title}
               </h1>
               <p className="text-xs text-muted-foreground truncate">

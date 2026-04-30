@@ -81,8 +81,8 @@ export function BottomNav() {
                 {item.icon}
               </div>
               <span
-                className={`text-[10px] sm:text-xs mt-0.5 leading-tight text-center max-w-[64px] truncate ${
-                  isCreate ? 'font-medium' : ''
+                className={`font-brand-heading text-[10px] sm:text-xs mt-0.5 leading-tight text-center max-w-[64px] truncate ${
+                  isCreate ? 'font-semibold' : ''
                 }`}
               >
                 {item.label}

@@ -94,7 +94,7 @@ export function JoinPlayersSearchDialog({
   const summaryTitle = (() => {
     if (loading) return 'Revisando cupos…'
     if (needed <= 0) return 'Cupos disponibles'
-    if (full) return 'Cupos completos'
+    if (full) return 'Cupos completos por ahora'
     if (left === 1) return 'Queda 1 cupo'
     return `Quedan ${left} cupos`
   })()
@@ -102,7 +102,7 @@ export function JoinPlayersSearchDialog({
   const summaryDetail = (() => {
     if (loading) return 'Un segundo…'
     if (needed <= 0) return 'El organizador está recibiendo postulaciones.'
-    if (full) return 'Ya no quedan cupos para sumarse a esta búsqueda.'
+    if (full) return 'Ya no quedan cupos para esta búsqueda.'
     switch (rules.kind) {
       case 'field_only':
         return left === 1
@@ -116,7 +116,7 @@ export function JoinPlayersSearchDialog({
         if (needsGk && !needsField) return 'Solo queda cupo de arquero.'
         if (!needsGk && needsField) return 'Solo quedan cupos de jugadores de campo.'
         if (needsGk && needsField)
-          return 'Puedes postular como jugador de campo o como arquero.'
+          return 'Puedes unirte como jugador de campo o como arquero.'
         return 'Cupos disponibles.'
       }
       case 'legacy':
@@ -128,10 +128,9 @@ export function JoinPlayersSearchDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Postular a la búsqueda</DialogTitle>
+          <DialogTitle>Unirme a la búsqueda</DialogTitle>
           <DialogDescription>
-            {opportunity.title} — elige cómo te sumas según lo que busca el
-            organizador.
+            {opportunity.title} — elige cómo te sumas según lo que está buscando el organizador.
           </DialogDescription>
         </DialogHeader>
         <div className="rounded-xl border border-border bg-secondary/20 p-3 space-y-1">
@@ -153,7 +152,7 @@ export function JoinPlayersSearchDialog({
               disabled={submitting || full || loading}
               onClick={() => void handleJoin(false)}
             >
-              Postular
+              Unirme
             </Button>
           )}
           {rules.kind === 'gk_only' && (
@@ -163,7 +162,7 @@ export function JoinPlayersSearchDialog({
               disabled={submitting || full || loading || !gkSlotOnly}
               onClick={() => void handleJoin(true)}
             >
-              Postular como arquero
+              Unirme como arquero
             </Button>
           )}
           {rules.kind === 'field_only' && (
@@ -173,7 +172,7 @@ export function JoinPlayersSearchDialog({
               disabled={submitting || full || loading || !fieldSlotOnly}
               onClick={() => void handleJoin(false)}
             >
-              Postular como jugador de campo
+              Unirme como jugador de campo
             </Button>
           )}
           {rules.kind === 'mixed' && (
@@ -184,7 +183,7 @@ export function JoinPlayersSearchDialog({
                 disabled={submitting || full || loading || !fieldSlotMixed}
                 onClick={() => void handleJoin(false)}
               >
-                Jugador de campo
+                Unirme como jugador de campo
               </Button>
               <Button
                 type="button"
@@ -193,7 +192,7 @@ export function JoinPlayersSearchDialog({
                 disabled={submitting || full || loading || !gkSlotMixed}
                 onClick={() => void handleJoin(true)}
               >
-                Arquero (máx. 1) 🧤
+                Unirme como arquero (máx. 1) 🧤
               </Button>
             </>
           )}

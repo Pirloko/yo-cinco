@@ -1,0 +1,56 @@
+GUIA EDITORIAL UX - SPORTMATCH
+Version: 1.0
+Estado: Activa
+
+1) TONO Y VOZ
+- Idioma: Espanol.
+- Tratamiento: tu.
+- Tono: cercano, claro, directo, confiable.
+- Estilo: frases cortas, accionables, sin tecnicismos internos.
+
+2) REGLAS DE REDACCION
+- Priorizar claridad sobre creatividad.
+- Un mensaje = una idea.
+- Botones: ideal 2-3 palabras.
+- Errores: explicar problema + siguiente paso.
+- Estados vacios: explicar contexto + accion recomendada.
+
+3) TERMINOS CANONICOS
+- partido
+- revuelta
+- seleccion de equipos (publica / privada)
+- centro deportivo
+- region / ciudad / pais
+- organizador / jugador / invitado
+- pendiente / confirmado / cancelado
+- comentarios app / sugerencias
+
+4) PATRONES DE MICROCOPY
+Botones:
+- Crear partido
+- Guardar cambios
+- Ver detalle
+- Activar seleccion
+
+Placeholders:
+- "Ej. Revuelta nocturna Sportmatch"
+- "Busca por nombre, ciudad o region"
+
+Errores:
+- "No se pudo guardar. Intenta de nuevo."
+- "No encontramos resultados con ese filtro."
+
+Estados vacios:
+- "Aun no hay partidos creados. Publica el primero."
+- "No hay resultados con estos filtros. Prueba con otros."
+
+Confirmaciones:
+- "Cambios guardados."
+- "Partido publicado."
+- "Operacion completada."
+
+5) NO HACER
+- No mezclar tu/usted.
+- No usar spanglish en labels visibles.
+- No exponer terminos tecnicos de backend al usuario final.
+- No escribir textos largos en botones ni tabs.

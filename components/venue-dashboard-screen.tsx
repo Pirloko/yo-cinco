@@ -1443,7 +1443,7 @@ export function VenueDashboardScreen() {
                 {biRpcFailed ? (
                   <Card className="rounded-2xl border-amber-200/90 bg-amber-50 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:shadow-none">
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
+                      <CardTitle className="text-sm uppercase tracking-wide text-amber-900 dark:text-amber-200">
                         Resumen BI temporalmente no disponible
                       </CardTitle>
                       <CardDescription className="text-amber-950/80 dark:text-amber-100/80">
@@ -1468,7 +1468,7 @@ export function VenueDashboardScreen() {
                       <CardHeader className="p-3 pb-1">
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <CardTitle className="text-sm font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">
+                            <CardTitle className="text-sm uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
                               Cupos libres hoy
                             </CardTitle>
                             <CardDescription className="text-[12px] pt-0.5 capitalize">
@@ -1543,7 +1543,7 @@ export function VenueDashboardScreen() {
                           <>
                             <div className="rounded-md border border-border bg-muted/35 p-2.5">
                               <div className="flex items-center justify-between gap-2">
-                                <p className="text-foreground font-semibold">
+                                <p className="font-brand-heading text-foreground">
                                   {liveAvailability.slot.start.toLocaleTimeString(
                                     'es-CL',
                                     { hour: '2-digit', minute: '2-digit' }
@@ -1559,7 +1559,7 @@ export function VenueDashboardScreen() {
                                     Libres
                                   </span>
                                   <br />
-                                  <span className="font-semibold text-lg tabular-nums text-primary">
+                                  <span className="font-brand-heading text-lg tabular-nums text-primary">
                                     {liveAvailability.freeCount} / {liveAvailability.totalCourts}
                                   </span>
                                 </p>
@@ -1576,7 +1576,7 @@ export function VenueDashboardScreen() {
 
                     <div className="space-y-2">
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <Label className="text-foreground font-medium">
+                        <Label className="font-brand-heading text-foreground">
                           Historial en el periodo
                         </Label>
                         <select
@@ -1696,7 +1696,7 @@ export function VenueDashboardScreen() {
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <Calendar className="h-4 w-4 text-primary" />
-                          <Label className="text-base font-semibold text-foreground">
+                          <Label className="font-brand-heading text-base text-foreground">
                             Día
                           </Label>
                         </div>
@@ -1721,7 +1721,7 @@ export function VenueDashboardScreen() {
                               setDayStr(e.target.value)
                               setDayQuickOffset(null)
                             }}
-                            className="h-8 w-[148px] border-0 bg-transparent px-2 text-center font-semibold shadow-none focus-visible:ring-0"
+                            className="font-brand-heading h-8 w-[148px] border-0 bg-transparent px-2 text-center shadow-none focus-visible:ring-0"
                           />
                           <Button
                             size="icon"
@@ -1770,7 +1770,7 @@ export function VenueDashboardScreen() {
                   >
                     <span className="flex w-full items-center justify-center gap-2.5">
                       <Link2 className="h-5 w-5 shrink-0" />
-                      <span className="text-2xl leading-[1.1] font-semibold tracking-tight">
+                      <span className="font-brand-heading text-2xl leading-[1.1] tracking-tight">
                         Copiar página
                         <br />
                         pública
@@ -1779,11 +1779,11 @@ export function VenueDashboardScreen() {
                   </Button>
                   <Button
                     onClick={() => setShowManualForm((v) => !v)}
-                    className="h-24 rounded-3xl bg-primary hover:bg-primary/90 shadow-sm px-4"
+                    className="font-brand h-24 rounded-3xl bg-primary px-4 shadow-sm hover:bg-primary/90"
                   >
                     <span className="flex w-full items-center justify-center gap-2.5">
                       <Plus className="h-6 w-6 shrink-0" />
-                      <span className="text-2xl leading-[1.1] font-semibold tracking-tight">
+                      <span className="text-2xl leading-[1.1] tracking-tight">
                         {showManualForm ? 'Ocultar reserva' : 'Nueva reserva'}
                       </span>
                     </span>
@@ -1793,7 +1793,7 @@ export function VenueDashboardScreen() {
                   <Card className="bg-card border-border shadow-sm">
                     <CardContent className="p-4 space-y-4">
                       <div>
-                        <p className="text-sm font-semibold text-foreground">
+                        <p className="font-brand-heading text-sm text-foreground">
                           Reserva manual (cliente externo)
                         </p>
                         <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
@@ -1986,7 +1986,7 @@ export function VenueDashboardScreen() {
                                   </Badge>
                                 ) : null}
                               </div>
-                              <p className="font-semibold text-[1.7rem] leading-none tracking-tight">
+                              <p className="font-brand-heading text-[1.7rem] leading-none tracking-tight">
                                 {r.startsAt.toLocaleTimeString('es-CL', {
                                   hour: '2-digit',
                                   minute: '2-digit',
@@ -2104,7 +2104,7 @@ export function VenueDashboardScreen() {
                     <Card className="bg-emerald-500/5 border-emerald-500/20">
                       <CardContent className="p-4 flex items-center justify-between gap-2">
                         <div>
-                          <p className="text-[11px] uppercase tracking-wide text-emerald-700 dark:text-emerald-300 font-semibold">
+                          <p className="font-brand-heading text-[11px] uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
                             Reservas activas
                           </p>
                           <p className="text-4xl leading-none font-bold tabular-nums mt-1">
@@ -2144,7 +2144,7 @@ export function VenueDashboardScreen() {
                           <div key={group.dateKey} className="space-y-2">
                             <div className="flex items-center justify-between">
                               <div>
-                                <p className="font-semibold text-foreground capitalize">
+                                <p className="font-brand-heading capitalize text-foreground">
                                   {group.date.toLocaleDateString('es-CL', {
                                     weekday: 'long',
                                     day: 'numeric',
@@ -2206,7 +2206,7 @@ export function VenueDashboardScreen() {
                                                 : 'Pendiente'}
                                             </Badge>
                                           </div>
-                                          <p className="font-semibold text-[1.7rem] leading-none tracking-tight">
+                                          <p className="font-brand-heading text-[1.7rem] leading-none tracking-tight">
                                             {r.startsAt.toLocaleTimeString('es-CL', {
                                               hour: '2-digit',
                                               minute: '2-digit',
@@ -2396,7 +2396,7 @@ export function VenueDashboardScreen() {
               <div className="space-y-4 sm:space-y-5">
                 <Card className="rounded-2xl border-border shadow-sm">
                   <CardContent className="p-4 space-y-3">
-                    <p className="text-lg font-semibold">Agregar cancha</p>
+                    <p className="font-brand-heading text-lg">Agregar cancha</p>
                     <div className="flex items-stretch gap-2">
                       <div className="relative flex-1 min-w-0">
                         <MapPinned className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
@@ -2409,7 +2409,7 @@ export function VenueDashboardScreen() {
                       </div>
                       <Button
                         type="button"
-                        className="h-11 px-5 shrink-0 text-2xl font-semibold rounded-2xl"
+                        className="font-brand h-11 shrink-0 rounded-2xl px-5 text-2xl"
                         disabled={addCourtMutation.isPending}
                         onClick={() => addCourt()}
                       >
@@ -2461,7 +2461,7 @@ export function VenueDashboardScreen() {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 border-l-2 border-primary/25 pl-3">
-                          <p className="text-lg sm:text-xl font-semibold leading-snug truncate">
+                          <p className="font-brand-heading truncate text-lg leading-snug sm:text-xl">
                             {c.name}
                           </p>
                           <p className="text-sm text-muted-foreground mt-0.5">
@@ -2534,7 +2534,7 @@ export function VenueDashboardScreen() {
                           step={300}
                           value={hoursQuickOpen}
                           onChange={(e) => setHoursQuickOpen(e.target.value)}
-                          className="h-11 w-full min-w-[8rem] bg-card border-border sm:w-36 font-semibold"
+                          className="font-brand-heading h-11 w-full min-w-[8rem] border-border bg-card sm:w-36"
                         />
                       </div>
                       <div className="space-y-1.5">
@@ -2547,7 +2547,7 @@ export function VenueDashboardScreen() {
                           step={300}
                           value={hoursQuickClose}
                           onChange={(e) => setHoursQuickClose(e.target.value)}
-                          className="h-11 w-full min-w-[8rem] bg-card border-border sm:w-36 font-semibold"
+                          className="font-brand-heading h-11 w-full min-w-[8rem] border-border bg-card sm:w-36"
                         />
                       </div>
                     </div>
@@ -2667,7 +2667,7 @@ export function VenueDashboardScreen() {
                                       },
                                     }))
                                   }
-                                  className="h-10 flex-1 bg-muted/60 border-border font-semibold"
+                                  className="font-brand-heading h-10 flex-1 border-border bg-muted/60"
                                 />
                               </div>
                               <div className="flex flex-1 items-center gap-2 min-w-0 sm:max-w-[11rem]">
@@ -2691,7 +2691,7 @@ export function VenueDashboardScreen() {
                                       },
                                     }))
                                   }
-                                  className="h-10 flex-1 bg-muted/60 border-border font-semibold"
+                                  className="font-brand-heading h-10 flex-1 border-border bg-muted/60"
                                 />
                               </div>
                             </div>

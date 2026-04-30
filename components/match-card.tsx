@@ -178,7 +178,7 @@ export function MatchCard({
               {getTypeIcon()}
             </div>
             <span
-              className={`text-sm font-medium flex items-center gap-2 min-w-0 ${
+              className={`font-brand-heading text-sm leading-snug flex items-center gap-2 min-w-0 ${
               match.type === 'rival' ? 'text-red-400' :
               match.type === 'players' ? 'text-primary' :
               match.type === 'team_pick_public' ? 'text-primary' :
@@ -223,7 +223,7 @@ export function MatchCard({
       <div className="p-4 space-y-3">
         {/* Title and Team */}
         <div className="space-y-1">
-          <h3 className="font-semibold text-base leading-snug text-foreground pr-1">
+          <h3 className="font-brand-heading text-base leading-snug text-foreground pr-1">
             {match.title}
           </h3>
           {match.teamName && (
@@ -389,7 +389,7 @@ export function MatchCard({
             <Button
               onClick={handleAction}
               disabled={actionDisabled}
-              className={
+              className={`font-brand ${
                 (isJoined && !isOwn)
                   ? 'bg-secondary text-muted-foreground hover:bg-secondary'
                   : match.type === 'rival'
@@ -397,7 +397,7 @@ export function MatchCard({
                     : match.type === 'players'
                       ? 'bg-primary hover:bg-primary/90 text-primary-foreground'
                       : 'bg-accent hover:bg-accent/90 text-accent-foreground'
-              }
+              }`}
             >
               {joining ? (
                 <>

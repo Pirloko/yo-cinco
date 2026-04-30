@@ -97,7 +97,7 @@ function GeoSubsection({
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-semibold tracking-tight text-foreground">{title}</h3>
+              <h3 className="font-brand-heading text-sm tracking-tight text-foreground">{title}</h3>
               {badge ? (
                 <Badge variant="secondary" className="font-mono text-[10px] font-normal tabular-nums">
                   {badge}
@@ -592,7 +592,7 @@ export function AdminGeoCatalogPanel() {
               <MapPinned className="h-5 w-5" aria-hidden />
             </div>
             <div className="min-w-0 space-y-1">
-              <p className="text-base font-semibold tracking-tight text-foreground">
+              <p className="font-brand-heading text-base tracking-tight text-foreground">
                 Geo · cobertura y catálogo
               </p>
               <p className="text-xs leading-relaxed text-muted-foreground sm:max-w-xl">
@@ -1310,7 +1310,7 @@ export function AdminGeoCatalogPanel() {
 
               <div className="space-y-3 rounded-xl border border-dashed border-primary/20 bg-gradient-to-br from-primary/[0.04] to-transparent p-3 sm:p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-foreground">Alta rápida de ciudad</p>
+                  <p className="font-brand-heading text-xs text-foreground">Alta rápida de ciudad</p>
                   {cityRegionFilter ? (
                     <Button
                       type="button"

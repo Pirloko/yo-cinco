@@ -245,7 +245,7 @@ export function AdminMatchCenterPanel() {
             <Trophy className="h-5 w-5" aria-hidden />
           </div>
           <div className="min-w-0 space-y-1">
-            <p className="text-base font-semibold tracking-tight text-foreground">
+            <p className="font-brand-heading text-base tracking-tight text-foreground">
               Partidos creados por la cuenta admin
             </p>
             <p className="text-xs leading-relaxed text-muted-foreground sm:max-w-2xl">
@@ -269,7 +269,7 @@ export function AdminMatchCenterPanel() {
           </CardHeader>
           <CardContent className="space-y-5 p-4 sm:p-6">
             <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <p className="font-brand-heading mb-3 text-xs uppercase tracking-wide text-muted-foreground">
                 Ubicación
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -326,7 +326,7 @@ export function AdminMatchCenterPanel() {
             </div>
 
             <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <p className="font-brand-heading mb-3 text-xs uppercase tracking-wide text-muted-foreground">
                 Fecha y hora
               </p>
               <div className="grid gap-3 sm:grid-cols-2">

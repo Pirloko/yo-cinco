@@ -1,15 +1,15 @@
 import type { Metadata } from 'next'
-import { Nunito } from 'next/font/google'
+import { Oswald } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Providers } from '@/components/providers'
 import { GoogleAnalytics } from '@/components/google-analytics'
 import './globals.css'
 
-/** Sans redondeada (marca / wordmark) — alineada con referencia tipo Nunito / Varela Round */
-const brandRound = Nunito({
+/** Fuente de marca: sans condensada estilo transmisión / liga (headings y wordmark cortos). */
+const brandFont = Oswald({
   subsets: ['latin'],
-  variable: '--font-brand-round',
-  weight: ['700', '800'],
+  variable: '--font-brand',
+  weight: '600',
   display: 'swap',
 })
 
@@ -69,7 +69,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
       <body
-        className={`${brandRound.variable} font-sans antialiased bg-background text-foreground`}
+        className={`${brandFont.variable} font-sans antialiased bg-background text-foreground`}
       >
         <GoogleAnalytics measurementId={gaId} />
         <Providers>{children}</Providers>

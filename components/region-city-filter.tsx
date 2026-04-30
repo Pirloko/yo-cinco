@@ -34,7 +34,7 @@ export function RegionCityFilterSelect({
         onValueChange={(v) => onChange(v === 'all' ? '' : v)}
         disabled={disabled}
       >
-        <SelectTrigger className="h-9 w-full sm:max-w-[220px] bg-secondary border-border text-foreground">
+        <SelectTrigger className="font-brand-heading h-9 w-full sm:max-w-[220px] bg-secondary border-border text-sm text-foreground">
           <MapPin className="w-4 h-4 mr-1 shrink-0 text-muted-foreground" />
           <SelectValue placeholder="Ciudad" />
         </SelectTrigger>

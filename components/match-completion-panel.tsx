@@ -61,7 +61,7 @@ function StarRow({
 }) {
   return (
     <div className="space-y-2">
-      <Label className="text-sm text-foreground">{label}</Label>
+      <Label className="font-brand-heading text-sm text-foreground">{label}</Label>
       <div className="flex gap-1">
         {[1, 2, 3, 4, 5].map((n) => (
           <button
@@ -392,7 +392,7 @@ export function MatchCompletionPanel({
         draw: 'Empate',
       }
       return (
-        <p className="text-sm text-muted-foreground flex items-center gap-2">
+        <p className="font-brand-heading flex items-center gap-2 text-sm text-muted-foreground">
           <Trophy className="w-4 h-4 text-accent" />
           {map[opportunity.rivalResult]}
         </p>
@@ -410,7 +410,7 @@ export function MatchCompletionPanel({
         draw: 'Empate',
       }
       return (
-        <p className="text-sm text-muted-foreground flex items-center gap-2">
+        <p className="font-brand-heading flex items-center gap-2 text-sm text-muted-foreground">
           <Trophy className="w-4 h-4 text-accent" />
           {map[opportunity.revueltaResult]}
         </p>
@@ -418,7 +418,7 @@ export function MatchCompletionPanel({
     }
     if (opportunity.casualCompleted) {
       return (
-        <p className="text-sm text-muted-foreground flex items-center gap-2">
+        <p className="font-brand-heading flex items-center gap-2 text-sm text-muted-foreground">
           <ClipboardCheck className="w-4 h-4 text-primary" />
           Partido jugado (sin marcador de equipos)
         </p>
@@ -531,7 +531,7 @@ export function MatchCompletionPanel({
     <div className="border-b border-border bg-secondary/40 px-4 py-3 space-y-4">
       {needsResolveAfterMidnight && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-1">
-          <p className="text-sm font-semibold text-foreground">
+          <p className="font-brand-heading text-sm text-foreground">
             Este partido ya pasó
           </p>
           <p className="text-xs text-muted-foreground">
@@ -543,7 +543,7 @@ export function MatchCompletionPanel({
 
       {showCaptainVote && (
         <div className="space-y-2 rounded-xl border border-border bg-card/50 p-3">
-          <p className="text-sm font-medium text-foreground">
+          <p className="font-brand-heading text-sm text-foreground">
             Tu voto como capitán
           </p>
           <p className="text-xs text-muted-foreground">
@@ -596,7 +596,7 @@ export function MatchCompletionPanel({
 
       {showOrganizerDisputeWait && (
         <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 space-y-1">
-          <p className="text-sm font-medium text-foreground">
+          <p className="font-brand-heading text-sm text-foreground">
             Los capitanes no coinciden
           </p>
           <p className="text-xs text-muted-foreground">
@@ -609,7 +609,7 @@ export function MatchCompletionPanel({
 
       {showOrganizerOverride && (
         <div className="space-y-2 rounded-xl border border-primary/30 bg-primary/5 p-3">
-          <p className="text-sm font-medium text-foreground">
+          <p className="font-brand-heading text-sm text-foreground">
             Desempate como organizador
           </p>
           <p className="text-xs text-muted-foreground">
@@ -661,7 +661,7 @@ export function MatchCompletionPanel({
 
       {showOrganizerFinalizeCasual && (
         <div className="space-y-3">
-          <p className="text-sm font-medium text-foreground">
+          <p className="font-brand-heading text-sm text-foreground">
             {needsResolveAfterMidnight ? 'Resolver partido' : 'Finalizar partido'}
           </p>
           <p className="text-xs text-muted-foreground">
@@ -815,7 +815,7 @@ export function MatchCompletionPanel({
           </Dialog>
 
           <div className="pt-2 border-t border-border space-y-2">
-            <p className="text-sm font-medium text-foreground">Suspender partido</p>
+            <p className="font-brand-heading text-sm text-foreground">Suspender partido</p>
             <p className="text-xs text-muted-foreground">
               Si no se jugará, elige un motivo y confirma la suspensión.
             </p>
@@ -842,7 +842,7 @@ export function MatchCompletionPanel({
 
             {suspendExpanded && (
               <div className="space-y-3 rounded-lg border border-border bg-card/60 p-3">
-                <p className="text-xs font-medium text-foreground">
+                <p className="font-brand-heading text-xs text-foreground">
                   Motivo de la suspensión
                 </p>
                 <div className="flex flex-col gap-2">
@@ -885,7 +885,7 @@ export function MatchCompletionPanel({
                         onChange={() => setSuspendChoice('other')}
                         disabled={suspending}
                       />
-                      <span className="font-medium">Otro</span>
+                      <span className="font-brand-heading">Otro</span>
                     </div>
                     {suspendChoice === 'other' && (
                       <Textarea
@@ -944,7 +944,7 @@ export function MatchCompletionPanel({
 
       {canRescheduleAsOrganizer && (
         <div className="space-y-2 rounded-xl border border-border bg-card/40 p-3">
-          <p className="text-sm font-medium text-foreground">Reprogramar partido</p>
+          <p className="font-brand-heading text-sm text-foreground">Reprogramar partido</p>
           <p className="text-xs text-muted-foreground">
             Si cambias centro o fecha/hora, quienes estaban confirmados vuelven a
             pendiente para reconfirmar. Al guardar se elimina la reserva de cancha
@@ -1008,7 +1008,7 @@ export function MatchCompletionPanel({
                 />
               </div>
               <div className="space-y-2">
-                <p className="text-xs font-medium text-foreground">
+                <p className="font-brand-heading text-xs text-foreground">
                   Motivo del cambio
                 </p>
                 {RESCHEDULE_PRESET_REASONS.map((label, i) => (
@@ -1050,7 +1050,7 @@ export function MatchCompletionPanel({
                       onChange={() => setRescheduleChoice('other')}
                       disabled={rescheduling}
                     />
-                    <span className="font-medium">Otro</span>
+                    <span className="font-brand-heading">Otro</span>
                   </div>
                   {rescheduleChoice === 'other' && (
                     <Textarea
@@ -1106,7 +1106,7 @@ export function MatchCompletionPanel({
 
       {canCancelRivalAsCaptain && !showOrganizerFinalizeCasual && (
         <div className="space-y-2">
-          <p className="text-sm font-medium text-foreground">Cancelar partido rival</p>
+          <p className="font-brand-heading text-sm text-foreground">Cancelar partido rival</p>
           <p className="text-xs text-muted-foreground">
             Puede cancelar cualquiera de los dos capitanes, con al menos 24 horas de anticipación.
           </p>
@@ -1132,7 +1132,7 @@ export function MatchCompletionPanel({
           </Button>
           {suspendExpanded && (
             <div className="space-y-3 rounded-lg border border-border bg-card/60 p-3">
-                <p className="text-xs font-medium text-foreground">Motivo de la cancelación</p>
+                <p className="font-brand-heading text-xs text-foreground">Motivo de la cancelación</p>
               <div className="flex flex-col gap-2">
                 {SUSPEND_PRESET_REASONS.map((label, i) => (
                   <label
@@ -1173,7 +1173,7 @@ export function MatchCompletionPanel({
                       onChange={() => setSuspendChoice('other')}
                       disabled={suspending}
                     />
-                    <span className="font-medium">Otro</span>
+                    <span className="font-brand-heading">Otro</span>
                   </div>
                   {suspendChoice === 'other' && (
                     <Textarea
@@ -1231,7 +1231,7 @@ export function MatchCompletionPanel({
 
       {canLeaveAsParticipant && (
         <div className="space-y-2 rounded-xl border border-border bg-card/40 p-3">
-          <p className="text-sm font-medium text-foreground">Salir del partido</p>
+          <p className="font-brand-heading text-sm text-foreground">Salir del partido</p>
           <p className="text-xs text-muted-foreground">
             Puedes salirte hasta 2 horas antes. Elige un motivo (o «Otro» con
             detalle).
@@ -1261,7 +1261,7 @@ export function MatchCompletionPanel({
           </Button>
           {leaveExpanded && (
             <div className="space-y-3 rounded-lg border border-border bg-card/60 p-3">
-              <p className="text-xs font-medium text-foreground">
+              <p className="font-brand-heading text-xs text-foreground">
                 Motivo de tu salida
               </p>
               <div className="flex flex-col gap-2">
@@ -1304,7 +1304,7 @@ export function MatchCompletionPanel({
                       onChange={() => setLeaveChoice('other')}
                       disabled={leaving}
                     />
-                    <span className="font-medium">Otro</span>
+                    <span className="font-brand-heading">Otro</span>
                   </div>
                   {leaveChoice === 'other' && (
                     <Textarea
@@ -1361,7 +1361,7 @@ export function MatchCompletionPanel({
 
       {completed && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-primary uppercase tracking-wide">
+          <p className="font-brand-heading text-xs text-primary uppercase tracking-wide">
             Partido finalizado
           </p>
           {outcomeLine()}
@@ -1381,7 +1381,7 @@ export function MatchCompletionPanel({
       {canRate && (
         <div className="space-y-4 pt-1">
           <div className="rounded-xl border border-primary/40 bg-primary/10 px-3 py-2.5 space-y-1">
-            <p className="text-sm font-semibold text-foreground">
+            <p className="font-brand-heading text-sm text-foreground">
               Falta tu calificación
             </p>
             <p className="text-xs text-muted-foreground leading-snug">
@@ -1389,7 +1389,7 @@ export function MatchCompletionPanel({
               quieras; no caduca.
             </p>
           </div>
-          <p className="text-sm font-medium text-foreground">
+          <p className="font-brand-heading text-sm text-foreground">
             Tu calificación (una sola vez)
           </p>
           {!isCreator && (

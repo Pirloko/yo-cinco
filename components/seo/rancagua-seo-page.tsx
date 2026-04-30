@@ -44,13 +44,13 @@ export function RancaguaSeoPage({
               showLogo
               wordmarkTypography
               label="SportMatch"
-              textClassName="text-foreground dark:text-white"
+              textClassName="text-foreground"
             />
           </Link>
         </div>
       </header>
       <main className="mx-auto max-w-3xl px-4 py-8 md:py-10">
-        <h1 className="text-2xl font-bold tracking-tight text-balance md:text-3xl">
+        <h1 className="font-brand-heading text-2xl tracking-tight text-balance md:text-3xl">
           {h1}
         </h1>
         <div className="mt-4 space-y-4 text-muted-foreground leading-relaxed">
@@ -63,7 +63,7 @@ export function RancaguaSeoPage({
         >
           <h2
             id="cta-sportmatch-heading"
-            className="text-lg font-semibold tracking-tight text-foreground md:text-xl"
+            className="font-brand-heading text-lg tracking-tight text-foreground md:text-xl"
           >
             Únete a Sportmatch
           </h2>
@@ -76,7 +76,7 @@ export function RancaguaSeoPage({
               href="/?register=1"
               className={cn(
                 buttonVariants({ size: 'lg' }),
-                'h-12 rounded-full px-8 text-base font-semibold shadow-md shadow-primary/20'
+                'font-brand h-12 rounded-full px-8 text-base shadow-md shadow-primary/20'
               )}
             >
               Crear perfil
@@ -86,7 +86,7 @@ export function RancaguaSeoPage({
               href="/?screen=auth"
               className={cn(
                 buttonVariants({ variant: 'outline', size: 'lg' }),
-                'h-12 rounded-full border-2 px-8 text-base font-medium'
+                'font-brand inline-block -skew-x-3 h-12 rounded-full border-2 px-8 text-base text-foreground'
               )}
             >
               Iniciar sesión

@@ -21,7 +21,7 @@ export function VenueBiIncomeLineChart({ data }: { data: VenueBiIncomePoint[] })
   return (
     <Card className="border-border bg-card shadow-sm ring-1 ring-black/[0.04] dark:bg-zinc-950/80 dark:ring-white/[0.06]">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold uppercase tracking-wide text-foreground dark:text-zinc-200">
+        <CardTitle className="text-sm uppercase tracking-wide text-foreground dark:text-zinc-200">
           Ingresos por día
         </CardTitle>
       </CardHeader>

@@ -637,7 +637,7 @@ export function TeamsScreen() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <h3 className="font-semibold text-foreground truncate text-[15px] leading-snug">
+                      <h3 className="font-brand-heading truncate text-[15px] leading-snug text-foreground">
                         {team.name}
                       </h3>
                       {isPrimaryCaptain && <CaptainArmbandBadge compact />}
@@ -734,7 +734,7 @@ export function TeamsScreen() {
               <div className="flex items-start justify-between gap-2 pr-1">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-foreground truncate text-[15px] leading-snug">
+                    <h3 className="font-brand-heading truncate text-[15px] leading-snug text-foreground">
                       {team.name}
                     </h3>
                     {isPrimaryCaptain && <CaptainArmbandBadge compact />}
@@ -1038,7 +1038,7 @@ export function TeamsScreen() {
         {/* Pending Invites */}
         {pendingInvites.length > 0 && (
           <div className="mb-6">
-            <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
+            <h2 className="font-brand-heading mb-3 flex items-center gap-2 text-lg text-foreground">
               <UserPlus className="w-5 h-5 text-accent" />
               Invitaciones pendientes
             </h2>
@@ -1050,7 +1050,7 @@ export function TeamsScreen() {
 
         {pendingJoinRequestsForMe.length > 0 && (
           <div className="mb-6">
-            <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
+            <h2 className="font-brand-heading mb-3 flex items-center gap-2 text-lg text-foreground">
               <Handshake className="w-5 h-5 text-primary" />
               Solicitudes de ingreso a tus equipos
             </h2>
@@ -1062,7 +1062,7 @@ export function TeamsScreen() {
 
         {incomingRivalChallenges.length > 0 && (
           <div className="mb-6">
-            <h2 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
+            <h2 className="font-brand-heading mb-3 flex items-center gap-2 text-lg text-foreground">
               <Shield className="w-5 h-5 text-red-400" />
               Desafíos de rival pendientes
             </h2>
@@ -1075,7 +1075,7 @@ export function TeamsScreen() {
         {/* My Teams */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-foreground">Mis Equipos</h2>
+            <h2 className="font-brand-heading text-lg text-foreground">Mis Equipos</h2>
             <Button
               size="sm"
               onClick={() => setView('create')}
@@ -1152,7 +1152,7 @@ export function TeamsScreen() {
 
           {discoverTab === 'region' ? (
             <>
-              <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center gap-2">
+              <h2 className="font-brand-heading mb-1 flex items-center gap-2 text-lg text-foreground">
                 <MapPinned className="w-5 h-5 shrink-0 text-primary" aria-hidden />
                 {currentUser?.regionId
                   ? 'Equipos en tu región'
@@ -1170,7 +1170,7 @@ export function TeamsScreen() {
             </>
           ) : (
             <>
-              <h2 className="text-lg font-semibold text-foreground mb-1 flex items-center gap-2">
+              <h2 className="font-brand-heading mb-1 flex items-center gap-2 text-lg text-foreground">
                 <Trophy className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
                 Ranking rival
               </h2>
@@ -1205,7 +1205,7 @@ export function TeamsScreen() {
           Volver
         </button>
 
-        <h2 className="text-2xl font-bold text-foreground mb-6">Crear Equipo</h2>
+        <h2 className="font-brand-heading mb-6 text-2xl text-foreground">Crear Equipo</h2>
 
         {isTeamLimitReached ? (
           <Card className="bg-card border-border">
@@ -1410,7 +1410,7 @@ export function TeamsScreen() {
                 ) : (
                   <>
                     <div className="flex items-start justify-between gap-3">
-                      <h2 className="text-2xl font-bold text-foreground">
+                      <h2 className="font-brand-heading text-2xl text-foreground">
                         {team.name}
                       </h2>
                       <div className="flex gap-2 shrink-0">
@@ -1439,7 +1439,7 @@ export function TeamsScreen() {
                 )
               ) : (
                 <div className="flex items-start justify-between gap-3">
-                  <h2 className="text-2xl font-bold text-foreground">
+                  <h2 className="font-brand-heading text-2xl text-foreground">
                     {team.name}
                   </h2>
                   {isMember ? (
@@ -1497,7 +1497,7 @@ export function TeamsScreen() {
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 border border-primary/25 shadow-sm">
                   <Swords className="w-5 h-5 text-primary" aria-hidden />
                 </span>
-                <h3 className="text-base font-semibold text-foreground tracking-tight">
+                <h3 className="font-brand-heading text-base tracking-tight text-foreground">
                   Estadísticas del Equipo
                 </h3>
               </div>
@@ -1518,7 +1518,7 @@ export function TeamsScreen() {
 
           {isStaffCaptain && incomingJoin.length > 0 && !teamDetailEditing && (
             <div className="mb-6 rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <h3 className="font-brand-heading flex items-center gap-2 text-sm text-foreground">
                 <Handshake className="w-4 h-4 text-primary" />
                 Solicitudes de ingreso ({incomingJoin.length})
               </h3>
@@ -1639,7 +1639,7 @@ export function TeamsScreen() {
               ) : editingCoordinacion && isPrimaryCaptain ? (
                 <Card className="border-primary/30 bg-card">
                   <CardContent className="space-y-4 p-4">
-                    <h3 className="font-semibold text-foreground">
+                    <h3 className="font-brand-heading text-foreground">
                       Coordinación del equipo
                     </h3>
                     <p className="text-xs text-muted-foreground">
@@ -1778,7 +1778,7 @@ export function TeamsScreen() {
                       <CardContent className="p-4">
                         <div className="mb-3 flex items-center gap-2">
                           <ScrollText className="h-5 w-5 text-primary" />
-                          <h3 className="font-semibold text-foreground">
+                          <h3 className="font-brand-heading text-foreground">
                             Reglas del equipo
                           </h3>
                         </div>
@@ -1810,7 +1810,7 @@ export function TeamsScreen() {
 
           <div className="mb-6">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-semibold text-foreground">Plantilla</h3>
+              <h3 className="font-brand-heading text-lg text-foreground">Plantilla</h3>
               {isStaffCaptain && slotsAvailable > 0 && (
                 <Button
                   size="sm"
@@ -1963,7 +1963,7 @@ export function TeamsScreen() {
             Volver
           </button>
 
-          <h2 className="text-2xl font-bold text-foreground mb-2">Invitar Jugadores</h2>
+          <h2 className="font-brand-heading mb-2 text-2xl text-foreground">Invitar Jugadores</h2>
           <p className="text-muted-foreground mb-6">
             Invita jugadores a {selectedTeam.name}
           </p>

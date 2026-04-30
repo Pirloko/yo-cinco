@@ -198,7 +198,7 @@ const SoloReserveHubCard = memo(function SoloReserveHubCard({
       <div className="space-y-3 p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <h3 className="truncate font-semibold text-foreground">
+            <h3 className="font-brand-heading truncate text-foreground">
               {r.venueName}
             </h3>
             <p className="text-sm text-muted-foreground">
@@ -264,7 +264,7 @@ const SoloReserveHubCard = memo(function SoloReserveHubCard({
               type="button"
               disabled={confirming}
               onClick={() => onConfirm(r.id)}
-              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/15 disabled:opacity-60"
+              className="font-brand flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2.5 text-sm text-primary transition-colors hover:bg-primary/15 disabled:opacity-60"
             >
               {confirming ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -327,7 +327,7 @@ const UpcomingVenueWhatsappCta = memo(function UpcomingVenueWhatsappCta({
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex w-full min-h-11 items-center justify-center gap-2 rounded-lg border border-emerald-600/45 bg-emerald-600/[0.07] px-3 py-2.5 text-sm font-semibold text-emerald-950 shadow-sm transition-colors hover:bg-emerald-600/[0.12] active:scale-[0.99] dark:border-emerald-400/35 dark:bg-emerald-500/12 dark:text-emerald-50 dark:hover:bg-emerald-500/22"
+      className="font-brand flex w-full min-h-11 items-center justify-center gap-2 rounded-lg border border-emerald-600/45 bg-emerald-600/[0.07] px-3 py-2.5 text-sm text-emerald-950 shadow-sm transition-colors hover:bg-emerald-600/[0.12] active:scale-[0.99] dark:border-emerald-400/35 dark:bg-emerald-500/12 dark:text-emerald-50 dark:hover:bg-emerald-500/22"
     >
       <MessageCircle
         className="h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-200"
@@ -721,7 +721,7 @@ export function MatchesScreen() {
           <div className="space-y-4">
             {pendingToResolve.length > 0 ? (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2">
-                <p className="text-sm font-semibold text-foreground">
+                <p className="font-brand-heading text-sm text-foreground">
                   Pendientes por cerrar ({pendingToResolve.length})
                 </p>
                 <p className="text-xs text-muted-foreground">
@@ -739,7 +739,7 @@ export function MatchesScreen() {
                         COMPACT_CARD_ROW
                       )}
                     >
-                      <p className="text-sm font-medium text-foreground truncate">
+                      <p className="font-brand-heading truncate text-sm text-foreground">
                         {m.title}
                       </p>
                       <p className="text-xs text-muted-foreground">
@@ -804,7 +804,7 @@ export function MatchesScreen() {
                           >
                             {MATCH_TYPE_META[match.type].icon}
                           </div>
-                          <span className="text-sm font-medium text-foreground truncate">
+                          <span className="font-brand-heading truncate text-sm text-foreground">
                             {MATCH_TYPE_META[match.type].label}
                           </span>
                         </div>
@@ -826,7 +826,7 @@ export function MatchesScreen() {
                             className="w-12 h-12 rounded-full object-cover border-2 border-border shrink-0"
                           />
                           <div className="min-w-0">
-                            <h3 className="font-semibold text-foreground truncate">
+                            <h3 className="font-brand-heading truncate text-foreground">
                               {match.title}
                             </h3>
                             <p className="text-sm text-muted-foreground">
@@ -902,7 +902,7 @@ export function MatchesScreen() {
                             <button
                               type="button"
                               onClick={() => openChat(match.id)}
-                              className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                              className="font-brand flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90"
                             >
                               <MessageCircle className="h-4 w-4 shrink-0" />
                               Abrir chat del grupo
@@ -956,7 +956,7 @@ export function MatchesScreen() {
                           >
                             {MATCH_TYPE_META[chat.type].icon}
                           </div>
-                          <span className="text-sm font-medium text-foreground truncate">
+                          <span className="font-brand-heading truncate text-sm text-foreground">
                             {MATCH_TYPE_META[chat.type].label}
                           </span>
                         </div>
@@ -980,7 +980,7 @@ export function MatchesScreen() {
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
-                          <h3 className="font-semibold text-foreground truncate">
+                          <h3 className="font-brand-heading truncate text-foreground">
                             {chat.title}
                           </h3>
                           {last && (
@@ -1054,7 +1054,7 @@ export function MatchesScreen() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-foreground">
+                        <p className="font-brand-heading text-sm text-foreground">
                           Invitación a partido
                         </p>
                         <p className="mt-0.5 text-xs text-muted-foreground">
@@ -1128,7 +1128,7 @@ export function MatchesScreen() {
                           >
                             {MATCH_TYPE_META[match.type].icon}
                           </div>
-                          <span className="text-sm font-medium text-foreground truncate">
+                          <span className="font-brand-heading truncate text-sm text-foreground">
                             {MATCH_TYPE_META[match.type].label}
                           </span>
                         </div>
@@ -1141,7 +1141,7 @@ export function MatchesScreen() {
                     <div className="p-4 space-y-3">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <h3 className="font-semibold text-foreground">
+                          <h3 className="font-brand-heading text-foreground">
                             {match.title}
                           </h3>
                           <p className="text-sm text-muted-foreground">
@@ -1297,7 +1297,7 @@ const EmptyState = memo(function EmptyState({
       <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center mx-auto mb-4 text-muted-foreground">
         {icon}
       </div>
-      <h3 className="font-medium text-foreground">{title}</h3>
+      <h3 className="font-brand-heading text-foreground">{title}</h3>
       <p className="text-sm text-muted-foreground mt-1 px-4">{description}</p>
     </div>
   )

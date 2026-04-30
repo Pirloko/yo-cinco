@@ -116,9 +116,22 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* Nunito: variable inyectada en <body> (next/font) */
-.font-brand-round {
-  font-family: var(--font-brand-round), ui-sans-serif, system-ui, sans-serif;
+/* Oswald (marca): variable inyectada en <body> (next/font) */
+.font-brand {
+  font-family: var(--font-brand), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+/**
+ * Misma familia que .font-brand, sin mayúsculas obligatorias: titulares largos
+ * en modo claro u oscuro (color vía text-foreground / text-primary en el componente).
+ */
+.font-brand-heading {
+  font-family: var(--font-brand), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 /* Flotación suave para logos oficiales (logohome hero / sportmatch cabeceras) */
