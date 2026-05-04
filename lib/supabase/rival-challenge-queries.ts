@@ -30,7 +30,33 @@ export async function fetchRivalChallengesForUser(
 
   if (error || !rows?.length) return []
 
-  const all = rows as RivalChallengeRow[]
+  return hydrateRivalChallenges(supabase, rows as RivalChallengeRow[])
+}
+
+/** Refresco parcial (Realtime): solo filas indicadas. */
+export async function fetchRivalChallengesByIds(
+  supabase: SupabaseClient,
+  ids: string[]
+): Promise<RivalChallenge[]> {
+  const unique = [...new Set(ids.filter(Boolean))]
+  if (unique.length === 0) return []
+
+  const { data: rows, error } = await supabase
+    .from('rival_challenges')
+    .select(
+      'id, opportunity_id, challenger_team_id, challenger_captain_id, challenged_team_id, challenged_captain_id, accepted_team_id, accepted_captain_id, mode, status, created_at, responded_at'
+    )
+    .in('id', unique)
+
+  if (error || !rows?.length) return []
+
+  return hydrateRivalChallenges(supabase, rows as RivalChallengeRow[])
+}
+
+async function hydrateRivalChallenges(
+  supabase: SupabaseClient,
+  all: RivalChallengeRow[]
+): Promise<RivalChallenge[]> {
   const teamIds = [
     ...new Set(
       all.flatMap((r) =>
@@ -49,6 +75,7 @@ export async function fetchRivalChallengesForUser(
           data: [] as { id: string; name: string; captain_id: string }[],
           error: null,
         }),
+    // ⚠️ DIRECT DB ACCESS — fuera del pipeline Realtime oficial (títulos para hidratar retos).
     oppIds.length > 0
       ? supabase.from('match_opportunities').select('id, title').in('id', oppIds)
       : Promise.resolve({

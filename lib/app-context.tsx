@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import type { AppContextType } from '@/lib/app-context-contract'
 import {
   type AppScreen,
@@ -101,7 +102,12 @@ import { usePlayerRealtimeManager } from '@/lib/core/realtime-manager'
 import {
   fetchLatestMatchOpportunities,
   loadPlayerMatchBundle,
+  type PlayerMatchBundle,
 } from '@/lib/services/match.service'
+import {
+  syncPlayerMatchBundleToContextAndCache,
+  type MatchBundleSetters,
+} from '@/lib/architecture/state-sync'
 import {
   fetchLatestTeams,
   fetchLatestTeamInvitesForUser,
@@ -116,6 +122,12 @@ import {
   resetPresenceDebounceState,
   updateLastSeen,
 } from '@/lib/services/presence.service'
+
+const EMPTY_PLAYER_MATCH_BUNDLE: PlayerMatchBundle = {
+  matchOpportunities: [],
+  participatingOpportunityIds: [],
+  rivalChallenges: [],
+}
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [authLoading, setAuthLoading] = useState(true)
@@ -169,6 +181,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   /** Evita que una recarga realtime en vuelo pise ids tras `join_team_pick` (orden de llegada REST). */
   const backgroundMatchBundleTokenRef = useRef(0)
+
+  const matchOpportunitiesRef = useRef<MatchOpportunity[]>([])
+  matchOpportunitiesRef.current = matchOpportunities
+  const participatingOpportunityIdsRef = useRef<string[]>([])
+  participatingOpportunityIdsRef.current = participatingOpportunityIds
+  const rivalChallengesRef = useRef<RivalChallenge[]>([])
+  rivalChallengesRef.current = rivalChallenges
+
+  const queryClient = useQueryClient()
+
+  const matchBundleSetters: MatchBundleSetters = useMemo(
+    () => ({
+      setMatchOpportunities,
+      setParticipatingOpportunityIds,
+      setRivalChallenges,
+    }),
+    [setMatchOpportunities, setParticipatingOpportunityIds, setRivalChallenges]
+  )
+
+  const applyPlayerMatchBundle = useCallback(
+    (userId: string, bundle: PlayerMatchBundle) => {
+      syncPlayerMatchBundleToContextAndCache({
+        queryClient,
+        userId,
+        bundle,
+        setters: matchBundleSetters,
+      })
+    },
+    [queryClient, matchBundleSetters]
+  )
+
+  const applyPlayerMatchBundleWithMatchesList = useCallback(
+    (userId: string, nextMatches: MatchOpportunity[]) => {
+      applyPlayerMatchBundle(userId, {
+        matchOpportunities: nextMatches,
+        participatingOpportunityIds: participatingOpportunityIdsRef.current,
+        rivalChallenges: rivalChallengesRef.current,
+      })
+    },
+    [applyPlayerMatchBundle]
+  )
 
   const openProfileEditor = useCallback(() => {
     setOnboardingSource('profile_edit')
@@ -306,13 +359,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setCurrentUser(profile)
 
       if (profile.accountType === 'admin') {
-        setMatchOpportunities([])
+        applyPlayerMatchBundle(user.id, EMPTY_PLAYER_MATCH_BUNDLE)
         setUsers([])
         setTeams([])
         setTeamInvites([])
         setTeamJoinRequests([])
-        setParticipatingOpportunityIds([])
-        setRivalChallenges([])
         return {
           ok: true,
           needsOnboarding: false,
@@ -322,13 +373,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       if (profile.accountType === 'venue') {
-        setMatchOpportunities([])
+        applyPlayerMatchBundle(user.id, EMPTY_PLAYER_MATCH_BUNDLE)
         setUsers([])
         setTeams([])
         setTeamInvites([])
         setTeamJoinRequests([])
-        setParticipatingOpportunityIds([])
-        setRivalChallenges([])
         const venueRow = await loadVenueForOwner(supabase, user.id)
         return {
           ok: true,
@@ -343,13 +392,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         loadPlayerTeamBundle(supabase, user.id),
         loadOtherPlayersForUser(supabase, user.id, profile.gender),
       ])
-      setMatchOpportunities(matchBundle.matchOpportunities)
+      applyPlayerMatchBundle(user.id, matchBundle)
       setUsers(others)
       setTeams(teamBundle.teams)
       setTeamInvites(teamBundle.teamInvites)
       setTeamJoinRequests(teamBundle.teamJoinRequests)
-      setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
-      setRivalChallenges(matchBundle.rivalChallenges)
 
       return {
         ok: true,
@@ -394,6 +441,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useStableCallback(async () => {
+    const bundleUid = currentUserRef.current?.id
     try {
       if (isSupabaseConfigured()) {
         const supabase = getBrowserSupabase()
@@ -406,17 +454,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       clearSessionNavigationState()
     } catch {}
+    if (bundleUid) {
+      applyPlayerMatchBundle(bundleUid, EMPTY_PLAYER_MATCH_BUNDLE)
+    } else {
+      setMatchOpportunities([])
+      setParticipatingOpportunityIds([])
+      setRivalChallenges([])
+    }
     setCurrentUser(null)
     setProfilePhotoCacheBust(0)
     setProfilePhotoEpochByUser({})
     setProfilesRealtimeGeneration(0)
     setUsers([])
-    setMatchOpportunities([])
     setTeams([])
     setTeamInvites([])
     setTeamJoinRequests([])
-    setRivalChallenges([])
-    setParticipatingOpportunityIds([])
     setSelectedChatOpportunityId(null)
     setTeamsDetailFocusTeamId(null)
     setCurrentScreen('landing')
@@ -689,8 +741,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return { ok: false as const, error: msg }
       }
       const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
-      setMatchOpportunities(matchBundle.matchOpportunities)
-      setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+      applyPlayerMatchBundle(currentUser.id, matchBundle)
       void updateLastSeen(supabase, currentUser.id, { force: true })
       const jc =
         typeof tpPayload.joinCode === 'string' && tpPayload.joinCode.trim()
@@ -755,8 +806,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
-    setMatchOpportunities(matchBundle.matchOpportunities)
-    setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+    applyPlayerMatchBundle(currentUser.id, matchBundle)
     void updateLastSeen(supabase, currentUser.id, { force: true })
     const oid =
       typeof payload.matchId === 'string' && payload.matchId.trim()
@@ -868,8 +918,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         opportunityId,
       ]),
     ]
-    setParticipatingOpportunityIds(mergedParticipatingIds)
-    setMatchOpportunities(matchBundle.matchOpportunities)
+    applyPlayerMatchBundle(currentUser.id, {
+      ...matchBundle,
+      participatingOpportunityIds: mergedParticipatingIds,
+    })
     backgroundMatchBundleTokenRef.current += 1
     setSelectedChatOpportunityId(opportunityId)
     setCurrentScreen('chat')
@@ -983,8 +1035,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return { ok: false, error: msg }
       }
       const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
-      setMatchOpportunities(matchBundle.matchOpportunities)
-      setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+      applyPlayerMatchBundle(currentUser.id, matchBundle)
       void updateLastSeen(supabase, currentUser.id, { force: true })
       toast.success('Alineación actualizada.')
       return { ok: true }
@@ -1061,8 +1112,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return { ok: false, error: code }
       }
       const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
-      setMatchOpportunities(matchBundle.matchOpportunities)
-      setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+      applyPlayerMatchBundle(currentUser.id, matchBundle)
       void updateLastSeen(supabase, currentUser.id, { force: true })
       toast.success('Jugador retirado del partido.')
       return { ok: true }
@@ -1184,8 +1234,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
     const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
-    setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
-    setMatchOpportunities(matchBundle.matchOpportunities)
+    applyPlayerMatchBundle(currentUser.id, matchBundle)
     setSelectedChatOpportunityId(opportunityId)
     setCurrentScreen('chat')
     const joinedFresh = matchBundle.matchOpportunities.find((m) => m.id === opportunityId)
@@ -1290,8 +1339,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       accept ? 'Jugador agregado al partido.' : 'Solicitud rechazada.'
     )
     const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
-    setMatchOpportunities(matchBundle.matchOpportunities)
-    setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+    applyPlayerMatchBundle(currentUser.id, matchBundle)
     void updateLastSeen(supabase, currentUser.id, { force: true })
     return { ok: true }
   })
@@ -1372,6 +1420,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       colorHexB.trim()
     )
     const now = new Date().toISOString()
+    // ⚠️ DIRECT DB ACCESS — fuera del pipeline Realtime oficial (organizador actualiza lineup).
     const { error } = await supabase
       .from('match_opportunities')
       .update({
@@ -1385,7 +1434,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
     const matches = await fetchLatestMatchOpportunities(supabase)
-    setMatchOpportunities(matches)
+    applyPlayerMatchBundleWithMatchesList(currentUser.id, matches)
     toast.success('¡Equipos sorteados! Equipo A y Equipo B listos.')
   })
 
@@ -1429,7 +1478,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
     const matches = await fetchLatestMatchOpportunities(supabase)
-    setMatchOpportunities(matches)
+    applyPlayerMatchBundleWithMatchesList(currentUser.id, matches)
     await refreshCurrentUserProfile()
     toast.success('Voto registrado.')
   })
@@ -1459,7 +1508,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
     const matches = await fetchLatestMatchOpportunities(supabase)
-    setMatchOpportunities(matches)
+    applyPlayerMatchBundleWithMatchesList(currentUser.id, matches)
     await refreshCurrentUserProfile()
     toast.success(
       'Resultado confirmado. Los jugadores pueden calificar desde el detalle del partido.'
@@ -1529,7 +1578,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return false
       }
       const matches = await fetchLatestMatchOpportunities(supabase)
-      setMatchOpportunities(matches)
+      applyPlayerMatchBundleWithMatchesList(currentUser.id, matches)
       await refreshCurrentUserProfile()
       toast.success(
         'Partido finalizado. Los jugadores pueden calificar desde el detalle cuando quieran.'
@@ -1547,7 +1596,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return false
       }
       const matches = await fetchLatestMatchOpportunities(supabase)
-      setMatchOpportunities(matches)
+      applyPlayerMatchBundleWithMatchesList(currentUser.id, matches)
       await refreshCurrentUserProfile()
       toast.success(
         'Partido finalizado. Los jugadores pueden calificar desde el detalle cuando quieran.'
@@ -1560,6 +1609,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       outcome.kind === 'revuelta'
     ) {
       const now = new Date().toISOString()
+      // ⚠️ DIRECT DB ACCESS — fuera del pipeline Realtime oficial.
       const { error } = await supabase
         .from('match_opportunities')
         .update({
@@ -1577,7 +1627,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return false
       }
       const matches = await fetchLatestMatchOpportunities(supabase)
-      setMatchOpportunities(matches)
+      applyPlayerMatchBundleWithMatchesList(currentUser.id, matches)
       await refreshCurrentUserProfile()
       toast.success(
         'Partido finalizado. Los jugadores pueden calificar desde el detalle cuando quieran.'
@@ -1586,6 +1636,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     const now = new Date().toISOString()
+    // ⚠️ DIRECT DB ACCESS — fuera del pipeline Realtime oficial.
     const { error } = await supabase
       .from('match_opportunities')
       .update({
@@ -1605,7 +1656,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     const matches = await fetchLatestMatchOpportunities(supabase)
-    setMatchOpportunities(matches)
+    applyPlayerMatchBundleWithMatchesList(currentUser.id, matches)
     await refreshCurrentUserProfile()
     toast.success(
       'Partido finalizado. Los jugadores pueden calificar desde el detalle cuando quieran.'
@@ -1665,7 +1716,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     const matches = await fetchLatestMatchOpportunities(supabase)
-    setMatchOpportunities(matches)
+    applyPlayerMatchBundleWithMatchesList(currentUser.id, matches)
     toast.success('Partido cancelado.')
   })
 
@@ -1717,8 +1768,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return false
     }
     const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
-    setMatchOpportunities(matchBundle.matchOpportunities)
-    setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+    applyPlayerMatchBundle(currentUser.id, matchBundle)
     toast.success('Te saliste del partido.')
     void updateLastSeen(supabase, currentUser.id, { force: true })
     return true
@@ -1807,8 +1857,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
     const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
-    setMatchOpportunities(matchBundle.matchOpportunities)
-    setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+    applyPlayerMatchBundle(currentUser.id, matchBundle)
     toast.success(
       res.sensitive_change
         ? 'Partido reprogramado. Los confirmados volvieron a pendiente para reconfirmar.'
@@ -2117,8 +2166,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Estado fuente: refrescar desde DB para mantener consistencia (evita duplicar lógica de mapeo).
     const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
-    setRivalChallenges(matchBundle.rivalChallenges)
-    setMatchOpportunities(matchBundle.matchOpportunities)
+    applyPlayerMatchBundle(currentUser.id, matchBundle)
     toast.success(
       payload.mode === 'direct'
         ? `Desafío enviado a ${payload.challengedTeam?.name ?? 'equipo rival'}`
@@ -2179,9 +2227,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
-    setRivalChallenges(matchBundle.rivalChallenges)
-    setMatchOpportunities(matchBundle.matchOpportunities)
-    setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
+    applyPlayerMatchBundle(currentUser.id, matchBundle)
   })
 
   const acceptRivalOpportunityWithTeam = useStableCallback(async (
@@ -2523,25 +2569,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
   })
 
   const clearSessionState = useCallback(() => {
+    const bundleUid = currentUserRef.current?.id
     resetPresenceDebounceState()
     clearSessionNavigationState()
+    if (bundleUid) {
+      applyPlayerMatchBundle(bundleUid, EMPTY_PLAYER_MATCH_BUNDLE)
+    } else {
+      setMatchOpportunities([])
+      setParticipatingOpportunityIds([])
+      setRivalChallenges([])
+    }
     setCurrentUser(null)
     setProfilePhotoCacheBust(0)
     setProfilePhotoEpochByUser({})
     setProfilesRealtimeGeneration(0)
     setUsers([])
-    setMatchOpportunities([])
     setTeams([])
     setTeamInvites([])
     setTeamJoinRequests([])
-    setRivalChallenges([])
-    setParticipatingOpportunityIds([])
     setSelectedChatOpportunityId(null)
     setSelectedMatchOpportunityId(null)
     setInitialMatchesTab(null)
     setTeamsDetailFocusTeamId(null)
     setOnboardingSource('registration')
-  }, [])
+  }, [applyPlayerMatchBundle])
 
   const loadAppStateForAuthUser = useCallback(async (authUser: SupabaseAuthUser) => {
     if (!isSupabaseConfigured()) return
@@ -2557,25 +2608,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
       void updateLastSeen(supabase, authUser.id)
 
       if (profile.accountType === 'venue') {
-        setMatchOpportunities([])
+        applyPlayerMatchBundle(authUser.id, EMPTY_PLAYER_MATCH_BUNDLE)
         setUsers([])
         setTeams([])
         setTeamInvites([])
         setTeamJoinRequests([])
-        setParticipatingOpportunityIds([])
-        setRivalChallenges([])
         return
       }
 
       if (profile.accountType === 'admin') {
         const adminMatches = await fetchLatestMatchOpportunities(supabase)
-        setMatchOpportunities(adminMatches)
+        applyPlayerMatchBundle(authUser.id, {
+          matchOpportunities: adminMatches,
+          participatingOpportunityIds: [],
+          rivalChallenges: [],
+        })
         setUsers([])
         setTeams([])
         setTeamInvites([])
         setTeamJoinRequests([])
-        setParticipatingOpportunityIds([])
-        setRivalChallenges([])
         return
       }
 
@@ -2584,17 +2635,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         loadPlayerTeamBundle(supabase, authUser.id),
         loadOtherPlayersForUser(supabase, authUser.id, profile.gender),
       ])
-      setMatchOpportunities(matchBundle.matchOpportunities)
+      applyPlayerMatchBundle(authUser.id, matchBundle)
       setUsers(others)
       setTeams(teamBundle.teams)
       setTeamInvites(teamBundle.teamInvites)
       setTeamJoinRequests(teamBundle.teamJoinRequests)
-      setParticipatingOpportunityIds(matchBundle.participatingOpportunityIds)
-      setRivalChallenges(matchBundle.rivalChallenges)
     } catch {
       // offline / error de red
     }
-  }, [])
+  }, [applyPlayerMatchBundle])
 
   useEffect(() => {
     let mounted = true
@@ -2771,7 +2820,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void (async () => {
       const adminMatches = await fetchLatestMatchOpportunities(supabase)
       if (cancelled) return
-      setMatchOpportunities(adminMatches)
+      applyPlayerMatchBundleWithMatchesList(currentUser.id, adminMatches)
     })()
     return () => {
       cancelled = true
@@ -2782,6 +2831,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     currentScreen,
     selectedMatchOpportunityId,
     matchOpportunities.length,
+    applyPlayerMatchBundleWithMatchesList,
   ])
 
   /** Jugador baneado: solo pantalla Perfil (resto de la app deshabilitada en UI). */
@@ -2847,9 +2897,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     currentUser,
     currentUserRef,
     backgroundMatchBundleTokenRef,
-    setMatchOpportunities,
-    setParticipatingOpportunityIds,
-    setRivalChallenges,
+    matchOpportunitiesRef,
+    participatingOpportunityIdsRef,
+    rivalChallengesRef,
+    applyPlayerMatchBundle,
     setTeams,
     setTeamInvites,
     setTeamJoinRequests,
@@ -3016,3 +3067,4 @@ export {
   useAppUI,
   useComposedAppContext,
 } from '@/lib/contexts/domain-contexts'
+export { usePlayerMatchBundleSafe } from '@/lib/hooks/use-player-match-bundle-safe'

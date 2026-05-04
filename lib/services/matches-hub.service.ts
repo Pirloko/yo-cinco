@@ -9,6 +9,12 @@ import {
 } from '@/lib/supabase/rating-queries'
 import type { SoloVenueReviewSummary } from '@/lib/supabase/venue-review-queries'
 import { fetchVenueReviewsByReservationIds } from '@/lib/supabase/venue-review-queries'
+import { MAX_HUB_SECONDARY_IDS } from '@/lib/architecture/limits'
+
+function capHubIdList(ids: string[]): string[] {
+  if (ids.length <= MAX_HUB_SECONDARY_IDS) return ids
+  return ids.slice(0, MAX_HUB_SECONDARY_IDS)
+}
 
 /**
  * Fase 4: hub Partidos — preferir RPC `matches_hub_secondary_bundle` (1 HTTP);
@@ -121,14 +127,18 @@ export async function fetchMatchesHubSecondaryBundle(
     pastSoloReservationIds: string[]
   }
 ): Promise<MatchesHubSecondaryBundle> {
+  const finishedIds = capHubIdList(args.finishedOpportunityIds)
+  const chatIds = capHubIdList(args.activeChatOpportunityIds)
+  const reservationIds = capHubIdList(args.pastSoloReservationIds)
+
   const { data, error } = await supabase.rpc('matches_hub_secondary_bundle', {
-    p_finished_opp_ids: args.finishedOpportunityIds,
-    p_chat_opp_ids: args.activeChatOpportunityIds,
-    p_reservation_ids: args.pastSoloReservationIds,
+    p_finished_opp_ids: finishedIds,
+    p_chat_opp_ids: chatIds,
+    p_reservation_ids: reservationIds,
   })
 
   if (!error && data != null) {
-    const parsed = parseHubRpcPayload(data, args.finishedOpportunityIds)
+    const parsed = parseHubRpcPayload(data, finishedIds)
     if (parsed) return parsed
   }
 
@@ -139,5 +149,9 @@ export async function fetchMatchesHubSecondaryBundle(
     )
   }
 
-  return fetchMatchesHubSecondaryBundleViaRest(supabase, args)
+  return fetchMatchesHubSecondaryBundleViaRest(supabase, {
+    finishedOpportunityIds: finishedIds,
+    activeChatOpportunityIds: chatIds,
+    pastSoloReservationIds: reservationIds,
+  })
 }

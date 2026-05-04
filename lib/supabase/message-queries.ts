@@ -88,23 +88,29 @@ export async function fetchLastMessagesForOpportunities(
   opportunityIds: string[]
 ): Promise<Map<string, LastMessagePreview>> {
   const map = new Map<string, LastMessagePreview>()
-  if (opportunityIds.length === 0) return map
+  const unique = [...new Set(opportunityIds.filter(Boolean))]
+  if (unique.length === 0) return map
 
-  const { data: rows, error } = await supabase
-    .from('messages')
-    .select('opportunity_id, content, created_at')
-    .in('opportunity_id', opportunityIds)
-    .order('created_at', { ascending: false })
+  /** Una lectura acotada por chat (último mensaje): evita traer todo el historial vía `.in` sin límite. */
+  const rows = await Promise.all(
+    unique.map((oid) =>
+      supabase
+        .from('messages')
+        .select('opportunity_id, content, created_at')
+        .eq('opportunity_id', oid)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    )
+  )
 
-  if (error || !rows) return map
-
-  for (const r of rows) {
-    const oid = r.opportunity_id as string
-    if (map.has(oid)) continue
+  for (const { data: row } of rows) {
+    if (!row) continue
+    const oid = row.opportunity_id as string
     map.set(oid, {
       opportunityId: oid,
-      content: r.content as string,
-      createdAt: new Date(r.created_at as string),
+      content: row.content as string,
+      createdAt: new Date(row.created_at as string),
     })
   }
 
@@ -144,6 +150,7 @@ export async function fetchParticipantsForOpportunity(
   supabase: SupabaseClient,
   opportunityId: string
 ): Promise<OpportunityParticipantRow[]> {
+  // ⚠️ DIRECT DB ACCESS — fuera del pipeline Realtime oficial (solo `creator_id` para armar participantes).
   const { data: opp } = await supabase
     .from('match_opportunities')
     .select('creator_id')

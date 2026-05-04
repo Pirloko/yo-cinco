@@ -107,8 +107,40 @@ export async function fetchMatchOpportunities(
 
   if (error || !opps?.length) return []
 
-  // Tipado de embeds de Supabase puede degradar (geo_city como array). Cast explícito para mantener mapper.
-  const rows = opps as unknown as MatchOpportunityRow[]
+  return buildMatchOpportunitiesFromRows(
+    supabase,
+    opps as unknown as MatchOpportunityRow[]
+  )
+}
+
+/** Refresco parcial (Realtime): mismas reglas de mapeo que el listado completo, acotado por ids. */
+export async function fetchMatchOpportunitiesByIds(
+  supabase: SupabaseClient,
+  ids: string[]
+): Promise<MatchOpportunity[]> {
+  const unique = [...new Set(ids.filter(Boolean))]
+  if (unique.length === 0) return []
+
+  const { data: opps, error } = await supabase
+    .from(MATCH_OPPORTUNITIES_CLIENT_VIEW)
+    .select(MATCH_OPPORTUNITY_SELECT_WITH_GEO)
+    .in('id', unique)
+    .order('date_time', { ascending: true })
+
+  if (error || !opps?.length) return []
+
+  return buildMatchOpportunitiesFromRows(
+    supabase,
+    opps as unknown as MatchOpportunityRow[]
+  )
+}
+
+async function buildMatchOpportunitiesFromRows(
+  supabase: SupabaseClient,
+  rows: MatchOpportunityRow[]
+): Promise<MatchOpportunity[]> {
+  if (rows.length === 0) return []
+
   const opportunityIds = rows.map((r) => r.id)
   const creatorIds = [...new Set(rows.map((r) => r.creator_id))]
   const { data: creators } = await supabase

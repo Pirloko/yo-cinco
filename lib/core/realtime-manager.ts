@@ -5,19 +5,38 @@ import {
   type SetStateAction,
 } from 'react'
 import type { User, Team, TeamInvite, TeamJoinRequest, MatchOpportunity, RivalChallenge } from '@/lib/types'
+import type { PlayerMatchBundle } from '@/lib/services/match.service'
 import { getBrowserSupabase, isSupabaseConfigured } from '@/lib/supabase/client'
-import { loadPlayerMatchBundle } from '@/lib/services/match.service'
 import { loadPlayerTeamBundle } from '@/lib/services/team.service'
 import { loadOtherPlayersForUser } from '@/lib/services/user.service'
+import { fetchParticipatingOpportunityIds } from '@/lib/supabase/message-queries'
+import {
+  fetchMatchOpportunitiesByIds,
+  fetchRivalChallengesByIds,
+} from '@/lib/architecture/derived-entity-fetches'
+import {
+  DEBOUNCE_MATCH_MS,
+  MAX_REALTIME_BATCH_EVENTS,
+  MAX_WAIT_MATCH_MS,
+} from '@/lib/architecture/limits'
+import { foldMatchRealtimeBatch } from '@/lib/architecture/realtime-decision-engine'
+import { repairMatchOpportunitiesIfNeeded } from '@/lib/architecture/consistency-guard'
+import {
+  mergeMatchOpportunitiesAfterFetch,
+  mergeRivalChallengesAfterFetch,
+  type MatchRealtimeRowEvent,
+} from '@/lib/realtime/cache-handlers'
 
 type Params = {
   currentUser: User | null
   currentUserRef: MutableRefObject<User | null>
   /** Invalidar recargas en vuelo tras join / otra escritura autoritativa (evita pisar `participatingOpportunityIds`). */
   backgroundMatchBundleTokenRef: MutableRefObject<number>
-  setMatchOpportunities: Dispatch<SetStateAction<MatchOpportunity[]>>
-  setParticipatingOpportunityIds: Dispatch<SetStateAction<string[]>>
-  setRivalChallenges: Dispatch<SetStateAction<RivalChallenge[]>>
+  matchOpportunitiesRef: MutableRefObject<MatchOpportunity[]>
+  participatingOpportunityIdsRef: MutableRefObject<string[]>
+  rivalChallengesRef: MutableRefObject<RivalChallenge[]>
+  /** Única vía de escritura del bundle jugador (Context + espejo Query). */
+  applyPlayerMatchBundle: (userId: string, bundle: PlayerMatchBundle) => void
   setTeams: Dispatch<SetStateAction<Team[]>>
   setTeamInvites: Dispatch<SetStateAction<TeamInvite[]>>
   setTeamJoinRequests: Dispatch<SetStateAction<TeamJoinRequest[]>>
@@ -64,9 +83,10 @@ export function usePlayerRealtimeManager({
   currentUser,
   currentUserRef,
   backgroundMatchBundleTokenRef,
-  setMatchOpportunities,
-  setParticipatingOpportunityIds,
-  setRivalChallenges,
+  matchOpportunitiesRef,
+  participatingOpportunityIdsRef,
+  rivalChallengesRef,
+  applyPlayerMatchBundle,
   setTeams,
   setTeamInvites,
   setTeamJoinRequests,
@@ -85,40 +105,115 @@ export function usePlayerRealtimeManager({
     const flushState = {
       debounceTimer: null as number | null,
       maxWaitTimer: null as number | null,
-      match: false,
+      matchDebounceTimer: null as number | null,
+      matchMaxWaitTimer: null as number | null,
       team: false,
       users: false,
     }
-    const DEBOUNCE_MS = 250
-    const MAX_WAIT_MS = 2000
+    const pendingMatchEvents: MatchRealtimeRowEvent[] = []
+
+    const runMatchFlush = async () => {
+      const u = currentUserRef.current
+      if (!u || u.accountType !== 'player' || !isSupabaseConfigured()) return
+      if (pendingMatchEvents.length === 0) return
+
+      let batch = pendingMatchEvents.splice(0, pendingMatchEvents.length)
+      if (batch.length > MAX_REALTIME_BATCH_EVENTS) {
+        const overflow = batch.slice(MAX_REALTIME_BATCH_EVENTS)
+        batch = batch.slice(0, MAX_REALTIME_BATCH_EVENTS)
+        pendingMatchEvents.unshift(...overflow)
+      }
+
+      const reduced = foldMatchRealtimeBatch(batch)
+
+      const fetchOppIds = [...reduced.opportunityIdsToFetch]
+      const fetchChIds = [...reduced.challengeIdsToFetch]
+
+      const tokenAtStart = ++backgroundMatchBundleTokenRef.current
+
+      try {
+        const [freshOpps, freshChallenges, participatingNext] = await Promise.all([
+          fetchOppIds.length > 0
+            ? fetchMatchOpportunitiesByIds(supabase, fetchOppIds)
+            : Promise.resolve([] as MatchOpportunity[]),
+          fetchChIds.length > 0
+            ? fetchRivalChallengesByIds(supabase, fetchChIds)
+            : Promise.resolve([] as RivalChallenge[]),
+          reduced.refreshParticipatingIds
+            ? fetchParticipatingOpportunityIds(supabase, u.id)
+            : Promise.resolve(null),
+        ])
+
+        if (tokenAtStart !== backgroundMatchBundleTokenRef.current) return
+
+        const prevOpp = matchOpportunitiesRef.current
+        const prevRival = rivalChallengesRef.current
+
+        let nextOpp = mergeMatchOpportunitiesAfterFetch({
+          previous: prevOpp,
+          deletedIds: reduced.deletedOpportunityIds,
+          upsert: freshOpps,
+          requestedIds: reduced.opportunityIdsToFetch,
+        })
+
+        nextOpp = await repairMatchOpportunitiesIfNeeded(supabase, nextOpp)
+
+        const nextRival = mergeRivalChallengesAfterFetch({
+          previous: prevRival,
+          deletedIds: reduced.deletedChallengeIds,
+          upsert: freshChallenges,
+        })
+
+        const nextPart =
+          participatingNext ?? participatingOpportunityIdsRef.current
+
+        applyPlayerMatchBundle(u.id, {
+          matchOpportunities: nextOpp,
+          participatingOpportunityIds: nextPart,
+          rivalChallenges: nextRival,
+        })
+      } catch {
+        // red / offline
+      }
+    }
+
+    const scheduleMatchFlush = () => {
+      if (flushState.matchMaxWaitTimer == null) {
+        flushState.matchMaxWaitTimer = window.setTimeout(() => {
+          flushState.matchMaxWaitTimer = null
+          if (flushState.matchDebounceTimer != null) {
+            window.clearTimeout(flushState.matchDebounceTimer)
+            flushState.matchDebounceTimer = null
+          }
+          void runMatchFlush()
+        }, MAX_WAIT_MATCH_MS)
+      }
+      if (flushState.matchDebounceTimer != null) {
+        window.clearTimeout(flushState.matchDebounceTimer)
+      }
+      flushState.matchDebounceTimer = window.setTimeout(() => {
+        flushState.matchDebounceTimer = null
+        if (flushState.matchMaxWaitTimer != null) {
+          window.clearTimeout(flushState.matchMaxWaitTimer)
+          flushState.matchMaxWaitTimer = null
+        }
+        void runMatchFlush()
+      }, DEBOUNCE_MATCH_MS)
+    }
 
     const runIncrementalFlush = async () => {
       const u = currentUserRef.current
       if (!u || u.accountType !== 'player' || !isSupabaseConfigured()) return
 
-      const needMatch = flushState.match
       const needTeam = flushState.team
       const needUsers = flushState.users
-      flushState.match = false
       flushState.team = false
       flushState.users = false
 
-      if (!needMatch && !needTeam && !needUsers) return
+      if (!needTeam && !needUsers) return
 
       try {
         const tasks: Promise<void>[] = []
-        if (needMatch) {
-          tasks.push(
-            (async () => {
-              const tokenAtStart = ++backgroundMatchBundleTokenRef.current
-              const bundle = await loadPlayerMatchBundle(supabase, u.id)
-              if (tokenAtStart !== backgroundMatchBundleTokenRef.current) return
-              setMatchOpportunities(bundle.matchOpportunities)
-              setParticipatingOpportunityIds(bundle.participatingOpportunityIds)
-              setRivalChallenges(bundle.rivalChallenges)
-            })()
-          )
-        }
         if (needTeam) {
           tasks.push(
             (async () => {
@@ -143,7 +238,7 @@ export function usePlayerRealtimeManager({
       }
     }
 
-    const scheduleFlush = (kind: 'match' | 'team' | 'users') => {
+    const scheduleFlush = (kind: 'team' | 'users') => {
       flushState[kind] = true
       if (flushState.maxWaitTimer == null) {
         flushState.maxWaitTimer = window.setTimeout(() => {
@@ -153,7 +248,7 @@ export function usePlayerRealtimeManager({
             flushState.debounceTimer = null
           }
           void runIncrementalFlush()
-        }, MAX_WAIT_MS)
+        }, MAX_WAIT_MATCH_MS)
       }
       if (flushState.debounceTimer != null) {
         window.clearTimeout(flushState.debounceTimer)
@@ -165,7 +260,7 @@ export function usePlayerRealtimeManager({
           flushState.maxWaitTimer = null
         }
         void runIncrementalFlush()
-      }, DEBOUNCE_MS)
+      }, DEBOUNCE_MATCH_MS)
     }
 
     const uid = currentUser.id
@@ -174,24 +269,36 @@ export function usePlayerRealtimeManager({
     const channelUsers = supabase.channel(`app-rt:${uid}:users`)
 
     const rowEvents = ['INSERT', 'UPDATE', 'DELETE'] as const
+    const enqueueMatch = (table: MatchRealtimeRowEvent['table']) =>
+      function enqueueMatchRow(payload: {
+        eventType: string
+        old: Record<string, unknown> | null
+        new: Record<string, unknown> | null
+      }) {
+        pendingMatchEvents.push({
+          table,
+          eventType: payload.eventType as MatchRealtimeRowEvent['eventType'],
+          old: payload.old,
+          new: payload.new,
+        })
+        scheduleMatchFlush()
+      }
+
     for (const event of rowEvents) {
-      // Solo usamos el evento como señal para volver a cargar el bundle (REST).
-      // No aplicamos `payload` al estado: join_code u otros campos sensibles no se
-      // propagan desde WAL; el bundle usa match_opportunities_masked en fetch.
       channelMatch.on(
         'postgres_changes',
         { event, schema: 'public', table: 'match_opportunities' },
-        () => scheduleFlush('match')
+        enqueueMatch('match_opportunities')
       )
       channelMatch.on(
         'postgres_changes',
         { event, schema: 'public', table: 'match_opportunity_participants' },
-        () => scheduleFlush('match')
+        enqueueMatch('match_opportunity_participants')
       )
       channelMatch.on(
         'postgres_changes',
         { event, schema: 'public', table: 'rival_challenges' },
-        () => scheduleFlush('match')
+        enqueueMatch('rival_challenges')
       )
       channelTeam.on(
         'postgres_changes',
@@ -304,12 +411,18 @@ export function usePlayerRealtimeManager({
       if (flushState.maxWaitTimer != null) {
         window.clearTimeout(flushState.maxWaitTimer)
       }
-      flushState.match = false
+      if (flushState.matchDebounceTimer != null) {
+        window.clearTimeout(flushState.matchDebounceTimer)
+      }
+      if (flushState.matchMaxWaitTimer != null) {
+        window.clearTimeout(flushState.matchMaxWaitTimer)
+      }
+      pendingMatchEvents.length = 0
       flushState.team = false
       flushState.users = false
       void supabase.removeChannel(channelMatch)
       void supabase.removeChannel(channelTeam)
       void supabase.removeChannel(channelUsers)
     }
-  }, [currentUser?.id, currentUser?.accountType])
+  }, [currentUser?.id, currentUser?.accountType, applyPlayerMatchBundle])
 }

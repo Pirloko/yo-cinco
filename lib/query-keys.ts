@@ -5,6 +5,8 @@
  */
 
 export const queryKeyRoot = {
+  /** Espejo del bundle de partidos del jugador (Realtime / sesión); no sustituye el estado en Context. */
+  playerSession: ['playerSession'] as const,
   geo: ['geo'] as const,
   venueCentro: ['venueCentro'] as const,
   sportsVenue: ['sportsVenue'] as const,
@@ -28,6 +30,15 @@ export function stableIdsKey(ids: string[]): string {
 }
 
 export const queryKeys = {
+  playerSession: {
+    all: queryKeyRoot.playerSession,
+    /**
+     * ⚠️ Espejo de caché únicamente (escrito por `syncPlayerMatchBundleToContextAndCache`).
+     * No usar como fuente de verdad en UI; leer el bundle vía Context o `usePlayerMatchBundleSafe`.
+     */
+    matchBundle: (userId: string | null | undefined) =>
+      [...queryKeyRoot.playerSession, 'matchBundle', userId ?? ''] as const,
+  },
   geo: {
     all: queryKeyRoot.geo,
     citiesWithVenuesInRegion: (regionId: string | null | undefined) =>
