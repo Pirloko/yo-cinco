@@ -2,12 +2,20 @@
 
 import { useId, type ReactNode } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { SPORTMATCH_GA_EVENTS, trackSportmatchEvent } from '@/lib/gtag'
 import { useAppUI } from '@/lib/app-context'
-import { Target, Users, Shuffle, ChevronRight } from 'lucide-react'
+import { Target, Users, Shuffle, ChevronRight, Building2 } from 'lucide-react'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import { BrandMark } from '@/components/brand-mark'
+import {
+  VENUE_B2B_HEADER_LINK_LABEL,
+  VENUE_B2B_LANDING_CTA_LABEL,
+  VENUE_B2B_MAIN_COPY_LINES,
+} from '@/lib/venue-b2b-marketing'
 
 export function LandingPage() {
   const { setCurrentScreen } = useAppUI()
@@ -27,8 +35,24 @@ export function LandingPage() {
           wordmarkTypography
           textClassName="text-foreground"
         />
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 sm:gap-1">
           <ThemeMenuButton />
+          <Button
+            variant="ghost"
+            asChild
+            className="font-brand inline-block -skew-x-3 px-2 text-base text-foreground hover:bg-foreground/5 hover:text-foreground sm:px-3 md:text-xl dark:hover:bg-white/10"
+          >
+            <Link
+              href="/para-centros"
+              onClick={() =>
+                trackSportmatchEvent(SPORTMATCH_GA_EVENTS.venueB2bNavClick, {
+                  nav_source: 'landing_header',
+                })
+              }
+            >
+              {VENUE_B2B_HEADER_LINK_LABEL}
+            </Link>
+          </Button>
           <Button
             variant="ghost"
             className="font-brand inline-block -skew-x-3 text-xl text-foreground hover:bg-foreground/5 hover:text-foreground md:text-2xl dark:hover:bg-white/10"
@@ -72,7 +96,7 @@ export function LandingPage() {
           </div>
         </section>
 
-        {/* Logo oficial + aviso apps (debajo del hero visual) */}
+        {/* Logo oficial + tarjeta centros + aviso apps */}
         <section className="relative mx-auto w-full max-w-3xl flex-shrink-0 px-4 pb-6 md:pb-10">
           <div className="animate-float-logo relative mx-auto w-full max-w-[min(100%,520px)]">
             <div
@@ -91,6 +115,53 @@ export function LandingPage() {
               />
               <CurvedArchWordmark />
             </div>
+          </div>
+
+          {/* Centros deportivos: justo encima de “Apps móviles” */}
+          <div
+            className="mx-auto mt-8 w-full max-w-4xl md:mt-10"
+            aria-label="Sportmatch para centros deportivos"
+          >
+            <Card className="gap-0 rounded-2xl py-0 shadow-sm transition-colors hover:border-primary/40 dark:shadow-none dark:hover:border-primary/50 md:text-center">
+              <CardContent className="space-y-4 p-6 md:space-y-5 md:p-8">
+                <div className="mb-1 flex justify-center md:mb-0">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/15 text-primary ring-1 ring-primary/20">
+                    <Building2 className="h-7 w-7" strokeWidth={2} aria-hidden />
+                  </div>
+                </div>
+                <h2 className="font-brand-heading text-balance text-xl text-foreground md:text-2xl">
+                  {VENUE_B2B_MAIN_COPY_LINES.lead}
+                </h2>
+                <p className="mx-auto max-w-xl text-pretty text-sm leading-relaxed text-primary md:text-base">
+                  {VENUE_B2B_MAIN_COPY_LINES.support}
+                </p>
+                <p className="mx-auto max-w-lg text-pretty text-sm leading-relaxed text-muted-foreground">
+                  Si administras canchas y quieres más jugadores, reservas ordenadas y
+                  métricas claras, entra y te explicamos la propuesta para sedes.
+                </p>
+                <div className="flex justify-center pt-2">
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    asChild
+                    className="font-brand h-12 min-w-[200px] rounded-full border-2 border-primary/50 bg-secondary/60 px-8 text-base text-foreground backdrop-blur-sm hover:border-primary hover:bg-secondary md:h-14 md:px-10 md:text-lg"
+                  >
+                    <Link
+                      href="/para-centros"
+                      onClick={() =>
+                        trackSportmatchEvent(
+                          SPORTMATCH_GA_EVENTS.venueB2bNavClick,
+                          { nav_source: 'landing_card' }
+                        )
+                      }
+                    >
+                      {VENUE_B2B_LANDING_CTA_LABEL}
+                      <ChevronRight className="ml-2 h-5 w-5" aria-hidden />
+                    </Link>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           <MobileStoresBelowLogo />
