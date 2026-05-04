@@ -8,11 +8,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { SPORTMATCH_GA_EVENTS, trackSportmatchEvent } from '@/lib/gtag'
 import { useAppUI } from '@/lib/app-context'
-import { Target, Users, Shuffle, ChevronRight, Building2 } from 'lucide-react'
+import { Target, Users, Shuffle, ChevronRight, Building2, UserCircle } from 'lucide-react'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import { BrandMark } from '@/components/brand-mark'
 import {
-  VENUE_B2B_HEADER_LINK_LABEL,
   VENUE_B2B_LANDING_CTA_LABEL,
   VENUE_B2B_MAIN_COPY_LINES,
 } from '@/lib/venue-b2b-marketing'
@@ -35,30 +34,17 @@ export function LandingPage() {
           wordmarkTypography
           textClassName="text-foreground"
         />
-        <div className="flex items-center gap-0.5 sm:gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <ThemeMenuButton />
           <Button
             variant="ghost"
-            asChild
-            className="font-brand inline-block -skew-x-3 px-2 text-base text-foreground hover:bg-foreground/5 hover:text-foreground sm:px-3 md:text-xl dark:hover:bg-white/10"
-          >
-            <Link
-              href="/para-centros"
-              onClick={() =>
-                trackSportmatchEvent(SPORTMATCH_GA_EVENTS.venueB2bNavClick, {
-                  nav_source: 'landing_header',
-                })
-              }
-            >
-              {VENUE_B2B_HEADER_LINK_LABEL}
-            </Link>
-          </Button>
-          <Button
-            variant="ghost"
-            className="font-brand inline-block -skew-x-3 text-xl text-foreground hover:bg-foreground/5 hover:text-foreground md:text-2xl dark:hover:bg-white/10"
+            size="icon"
+            className="h-10 w-10 shrink-0 text-foreground hover:bg-foreground/5 md:h-11 md:w-11 dark:hover:bg-white/10"
             onClick={() => setCurrentScreen('auth')}
+            aria-label="Iniciar sesión"
+            title="Iniciar sesión"
           >
-            Iniciar sesión
+            <UserCircle className="h-[1.35rem] w-[1.35rem] md:h-6 md:w-6" aria-hidden />
           </Button>
         </div>
       </header>
