@@ -9,11 +9,13 @@ import {
   Megaphone,
   MessageCircle,
   Star,
+  UserCircle,
 } from 'lucide-react'
 
 import { BrandMark } from '@/components/brand-mark'
 import { ThemeMenuButton } from '@/components/theme-controls'
 import { Button } from '@/components/ui/button'
+import { VenueB2bDemoMetricsSection } from '@/components/venue-b2b/venue-b2b-demo-metrics-section'
 import { Card, CardContent } from '@/components/ui/card'
 import { SPORTMATCH_GA_EVENTS, trackSportmatchEvent } from '@/lib/gtag'
 import {
@@ -21,8 +23,6 @@ import {
   VENUE_B2B_BENEFITS,
   VENUE_B2B_FINAL_CTA_SUB,
   VENUE_B2B_FINAL_CTA_TITLE,
-  VENUE_B2B_KPI_DISCLAIMER,
-  VENUE_B2B_KPI_EXAMPLES,
   VENUE_B2B_MAIN_COPY_LINES,
   VENUE_B2B_MEMBERSHIP_SECTION,
   VENUE_B2B_MEMBERSHIP_STEPS,
@@ -73,14 +73,21 @@ export function VenueB2bPublicPage({ whatsappHref }: VenueB2bPublicPageProps) {
             textClassName="text-foreground"
           />
         </Link>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <ThemeMenuButton />
           <Button
             variant="ghost"
+            size="icon"
+            className="h-10 w-10 shrink-0 text-foreground hover:bg-foreground/5 md:h-11 md:w-11 dark:hover:bg-white/10"
             asChild
-            className="font-brand inline-block -skew-x-3 text-xl text-foreground hover:bg-foreground/5 hover:text-foreground md:text-2xl dark:hover:bg-white/10"
           >
-            <Link href="/">Iniciar sesión</Link>
+            <Link
+              href="/?screen=auth"
+              aria-label="Iniciar sesión"
+              title="Iniciar sesión"
+            >
+              <UserCircle className="h-[1.35rem] w-[1.35rem] md:h-6 md:w-6" aria-hidden />
+            </Link>
           </Button>
         </div>
       </header>
@@ -205,45 +212,7 @@ export function VenueB2bPublicPage({ whatsappHref }: VenueB2bPublicPageProps) {
             </div>
           </section>
 
-          {/* KPIs ejemplo */}
-          <section className="scroll-mt-28" aria-labelledby="venue-b2b-kpi-heading">
-            <h2
-              id="venue-b2b-kpi-heading"
-              className="font-brand-heading text-2xl text-foreground md:text-3xl"
-            >
-              Ejemplos del tipo de métricas que verías
-            </h2>
-            <p className="mt-4 max-w-3xl text-pretty text-sm text-muted-foreground md:text-base">
-              En el panel puedes hacer seguimiento de señales operativas y de
-              ingresos según cómo registres reservas y cobros.
-            </p>
-            <p
-              className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-foreground dark:border-amber-400/25 dark:bg-amber-400/10 md:text-sm"
-              role="note"
-            >
-              {VENUE_B2B_KPI_DISCLAIMER}
-            </p>
-            <div className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-              {VENUE_B2B_KPI_EXAMPLES.map((k) => (
-                <Card
-                  key={k.label}
-                  className="gap-0 rounded-2xl border border-border bg-muted/30 py-0 dark:bg-secondary/40"
-                >
-                  <CardContent className="p-4 text-center md:p-5">
-                    <div className="text-xs font-medium text-muted-foreground">
-                      {k.label}
-                    </div>
-                    <div className="font-brand-heading mt-2 text-2xl text-accent md:text-3xl">
-                      {k.value}
-                    </div>
-                    <div className="mt-1 text-[11px] leading-snug text-muted-foreground md:text-xs">
-                      {k.caption}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </section>
+          <VenueB2bDemoMetricsSection />
 
           {/* Pasos membresía / alta */}
           <section className="scroll-mt-28" aria-labelledby="venue-b2b-steps-heading">
