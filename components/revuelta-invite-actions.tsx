@@ -9,7 +9,7 @@ import {
 } from '@/lib/match-invite-url'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { Button } from '@/components/ui/button'
-import { MessageCircle, Share2 } from 'lucide-react'
+import { Share2 } from 'lucide-react'
 
 type Props = {
   opportunity: MatchOpportunity
@@ -71,17 +71,19 @@ function buildMatchInviteShareBody(
   }
 
   const appJoinUrl = matchAppJoinAbsoluteUrl(opportunity.id, origin)
-  lines.push('')
-  lines.push('Abre o instala SPORTMATCH con este enlace:')
-  lines.push(appJoinUrl)
-
   const publicPageUrl = matchHasPublicInvitePage(opportunity.type)
     ? revueltaInviteAbsoluteUrl(opportunity.id, origin)
     : null
+
+  lines.push('')
   if (publicPageUrl) {
-    lines.push('')
-    lines.push('Vista pública (cupos y detalle sin instalar la app):')
+    lines.push(
+      'Ficha pública del partido (detalle, cupos y desde ahí puedes entrar a la app para unirte):'
+    )
     lines.push(publicPageUrl)
+  } else {
+    lines.push('Abre o instala SPORTMATCH con este enlace:')
+    lines.push(appJoinUrl)
   }
 
   return { title, body: lines.join('\n'), appJoinUrl, publicPageUrl }
@@ -107,13 +109,13 @@ export function RevueltaInviteActions({ opportunity, className }: Props) {
   }
 
   const inviteOrShareNative = async () => {
-    if (!pack.body || !pack.appJoinUrl) return
+    if (!pack.body.trim()) return
     try {
       if (navigator.share) {
+        // No pasar `url`: muchos SO concatenan `url` al `text` y duplican el enlace.
         await navigator.share({
           title: pack.title,
           text: pack.body,
-          url: pack.appJoinUrl,
         })
         return
       }
@@ -122,12 +124,6 @@ export function RevueltaInviteActions({ opportunity, className }: Props) {
       if (e instanceof Error && e.name === 'AbortError') return
       await copyFullMessage()
     }
-  }
-
-  const openWhatsApp = () => {
-    if (!pack.body) return
-    const href = `https://wa.me/?text=${encodeURIComponent(pack.body)}`
-    window.open(href, '_blank', 'noopener,noreferrer')
   }
 
   return (
@@ -140,16 +136,6 @@ export function RevueltaInviteActions({ opportunity, className }: Props) {
       >
         <Share2 className="w-3.5 h-3.5 mr-2 shrink-0" aria-hidden />
         Compartir o copiar
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        className="h-9 w-full sm:w-auto min-w-[10rem] border-green-500/45 text-green-600 hover:bg-green-500/10 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
-        onClick={openWhatsApp}
-      >
-        <MessageCircle className="w-3.5 h-3.5 mr-2 shrink-0" aria-hidden />
-        WhatsApp (grupo o jugador)
       </Button>
     </div>
   )

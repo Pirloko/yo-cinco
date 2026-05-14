@@ -1669,20 +1669,25 @@ export function MatchDetailsScreen() {
               opportunity.type === 'rival') && (
               <div className="rounded-xl border border-border bg-secondary/30 p-3 space-y-2">
                 <p className="font-brand-heading text-xs text-foreground">
-                  Invitar al equipo / WhatsApp
+                  Invitar al equipo
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  «WhatsApp» abre el mensaje listo (fecha, lugar, enlace para entrar a la
-                  app
                   {opportunity.type === 'open' ||
-                  opportunity.type === 'team_pick_public'
-                    ? ' y enlace a la ficha pública'
-                    : ''}
-                  {opportunity.type === 'team_pick_private'
-                    ? ' y el código privado de 4 dígitos'
-                    : ''}
-                  ). Elige un grupo o jugador en WhatsApp. «Compartir o copiar» usa el menú
-                  del teléfono o copia el texto completo.
+                  opportunity.type === 'team_pick_public' ? (
+                    <>
+                      «Compartir o copiar» comparte o copia un mensaje con fecha, lugar y un
+                      solo enlace: la ficha pública del partido (desde ahí puedes abrir la app
+                      para unirte).
+                    </>
+                  ) : (
+                    <>
+                      «Compartir o copiar» comparte o copia un mensaje con fecha, lugar y
+                      enlace directo para abrir SPORTMATCH.
+                      {opportunity.type === 'team_pick_private'
+                        ? ' Incluye el código privado de 4 dígitos.'
+                        : null}
+                    </>
+                  )}
                 </p>
                 <RevueltaInviteActions opportunity={opportunity} />
               </div>

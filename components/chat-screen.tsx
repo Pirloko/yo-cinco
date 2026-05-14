@@ -595,7 +595,7 @@ export function ChatScreen() {
                         </p>
                       )}
                       <p className="text-[11px] text-muted-foreground pt-1 leading-relaxed">
-                        O envía por WhatsApp un mensaje con enlace + código ya armado:
+                        O comparte un mensaje con enlace + código ya armado:
                       </p>
                       <RevueltaInviteActions opportunity={opportunity} />
                     </>
