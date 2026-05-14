@@ -411,6 +411,7 @@ export function AdminMatchManagementPanel() {
         p_new_location: resVenue.city,
         p_new_date_time: new Date(`${resDate}T${resTime}`).toISOString(),
         p_reason: 'Ajuste operativo Sportmatch',
+        p_sports_venue_id: resVenueId,
       })
       if (error) {
         toast.error(error.message)

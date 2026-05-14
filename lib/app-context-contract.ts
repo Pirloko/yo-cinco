@@ -154,6 +154,17 @@ export interface AppContextType {
     opportunityId: string,
     vote: RivalResult
   ) => Promise<void>
+  respondRivalMatchProposal: (
+    opportunityId: string,
+    confirm: boolean,
+    disputeDetails?: string
+  ) => Promise<void>
+  submitRivalTeamMatchReview: (
+    opportunityId: string,
+    targetTeamId: string,
+    stars: number,
+    comment?: string
+  ) => Promise<void>
   finalizeRivalOrganizerOverride: (
     opportunityId: string,
     result: RivalResult
@@ -173,6 +184,8 @@ export interface AppContextType {
     location: string
     dateTime: Date
     reason: string
+    /** Centro del catálogo; si se envía, la RPC toma nombre y ciudad desde `sports_venues`. */
+    sportsVenueId?: string | null
   }) => Promise<void>
   submitMatchRating: (
     opportunityId: string,

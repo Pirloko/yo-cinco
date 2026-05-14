@@ -1226,6 +1226,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toast.error('Este partido ya pasó. Ya no se puede unir.')
         return
       }
+      if (code === 'rival_not_team_member') {
+        toast.error('Solo pueden unirse miembros confirmados de uno de los equipos del desafío.')
+        return
+      }
+      if (code === 'rival_team_full') {
+        toast.error('Tu equipo ya tiene 9 jugadores inscritos en la nómina de este partido.')
+        return
+      }
+      if (code === 'rival_team_ambiguous') {
+        toast.error('Perteneces a ambos equipos del desafío; no puedes unirte por este flujo.')
+        return
+      }
+      if (code === 'rival_not_ready') {
+        toast.error('El desafío rival aún no está listo para inscripciones.')
+        return
+      }
       const msg =
         typeof payload?.message === 'string' && payload.message.trim()
           ? payload.message
@@ -1470,6 +1486,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const msg = error.message
       if (msg.includes('not_captain')) {
         toast.error('Solo los capitanes pueden votar el resultado.')
+      } else if (msg.includes('proposal_pending_use_respond')) {
+        toast.error(
+          'Hay una propuesta del organizador: confirma o discrepa desde el panel del partido.'
+        )
       } else if (msg.includes('challenge_not_accepted')) {
         toast.error('El desafío debe estar aceptado para votar.')
       } else {
@@ -1500,6 +1520,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         toast.error(
           'El desempate del organizador está disponible 72 h después de la hora programada del partido.'
         )
+      } else if (msg.includes('use_admin_for_proposal_dispute')) {
+        toast.error(
+          'Esta discrepancia la resuelve un administrador desde moderación.'
+        )
       } else if (msg.includes('not_disputed')) {
         toast.error('No hay desacuerdo entre capitanes que resolver.')
       } else {
@@ -1513,6 +1537,85 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast.success(
       'Resultado confirmado. Los jugadores pueden calificar desde el detalle del partido.'
     )
+  })
+
+  const respondRivalMatchProposal = useStableCallback(async (
+    opportunityId: string,
+    confirm: boolean,
+    disputeDetails?: string
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
+    const { error } = await supabase.rpc('respond_rival_match_proposal', {
+      p_opportunity_id: opportunityId,
+      p_confirm: confirm,
+      p_dispute_details: disputeDetails ?? null,
+    })
+    if (error) {
+      const msg = error.message
+      if (msg.includes('no_proposal')) {
+        toast.error('Aún no hay una propuesta de resultado del organizador.')
+      } else if (msg.includes('not_rival_response_captain')) {
+        toast.error('Solo el capitán rival indicado puede confirmar o discrepar.')
+      } else if (msg.includes('dispute_details_required')) {
+        toast.error('Describe el motivo de la discrepancia (mínimo 5 caracteres).')
+      } else if (msg.includes('report_already_open')) {
+        toast.info('Ya hay un reporte en curso para este partido.')
+      } else {
+        toast.error(msg)
+      }
+      return
+    }
+    const matches = await fetchLatestMatchOpportunities(supabase)
+    applyPlayerMatchBundleWithMatchesList(currentUser.id, matches)
+    await refreshCurrentUserProfile()
+    toast.success(
+      confirm
+        ? 'Resultado confirmado. El partido quedó finalizado.'
+        : 'Discrepancia enviada. Un administrador revisará el caso.'
+    )
+  })
+
+  const submitRivalTeamMatchReview = useStableCallback(async (
+    opportunityId: string,
+    targetTeamId: string,
+    stars: number,
+    comment?: string
+  ) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
+    const { error } = await supabase.rpc('submit_rival_team_match_review', {
+      p_opportunity_id: opportunityId,
+      p_target_team_id: targetTeamId,
+      p_stars: stars,
+      p_comment: comment ?? null,
+    })
+    if (error) {
+      const msg = error.message
+      if (msg.includes('must_review_opponent_team')) {
+        toast.error('Solo puedes valorar al equipo contrario.')
+      } else if (msg.includes('not_team_member')) {
+        toast.error('Debes ser miembro de uno de los equipos del desafío.')
+      } else {
+        toast.error(msg)
+      }
+      return
+    }
+    const matches = await fetchLatestMatchOpportunities(supabase)
+    applyPlayerMatchBundleWithMatchesList(currentUser.id, matches)
+    toast.success('Reseña al equipo guardada.')
   })
 
   const finalizeMatchOpportunity = useStableCallback(async (
@@ -1566,9 +1669,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       if (error) {
         const msg = error.message
-        if (msg.includes('disputed_use_override')) {
+        if (msg.includes('disputed_pending_admin')) {
           toast.error(
-            'Hay desacuerdo entre capitanes: usa el desempate tras 72 h o resuelve el conflicto desde la app.'
+            'Hay una discrepancia en moderación. Espera la resolución de un administrador.'
           )
         } else if (msg.includes('challenge_not_accepted')) {
           toast.error('El desafío debe estar aceptado para registrar el resultado.')
@@ -1581,7 +1684,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       applyPlayerMatchBundleWithMatchesList(currentUser.id, matches)
       await refreshCurrentUserProfile()
       toast.success(
-        'Partido finalizado. Los jugadores pueden calificar desde el detalle cuando quieran.'
+        'Propuesta de resultado enviada. El capitán rival debe confirmarla en la app.'
       )
       return true
     }
@@ -1761,7 +1864,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return false
       }
       if (code === 'not_supported_for_type') {
-        toast.error('Esta salida aplica para revueltas y partidos de jugadores.')
+        toast.error(
+          'Esta salida no está habilitada para este tipo de partido (solo revuelta, búsqueda de jugadores, selección de equipos o duelo de equipos).'
+        )
         return false
       }
       toast.error(payload?.message || 'No se pudo salir del partido.')
@@ -1780,6 +1885,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     location: string
     dateTime: Date
     reason: string
+    sportsVenueId?: string | null
   }) => {
     if (!currentUser || !isSupabaseConfigured()) return
     const ro = isUserReadOnly(currentUser)
@@ -1790,7 +1896,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const venue = payload.venue.trim()
     const location = payload.location.trim()
     const reason = payload.reason.trim()
-    if (venue.length < 3 || location.length < 3) {
+    const sportsVenueId = payload.sportsVenueId?.trim() || null
+    if (!sportsVenueId && (venue.length < 3 || location.length < 3)) {
       toast.error('Centro y ubicación deben tener al menos 3 caracteres.')
       return
     }
@@ -1808,6 +1915,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         p_new_location: location,
         p_new_date_time: payload.dateTime.toISOString(),
         p_reason: reason,
+        p_sports_venue_id: sportsVenueId,
       }
     )
     if (error) {
@@ -1851,6 +1959,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (code === 'no_changes') {
         toast.error('No detectamos cambios para guardar.')
+        return
+      }
+      if (code === 'invalid_sports_venue') {
+        toast.error('El centro elegido no está disponible o está pausado. Elige otro o usa texto manual.')
         return
       }
       toast.error('No se pudo reprogramar el partido.')
@@ -2996,6 +3108,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       randomizeRevueltaTeams,
       finalizeMatchOpportunity,
       submitRivalCaptainVote,
+      respondRivalMatchProposal,
+      submitRivalTeamMatchReview,
       finalizeRivalOrganizerOverride,
       suspendMatchOpportunity,
       leaveMatchOpportunityWithReason,
@@ -3012,6 +3126,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       users,
       participatingOpportunityIds,
       rivalChallenges,
+      respondRivalMatchProposal,
+      submitRivalTeamMatchReview,
       rescheduleMatchOpportunityWithReason,
     ]
   )

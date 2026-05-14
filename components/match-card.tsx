@@ -93,7 +93,7 @@ export function MatchCard({
   const getActionLabel = () => {
     switch (match.type) {
       case 'rival':
-        return 'Desafiar'
+        return 'Unirse'
       case 'players':
         return 'Postular'
       case 'open':
@@ -358,8 +358,13 @@ export function MatchCard({
           </div>
         ) : null}
 
-        {(match.type === 'open' || match.type === 'team_pick_public') &&
+        {(match.type === 'open' ||
+          match.type === 'team_pick_public' ||
+          match.type === 'team_pick_private' ||
+          match.type === 'players' ||
+          match.type === 'rival') &&
           currentUserId &&
+          (match.status === 'pending' || match.status === 'confirmed') &&
           (match.creatorId === currentUserId || isJoined) && (
             <RevueltaInviteActions opportunity={match} className="pt-0.5" />
           )}

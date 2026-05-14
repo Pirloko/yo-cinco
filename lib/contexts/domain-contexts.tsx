@@ -58,6 +58,8 @@ export type MatchContextValue = Pick<
   | 'randomizeRevueltaTeams'
   | 'finalizeMatchOpportunity'
   | 'submitRivalCaptainVote'
+  | 'respondRivalMatchProposal'
+  | 'submitRivalTeamMatchReview'
   | 'finalizeRivalOrganizerOverride'
   | 'suspendMatchOpportunity'
   | 'leaveMatchOpportunityWithReason'

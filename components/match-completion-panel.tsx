@@ -1,11 +1,14 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import type {
   MatchOpportunity,
   RevueltaResult,
   RivalChallenge,
   RivalResult,
+  Team,
+  SportsVenue,
 } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,10 +21,26 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { MatchOpportunityRatingRow } from '@/lib/supabase/rating-queries'
 import { Trophy, ClipboardCheck, Star, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
+import {
+  getBrowserSupabase,
+  isSupabaseConfigured,
+} from '@/lib/supabase/client'
+import { fetchSportsVenuesForPlayerGeo } from '@/lib/supabase/venue-queries'
+import { userIsConfirmedMemberOfTeam } from '@/lib/team-membership'
+import { useAppAuth } from '@/lib/app-context'
+import { sessionQueryEnabled } from '@/lib/query-session-enabled'
+import { QUERY_STALE_TIME_STATIC_MS } from '@/lib/query-defaults'
 
 /** Motivos predefinidos al suspender (organizador). */
 const SUSPEND_PRESET_REASONS = [
@@ -47,6 +66,46 @@ const RESCHEDULE_PRESET_REASONS = [
   'Ajuste logístico de cancha/ubicación',
   'Condiciones climáticas o del recinto',
 ] as const
+
+function getRivalCaptainConfirmsProposalId(
+  opportunity: MatchOpportunity,
+  rivalChallenge: RivalChallenge,
+  teams: Team[]
+): string | undefined {
+  const chTeam = teams.find((t) => t.id === rivalChallenge.challengerTeamId)
+  const accTeam = teams.find((t) => t.id === rivalChallenge.acceptedTeamId)
+  if (userIsConfirmedMemberOfTeam(chTeam, opportunity.creatorId)) {
+    return rivalChallenge.acceptedCaptainId
+  }
+  if (userIsConfirmedMemberOfTeam(accTeam, opportunity.creatorId)) {
+    return rivalChallenge.challengerCaptainId
+  }
+  return rivalChallenge.acceptedCaptainId
+}
+
+function rivalOpponentTeamForUser(
+  rivalChallenge: RivalChallenge,
+  teams: Team[],
+  userId: string
+): { id: string; name: string } | null {
+  const chTeam = teams.find((t) => t.id === rivalChallenge.challengerTeamId)
+  const accTeam = teams.find((t) => t.id === rivalChallenge.acceptedTeamId)
+  const inCh = userIsConfirmedMemberOfTeam(chTeam, userId)
+  const inAcc = userIsConfirmedMemberOfTeam(accTeam, userId)
+  if (inCh && !inAcc && rivalChallenge.acceptedTeamId) {
+    return {
+      id: rivalChallenge.acceptedTeamId,
+      name: rivalChallenge.acceptedTeamName ?? 'Equipo rival',
+    }
+  }
+  if (inAcc && !inCh) {
+    return {
+      id: rivalChallenge.challengerTeamId,
+      name: rivalChallenge.challengerTeamName ?? 'Equipo retador',
+    }
+  }
+  return null
+}
 
 function StarRow({
   label,
@@ -86,10 +145,16 @@ function StarRow({
   )
 }
 
+/** Prefijo de valor en Select al elegir un centro del catálogo (reprogramar). */
+const RESCHEDULE_CANCHA_DB_PREFIX = 'db:'
+const RESCHEDULE_CANCHA_CUSTOM = 'custom'
+
 type Props = {
   opportunity: MatchOpportunity
   /** Desafío rival aceptado (si aplica). */
   rivalChallenge: RivalChallenge | null
+  /** Equipos del usuario (para capitán que confirma propuesta y reseñas). */
+  teams: Team[]
   currentUserId: string
   isConfirmedParticipant: boolean
   myRating: MatchOpportunityRatingRow | null
@@ -110,6 +175,17 @@ type Props = {
     opportunityId: string,
     result: RivalResult
   ) => Promise<void>
+  respondRivalMatchProposal: (
+    opportunityId: string,
+    confirm: boolean,
+    disputeDetails?: string
+  ) => Promise<void>
+  submitRivalTeamMatchReview: (
+    opportunityId: string,
+    targetTeamId: string,
+    stars: number,
+    comment?: string
+  ) => Promise<void>
   suspendMatchOpportunity: (
     opportunityId: string,
     reason: string
@@ -124,6 +200,7 @@ type Props = {
     location: string
     dateTime: Date
     reason: string
+    sportsVenueId?: string | null
   }) => Promise<void>
   submitMatchRating: (
     opportunityId: string,
@@ -139,6 +216,7 @@ type Props = {
 export function MatchCompletionPanel({
   opportunity,
   rivalChallenge,
+  teams,
   currentUserId,
   isConfirmedParticipant,
   myRating,
@@ -147,11 +225,14 @@ export function MatchCompletionPanel({
   finalizeMatchOpportunity,
   submitRivalCaptainVote,
   finalizeRivalOrganizerOverride,
+  respondRivalMatchProposal,
+  submitRivalTeamMatchReview,
   suspendMatchOpportunity,
   leaveMatchOpportunityWithReason,
   rescheduleMatchOpportunityWithReason,
   submitMatchRating,
 }: Props) {
+  const { currentUser } = useAppAuth()
   const isCreator = opportunity.creatorId === currentUserId
   const completed = opportunity.status === 'completed'
   const needsResolveAfterMidnight = (() => {
@@ -186,13 +267,46 @@ export function MatchCompletionPanel({
     (isChallengerCaptain && !opportunity.rivalCaptainVoteChallenger) ||
     (isAcceptedCaptain && !opportunity.rivalCaptainVoteAccepted)
 
+  const captainConfirmsProposalId =
+    rivalChallenge && teams.length > 0
+      ? getRivalCaptainConfirmsProposalId(opportunity, rivalChallenge, teams)
+      : undefined
+
   const showCaptainVote =
     opportunity.type === 'rival' &&
     rivalChallenge?.status === 'accepted' &&
     !completed &&
     !opportunity.rivalOutcomeDisputed &&
+    !opportunity.rivalOrganizerProposedResult &&
     needsMyCaptainVote &&
     !isCreator
+
+  const showCaptainProposalResponse =
+    opportunity.type === 'rival' &&
+    rivalChallenge?.status === 'accepted' &&
+    !completed &&
+    !!opportunity.rivalOrganizerProposedResult &&
+    !(opportunity.rivalProposalDisputed ?? false) &&
+    captainConfirmsProposalId === currentUserId
+
+  const showRivalDisputeModeration =
+    opportunity.type === 'rival' &&
+    !completed &&
+    (opportunity.rivalProposalDisputed ?? false)
+
+  const showOrganizerAwaitingCaptain =
+    opportunity.type === 'rival' &&
+    isCreator &&
+    !completed &&
+    !!opportunity.rivalOrganizerProposedResult &&
+    !(opportunity.rivalProposalDisputed ?? false)
+
+  const rivalOrganizerFinalizeBlocked =
+    opportunity.type === 'rival' &&
+    isCreator &&
+    !!opportunity.rivalOrganizerProposedResult &&
+    !(opportunity.rivalProposalDisputed ?? false) &&
+    !completed
 
   const showOrganizerOverride =
     opportunity.type === 'rival' &&
@@ -264,11 +378,74 @@ export function MatchCompletionPanel({
   const [rescheduleChoice, setRescheduleChoice] = useState<number | 'other' | null>(null)
   const [rescheduleOtherText, setRescheduleOtherText] = useState('')
   const [rescheduling, setRescheduling] = useState(false)
+  const [rescheduleSportsVenueId, setRescheduleSportsVenueId] = useState<string | null>(
+    () => opportunity.sportsVenueId ?? null
+  )
 
   const [orgStars, setOrgStars] = useState(0)
   const [matchStars, setMatchStars] = useState(0)
   const [levelStars, setLevelStars] = useState(0)
   const [comment, setComment] = useState('')
+  const [disputeText, setDisputeText] = useState('')
+  const [proposalResponding, setProposalResponding] = useState(false)
+  const [rivalTeamReviewStars, setRivalTeamReviewStars] = useState(0)
+  const [rivalTeamReviewComment, setRivalTeamReviewComment] = useState('')
+  const [rivalTeamReviewSaved, setRivalTeamReviewSaved] = useState(false)
+  const [rivalTeamReviewLoading, setRivalTeamReviewLoading] = useState(false)
+  const [rivalTeamReviewSaving, setRivalTeamReviewSaving] = useState(false)
+
+  useEffect(() => {
+    setRescheduleVenue(opportunity.venue)
+    setRescheduleLocation(opportunity.location)
+    setRescheduleSportsVenueId(opportunity.sportsVenueId ?? null)
+    const d = opportunity.dateTime
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000)
+    setRescheduleDateTimeLocal(local.toISOString().slice(0, 16))
+  }, [
+    opportunity.id,
+    opportunity.venue,
+    opportunity.location,
+    opportunity.dateTime,
+    opportunity.sportsVenueId,
+  ])
+
+  const rescheduleVenuesQuery = useQuery({
+    queryKey: [
+      'match-completion-reschedule-venues',
+      opportunity.cityId,
+      opportunity.cityRegionId ?? currentUser?.regionId ?? '',
+    ],
+    enabled: Boolean(
+      canRescheduleAsOrganizer &&
+        rescheduleExpanded &&
+        opportunity.cityId &&
+        isSupabaseConfigured() &&
+        sessionQueryEnabled(currentUserId)
+    ),
+    staleTime: QUERY_STALE_TIME_STATIC_MS,
+    queryFn: async () => {
+      const sb = getBrowserSupabase()
+      if (!sb) return [] as SportsVenue[]
+      return fetchSportsVenuesForPlayerGeo(
+        sb,
+        opportunity.cityRegionId ?? currentUser?.regionId,
+        opportunity.cityId
+      )
+    },
+  })
+
+  const rescheduleSportsVenuesList = rescheduleVenuesQuery.data ?? []
+
+  const rescheduleVenueSelectValue = useMemo(() => {
+    if (rescheduleSportsVenueId) {
+      return `${RESCHEDULE_CANCHA_DB_PREFIX}${rescheduleSportsVenueId}`
+    }
+    const byName = rescheduleSportsVenuesList.find(
+      (v) => v.name.trim() === rescheduleVenue.trim()
+    )
+    if (byName) return `${RESCHEDULE_CANCHA_DB_PREFIX}${byName.id}`
+    return RESCHEDULE_CANCHA_CUSTOM
+  }, [rescheduleSportsVenueId, rescheduleVenue, rescheduleSportsVenuesList])
 
   const resolvedSuspendReason = (): string | null => {
     if (suspendChoice === null) return null
@@ -315,7 +492,8 @@ export function MatchCompletionPanel({
     (opportunity.type === 'players' ||
       opportunity.type === 'open' ||
       opportunity.type === 'team_pick_public' ||
-      opportunity.type === 'team_pick_private')
+      opportunity.type === 'team_pick_private' ||
+      opportunity.type === 'rival')
 
   const handleLeave = async () => {
     const reason = resolvedLeaveReason()
@@ -353,12 +531,12 @@ export function MatchCompletionPanel({
 
   const canConfirmReschedule = (() => {
     const dt = parseLocalDateTime(rescheduleDateTimeLocal)
+    const locOk =
+      !!rescheduleSportsVenueId ||
+      (rescheduleVenue.trim().length >= 3 &&
+        rescheduleLocation.trim().length >= 3)
     return (
-      !rescheduling &&
-      rescheduleVenue.trim().length >= 3 &&
-      rescheduleLocation.trim().length >= 3 &&
-      !!dt &&
-      resolvedRescheduleReason() !== null
+      !rescheduling && locOk && !!dt && resolvedRescheduleReason() !== null
     )
   })()
 
@@ -374,6 +552,7 @@ export function MatchCompletionPanel({
         location: rescheduleLocation,
         dateTime: dt,
         reason,
+        sportsVenueId: rescheduleSportsVenueId,
       })
       setRescheduleExpanded(false)
       setRescheduleChoice(null)
@@ -392,10 +571,18 @@ export function MatchCompletionPanel({
         draw: 'Empate',
       }
       return (
-        <p className="font-brand-heading flex items-center gap-2 text-sm text-muted-foreground">
-          <Trophy className="w-4 h-4 text-accent" />
-          {map[opportunity.rivalResult]}
-        </p>
+        <div className="space-y-1">
+          <p className="font-brand-heading flex items-center gap-2 text-sm text-muted-foreground">
+            <Trophy className="w-4 h-4 text-accent" />
+            {map[opportunity.rivalResult]}
+          </p>
+          {opportunity.rivalClosureSkipPlayerStats ? (
+            <p className="text-xs text-muted-foreground pl-6">
+              Cierre sin sumar estadísticas de jugadores ni equipos (decisión de
+              moderación).
+            </p>
+          ) : null}
+        </div>
       )
     }
     if (
@@ -515,10 +702,50 @@ export function MatchCompletionPanel({
     }
   }
 
+  const rivalOpponentTeam = useMemo(() => {
+    if (!rivalChallenge || teams.length === 0) return null
+    return rivalOpponentTeamForUser(rivalChallenge, teams, currentUserId)
+  }, [rivalChallenge, teams, currentUserId])
+
+  useEffect(() => {
+    if (
+      !completed ||
+      opportunity.type !== 'rival' ||
+      !rivalOpponentTeam ||
+      !isSupabaseConfigured()
+    ) {
+      return
+    }
+    const sb = getBrowserSupabase()
+    if (!sb) return
+    void (async () => {
+      setRivalTeamReviewLoading(true)
+      try {
+        const { data, error } = await sb
+          .from('rival_team_match_reviews')
+          .select('stars, comment')
+          .eq('opportunity_id', opportunity.id)
+          .eq('author_user_id', currentUserId)
+          .eq('target_team_id', rivalOpponentTeam.id)
+          .maybeSingle()
+        if (!error && data) {
+          setRivalTeamReviewStars((data.stars as number) ?? 0)
+          setRivalTeamReviewComment(((data.comment as string) ?? '').trim())
+          setRivalTeamReviewSaved(true)
+        }
+      } finally {
+        setRivalTeamReviewLoading(false)
+      }
+    })()
+  }, [completed, opportunity.id, opportunity.type, rivalOpponentTeam, currentUserId])
+
   const hasPreMatchContent =
     needsResolveAfterMidnight ||
     showOrganizerFinalizeCasual ||
     showCaptainVote ||
+    showCaptainProposalResponse ||
+    showRivalDisputeModeration ||
+    showOrganizerAwaitingCaptain ||
     showOrganizerOverride ||
     showOrganizerDisputeWait ||
     canCancelRivalAsCaptain ||
@@ -594,6 +821,108 @@ export function MatchCompletionPanel({
         </div>
       )}
 
+      {showOrganizerAwaitingCaptain && (
+        <div className="rounded-xl border border-primary/25 bg-primary/5 p-3 space-y-1">
+          <p className="font-brand-heading text-sm text-foreground">
+            Propuesta de resultado enviada
+          </p>
+          <p className="text-xs text-muted-foreground">
+            El capitán rival debe confirmar o discrepar. Cuando responda, el partido
+            se cerrará automáticamente o pasará a moderación si hay discrepancia.
+          </p>
+        </div>
+      )}
+
+      {showCaptainProposalResponse && rivalChallenge && (
+        <div className="space-y-3 rounded-xl border border-border bg-card/50 p-3">
+          <p className="font-brand-heading text-sm text-foreground">
+            Confirmar resultado del organizador
+          </p>
+          <p className="text-xs text-muted-foreground">
+            El organizador registró:{' '}
+            <span className="font-brand-heading text-foreground">
+              {opportunity.rivalOrganizerProposedResult === 'draw'
+                ? 'Empate'
+                : opportunity.rivalOrganizerProposedResult === 'creator_team'
+                  ? `Ganó ${rivalChallenge.challengerTeamName}`
+                  : `Ganó ${rivalChallenge.acceptedTeamName ?? 'equipo aceptado'}`}
+            </span>
+            . Si no estás de acuerdo, indica el motivo: se abrirá un reporte para el
+            equipo de moderación.
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              type="button"
+              className="flex-1"
+              disabled={proposalResponding}
+              onClick={() => {
+                void (async () => {
+                  setProposalResponding(true)
+                  try {
+                    await respondRivalMatchProposal(opportunity.id, true)
+                  } finally {
+                    setProposalResponding(false)
+                  }
+                })()
+              }}
+            >
+              {proposalResponding ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Enviando…
+                </>
+              ) : (
+                'Confirmar resultado'
+              )}
+            </Button>
+          </div>
+          <div className="space-y-2 pt-1 border-t border-border/60">
+            <Label className="text-xs">Discrepar (motivo, mín. 5 caracteres)</Label>
+            <Textarea
+              value={disputeText}
+              onChange={(e) => setDisputeText(e.target.value)}
+              placeholder="Explica por qué no coincides con el resultado propuesto…"
+              className="min-h-[80px] resize-none text-sm"
+              disabled={proposalResponding}
+            />
+            <Button
+              type="button"
+              variant="destructive"
+              className="w-full"
+              disabled={proposalResponding || disputeText.trim().length < 5}
+              onClick={() => {
+                void (async () => {
+                  setProposalResponding(true)
+                  try {
+                    await respondRivalMatchProposal(
+                      opportunity.id,
+                      false,
+                      disputeText.trim()
+                    )
+                  } finally {
+                    setProposalResponding(false)
+                  }
+                })()
+              }}
+            >
+              Discrepar y enviar a moderación
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {showRivalDisputeModeration && (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 space-y-1">
+          <p className="font-brand-heading text-sm text-foreground">
+            Resultado en revisión
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Un administrador definirá el resultado final. El partido permanece abierto
+            hasta entonces.
+          </p>
+        </div>
+      )}
+
       {showOrganizerDisputeWait && (
         <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 space-y-1">
           <p className="font-brand-heading text-sm text-foreground">
@@ -665,13 +994,20 @@ export function MatchCompletionPanel({
             {needsResolveAfterMidnight ? 'Resolver partido' : 'Finalizar partido'}
           </p>
           <p className="text-xs text-muted-foreground">
-            Al cerrar, se registrará el resultado. Cada jugador podrá calificar
-            cuando entre al detalle del partido (sin plazo de caducidad).
+            {opportunity.type === 'rival'
+              ? 'Registrarás el resultado propuesto; el capitán rival deberá confirmarlo o podrá discrepar (moderación).'
+              : 'Al cerrar, se registrará el resultado. Cada jugador podrá calificar cuando entre al detalle del partido (sin plazo de caducidad).'}
           </p>
+          {rivalOrganizerFinalizeBlocked ? (
+            <p className="text-xs text-amber-800 dark:text-amber-200/90">
+              Esperando respuesta del capitán rival sobre tu última propuesta de
+              resultado.
+            </p>
+          ) : null}
           <Button
             type="button"
             className="w-full"
-            disabled={finalizing}
+            disabled={finalizing || rivalOrganizerFinalizeBlocked}
             onClick={openFinalizeDialog}
           >
             Marcar partido como finalizado
@@ -704,6 +1040,9 @@ export function MatchCompletionPanel({
                   partido cuando les acomode (una sola vez cada uno).
                   {opportunity.type === 'players'
                     ? ' Se registrará como partido jugado (sin marcador por equipos).'
+                    : null}
+                  {opportunity.type === 'rival'
+                    ? ' El partido no se cerrará hasta que el capitán rival confirme tu propuesta (o se resuelva en moderación si discrepa).'
                     : null}
                 </DialogDescription>
               </DialogHeader>
@@ -745,7 +1084,7 @@ export function MatchCompletionPanel({
                 </div>
               )}
 
-              {opportunity.type === 'rival' && (
+              {opportunity.type === 'rival' && rivalChallenge && (
                 <div className="space-y-2 py-1">
                   <Label className="text-xs text-muted-foreground">
                     ¿Quién ganó?
@@ -753,9 +1092,15 @@ export function MatchCompletionPanel({
                   <div className="flex flex-col gap-2">
                     {(
                       [
-                        ['creator_team', 'Ganó el equipo del organizador'],
-                        ['rival_team', 'Ganó el equipo rival'],
-                        ['draw', 'Empate'],
+                        [
+                          'creator_team',
+                          `Ganó ${rivalChallenge.challengerTeamName}`,
+                        ] as const,
+                        [
+                          'rival_team',
+                          `Ganó ${rivalChallenge.acceptedTeamName ?? 'Equipo rival'}`,
+                        ] as const,
+                        ['draw', 'Empate'] as const,
                       ] as const
                     ).map(([val, label]) => (
                       <label
@@ -943,7 +1288,10 @@ export function MatchCompletionPanel({
       )}
 
       {canRescheduleAsOrganizer && (
-        <div className="space-y-2 rounded-xl border border-border bg-card/40 p-3">
+        <div
+          id="organizer-reschedule-section"
+          className="space-y-2 rounded-xl border border-border bg-card/40 p-3"
+        >
           <p className="font-brand-heading text-sm text-foreground">Reprogramar partido</p>
           <p className="text-xs text-muted-foreground">
             Si cambias centro o fecha/hora, quienes estaban confirmados vuelven a
@@ -977,23 +1325,98 @@ export function MatchCompletionPanel({
             <div className="space-y-3 rounded-lg border border-border bg-card/60 p-3">
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">
-                  Centro deportivo
+                  Centro deportivo (listado)
+                </Label>
+                {rescheduleVenuesQuery.isLoading ? (
+                  <p className="text-xs text-muted-foreground">Cargando centros…</p>
+                ) : rescheduleSportsVenuesList.length === 0 ? (
+                  <p className="text-xs text-muted-foreground rounded-md border border-dashed border-border px-2 py-2">
+                    No hay centros en el catálogo para la ciudad de este partido. Usa
+                    nombre y comuna manual abajo.
+                  </p>
+                ) : (
+                  <Select
+                    value={rescheduleVenueSelectValue}
+                    onValueChange={(v) => {
+                      if (v === RESCHEDULE_CANCHA_CUSTOM) {
+                        setRescheduleSportsVenueId(null)
+                        return
+                      }
+                      if (!v.startsWith(RESCHEDULE_CANCHA_DB_PREFIX)) return
+                      const id = v.slice(RESCHEDULE_CANCHA_DB_PREFIX.length)
+                      const sv = rescheduleSportsVenuesList.find((x) => x.id === id)
+                      if (!sv) return
+                      setRescheduleSportsVenueId(id)
+                      setRescheduleVenue(sv.name)
+                      setRescheduleLocation(sv.city)
+                    }}
+                    disabled={rescheduling}
+                  >
+                    <SelectTrigger className="w-full h-10 bg-background border-border text-sm">
+                      <SelectValue placeholder="Elige un centro" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[min(22rem,var(--radix-select-content-available-height))]">
+                      <SelectItem value={RESCHEDULE_CANCHA_CUSTOM}>
+                        Otro (nombre y comuna manual)
+                      </SelectItem>
+                      {rescheduleSportsVenuesList.map((sv) => (
+                        <SelectItem
+                          key={sv.id}
+                          value={`${RESCHEDULE_CANCHA_DB_PREFIX}${sv.id}`}
+                        >
+                          {sv.name} — {sv.city}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  Si eliges del listado, al guardar se vincula la ficha del centro
+                  (teléfono y WhatsApp del club). Si editas el texto sin coincidir con
+                  el listado, se pierde ese enlace.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  Centro deportivo (texto)
                 </Label>
                 <input
                   value={rescheduleVenue}
-                  onChange={(e) => setRescheduleVenue(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setRescheduleVenue(v)
+                    const linked = rescheduleSportsVenueId
+                      ? rescheduleSportsVenuesList.find(
+                          (x) => x.id === rescheduleSportsVenueId
+                        )
+                      : null
+                    if (linked && v.trim() !== linked.name.trim()) {
+                      setRescheduleSportsVenueId(null)
+                    }
+                  }}
                   className="w-full h-10 rounded-md border border-border bg-background px-3 text-sm"
                   placeholder="Nombre del centro"
                   disabled={rescheduling}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Ubicación</Label>
+                <Label className="text-xs text-muted-foreground">Ubicación / comuna</Label>
                 <input
                   value={rescheduleLocation}
-                  onChange={(e) => setRescheduleLocation(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setRescheduleLocation(v)
+                    const linked = rescheduleSportsVenueId
+                      ? rescheduleSportsVenuesList.find(
+                          (x) => x.id === rescheduleSportsVenueId
+                        )
+                      : null
+                    if (linked && v.trim() !== linked.city.trim()) {
+                      setRescheduleSportsVenueId(null)
+                    }
+                  }}
                   className="w-full h-10 rounded-md border border-border bg-background px-3 text-sm"
-                  placeholder="Dirección o referencia"
+                  placeholder="Dirección o comuna"
                   disabled={rescheduling}
                 />
               </div>
@@ -1444,6 +1867,74 @@ export function MatchCompletionPanel({
           </Button>
         </div>
       )}
+
+      {completed &&
+        opportunity.type === 'rival' &&
+        rivalOpponentTeam &&
+        isConfirmedParticipant && (
+          <div className="space-y-3 rounded-xl border border-border bg-card/40 p-3">
+            <p className="font-brand-heading text-sm text-foreground">
+              Reseña al equipo contrario
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Opcional: valoración de{' '}
+              <span className="font-brand-heading text-foreground">
+                {rivalOpponentTeam.name}
+              </span>{' '}
+              como rival.
+            </p>
+            {rivalTeamReviewLoading ? (
+              <p className="text-xs text-muted-foreground">Cargando tu reseña…</p>
+            ) : null}
+            <StarRow
+              label="Estrellas (1 a 5)"
+              value={rivalTeamReviewStars}
+              onChange={setRivalTeamReviewStars}
+              disabled={rivalTeamReviewSaving}
+            />
+            <div className="space-y-2">
+              <Label className="text-xs">Comentario (opcional)</Label>
+              <Textarea
+                value={rivalTeamReviewComment}
+                onChange={(e) => setRivalTeamReviewComment(e.target.value)}
+                placeholder="Ej.: buen juego, respetuosos en cancha…"
+                className="min-h-[72px] resize-none text-sm"
+                disabled={rivalTeamReviewSaving}
+                maxLength={1000}
+              />
+            </div>
+            <Button
+              type="button"
+              className="w-full"
+              disabled={rivalTeamReviewSaving || rivalTeamReviewStars < 1}
+              onClick={() => {
+                void (async () => {
+                  setRivalTeamReviewSaving(true)
+                  try {
+                    await submitRivalTeamMatchReview(
+                      opportunity.id,
+                      rivalOpponentTeam.id,
+                      rivalTeamReviewStars,
+                      rivalTeamReviewComment.trim() || undefined
+                    )
+                    setRivalTeamReviewSaved(true)
+                  } finally {
+                    setRivalTeamReviewSaving(false)
+                  }
+                })()
+              }}
+            >
+              {rivalTeamReviewSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Guardando…
+                </>
+              ) : (
+                'Guardar reseña al equipo'
+              )}
+            </Button>
+          </div>
+        )}
 
     </div>
   )

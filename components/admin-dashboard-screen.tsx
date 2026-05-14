@@ -226,6 +226,7 @@ function playerReportReasonLabel(reason: string): string {
     spam: 'Spam',
     suplantacion: 'Suplantación',
     otro: 'Otro',
+    'discrepancia en resultado (partido rival)': 'Discrepancia resultado rival',
   }
   return map[k] ?? reason
 }
@@ -681,6 +682,47 @@ export function AdminDashboardScreen() {
         const ok = await updateReportStatus('dismiss', reportId)
         if (ok) toast.success('Reporte descartado.')
         void loadReports()
+      } finally {
+        setSanctionBusyId(null)
+      }
+    },
+    [loadReports, updateReportStatus]
+  )
+
+  const resolveRivalResultDispute = useCallback(
+    async (
+      opportunityId: string,
+      reportId: string,
+      result: 'creator_team' | 'rival_team' | 'draw',
+      skipPlayerAndTeamStats: boolean
+    ) => {
+      if (!isSupabaseConfigured()) {
+        toast.error('Supabase no está configurado.')
+        return
+      }
+      const sb = getBrowserSupabase()
+      if (!sb) {
+        toast.error('No se pudo iniciar el cliente de datos.')
+        return
+      }
+      setSanctionBusyId(reportId)
+      try {
+        const { error } = await sb.rpc('admin_resolve_rival_dispute', {
+          p_opportunity_id: opportunityId,
+          p_result: result,
+          p_skip_player_and_team_stats: skipPlayerAndTeamStats,
+        })
+        if (error) {
+          toast.error(error.message)
+          return
+        }
+        toast.success(
+          skipPlayerAndTeamStats
+            ? 'Partido cerrado sin estadísticas de jugadores ni equipos.'
+            : 'Resultado aplicado y partido cerrado.'
+        )
+        const ok = await updateReportStatus('actionTaken', reportId)
+        if (ok) void loadReports()
       } finally {
         setSanctionBusyId(null)
       }
@@ -2227,6 +2269,124 @@ export function AdminDashboardScreen() {
                             </div>
                             {isPending ? (
                               <div className="flex flex-col gap-2">
+                                {r.context_type === 'rival_result_dispute' &&
+                                r.context_id ? (
+                                  <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 p-3 space-y-2">
+                                    <p className="text-xs font-medium text-foreground">
+                                      Partido rival · definir resultado
+                                    </p>
+                                    {r.details ? (
+                                      <p className="text-[11px] text-muted-foreground whitespace-pre-wrap">
+                                        {r.details}
+                                      </p>
+                                    ) : null}
+                                    <div className="flex flex-wrap gap-2">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="secondary"
+                                        disabled={sanctionBusyId === r.id}
+                                        onClick={() =>
+                                          void resolveRivalResultDispute(
+                                            r.context_id as string,
+                                            r.id,
+                                            'creator_team',
+                                            false
+                                          )
+                                        }
+                                      >
+                                        Ganó retador
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="secondary"
+                                        disabled={sanctionBusyId === r.id}
+                                        onClick={() =>
+                                          void resolveRivalResultDispute(
+                                            r.context_id as string,
+                                            r.id,
+                                            'rival_team',
+                                            false
+                                          )
+                                        }
+                                      >
+                                        Ganó visita
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={sanctionBusyId === r.id}
+                                        onClick={() =>
+                                          void resolveRivalResultDispute(
+                                            r.context_id as string,
+                                            r.id,
+                                            'draw',
+                                            false
+                                          )
+                                        }
+                                      >
+                                        Empate
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="border-destructive/40 text-destructive"
+                                        disabled={sanctionBusyId === r.id}
+                                        onClick={() =>
+                                          void resolveRivalResultDispute(
+                                            r.context_id as string,
+                                            r.id,
+                                            'creator_team',
+                                            true
+                                          )
+                                        }
+                                      >
+                                        Retador gana (sin stats)
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="border-destructive/40 text-destructive"
+                                        disabled={sanctionBusyId === r.id}
+                                        onClick={() =>
+                                          void resolveRivalResultDispute(
+                                            r.context_id as string,
+                                            r.id,
+                                            'rival_team',
+                                            true
+                                          )
+                                        }
+                                      >
+                                        Visita gana (sin stats)
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="border-destructive/40 text-destructive"
+                                        disabled={sanctionBusyId === r.id}
+                                        onClick={() =>
+                                          void resolveRivalResultDispute(
+                                            r.context_id as string,
+                                            r.id,
+                                            'draw',
+                                            true
+                                          )
+                                        }
+                                      >
+                                        Empate (sin stats)
+                                      </Button>
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground">
+                                      Las opciones «sin stats» cierran el partido sin sumar W/D/L en
+                                      jugadores ni equipos; el organizador sí suma partido completado.
+                                    </p>
+                                  </div>
+                                ) : null}
                                 {!isBanned ? (
                                   <div className="flex flex-wrap gap-2">
                                     <Button

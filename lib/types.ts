@@ -350,6 +350,12 @@ export interface MatchOpportunity {
   rivalCaptainVoteAccepted?: RivalResult
   /** Capitanes no coinciden; falta desempate del organizador tras plazo. */
   rivalOutcomeDisputed?: boolean
+  /** Rival: resultado propuesto por organizador pendiente de confirmación del capitán rival. */
+  rivalOrganizerProposedResult?: RivalResult
+  /** Rival: el capitán rival discrepó; moderación admin. */
+  rivalProposalDisputed?: boolean
+  /** Rival: cerrado sin aplicar W/D/L ni stats de equipos en perfiles. */
+  rivalClosureSkipPlayerStats?: boolean
   /** Evita doble conteo de stats (solo lectura). */
   matchStatsAppliedAt?: Date
 }

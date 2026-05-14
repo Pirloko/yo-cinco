@@ -7,7 +7,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { useAppAuth, useAppMatch, useAppUI } from '@/lib/app-context'
+import { useAppAuth, useAppMatch, useAppTeam, useAppUI } from '@/lib/app-context'
 import { queryKeys } from '@/lib/query-keys'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -80,6 +80,7 @@ export function ChatScreen() {
     openPublicProfile,
   } = useAppUI()
   const { currentUser, avatarDisplayUrl } = useAppAuth()
+  const { teams } = useAppTeam()
   const {
     matchOpportunities,
     participatingOpportunityIds,
@@ -92,6 +93,8 @@ export function ChatScreen() {
     rivalChallenges,
     submitRivalCaptainVote,
     finalizeRivalOrganizerOverride,
+    respondRivalMatchProposal,
+    submitRivalTeamMatchReview,
   } = useAppMatch()
 
   const opportunity = useMemo(
@@ -545,7 +548,9 @@ export function ChatScreen() {
                 opportunity.status === 'confirmed') &&
               (opportunity.type === 'open' ||
                 opportunity.type === 'team_pick_public' ||
-                opportunity.type === 'team_pick_private') && (
+                opportunity.type === 'team_pick_private' ||
+                opportunity.type === 'players' ||
+                opportunity.type === 'rival') && (
                 <div className="rounded-lg border border-border bg-card/60 p-3 space-y-2">
                   <p className="text-xs font-medium text-foreground">
                     Invitar más jugadores
@@ -589,13 +594,20 @@ export function ChatScreen() {
                           organizador.
                         </p>
                       )}
+                      <p className="text-[11px] text-muted-foreground pt-1 leading-relaxed">
+                        O envía por WhatsApp un mensaje con enlace + código ya armado:
+                      </p>
+                      <RevueltaInviteActions opportunity={opportunity} />
                     </>
                   ) : (
                     <>
                       <p className="text-[11px] text-muted-foreground">
                         {opportunity.type === 'team_pick_public'
                           ? 'Comparte el enlace público del partido (misma página que una revuelta abierta).'
-                          : 'Cualquier participante puede compartir el enlace.'}
+                          : opportunity.type === 'rival' ||
+                              opportunity.type === 'players'
+                            ? 'Comparte el enlace para que abran SPORTMATCH y se apunten.'
+                            : 'Cualquier participante puede compartir el enlace.'}
                       </p>
                       <RevueltaInviteActions opportunity={opportunity} />
                     </>
@@ -681,6 +693,7 @@ export function ChatScreen() {
         <MatchCompletionPanel
           opportunity={opportunity}
           rivalChallenge={rivalChallengeForOpp}
+          teams={teams}
           currentUserId={currentUser.id}
           isConfirmedParticipant={participatingOpportunityIds.includes(
             opportunity.id
@@ -699,6 +712,8 @@ export function ChatScreen() {
           finalizeMatchOpportunity={finalizeMatchOpportunity}
           submitRivalCaptainVote={submitRivalCaptainVote}
           finalizeRivalOrganizerOverride={finalizeRivalOrganizerOverride}
+          respondRivalMatchProposal={respondRivalMatchProposal}
+          submitRivalTeamMatchReview={submitRivalTeamMatchReview}
           suspendMatchOpportunity={suspendMatchOpportunity}
           leaveMatchOpportunityWithReason={leaveMatchOpportunityWithReason}
           rescheduleMatchOpportunityWithReason={

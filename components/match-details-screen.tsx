@@ -64,6 +64,7 @@ import {
   Clock,
   MapPin,
   MoreHorizontal,
+  Pencil,
   Search,
   UserPlus,
   Users,
@@ -144,6 +145,8 @@ export function MatchDetailsScreen() {
     rivalChallenges,
     submitRivalCaptainVote,
     finalizeRivalOrganizerOverride,
+    respondRivalMatchProposal,
+    submitRivalTeamMatchReview,
     requestJoinPrivateRevuelta,
     respondToRevueltaExternalRequest,
   } = useAppMatch()
@@ -182,6 +185,111 @@ export function MatchDetailsScreen() {
   })
   const participants: OpportunityParticipantRow[] = participantsQuery.data ?? []
   const loadingParticipants = participantsQuery.isFetching
+
+  const rivalChallengerTeamEntity = useMemo(
+    () =>
+      rivalChallengeForOpp
+        ? teams.find((t) => t.id === rivalChallengeForOpp.challengerTeamId)
+        : undefined,
+    [rivalChallengeForOpp, teams]
+  )
+  const rivalAcceptedTeamEntity = useMemo(
+    () =>
+      rivalChallengeForOpp?.acceptedTeamId
+        ? teams.find((t) => t.id === rivalChallengeForOpp.acceptedTeamId)
+        : undefined,
+    [rivalChallengeForOpp, teams]
+  )
+
+  const rivalRosterCountA = useMemo(() => {
+    if (opportunity?.type !== 'rival') {
+      return participants.filter(
+        (p) =>
+          (p.status === 'confirmed' || p.status === 'pending') &&
+          p.pickTeam === 'A'
+      ).length
+    }
+    const cap = rivalChallengeForOpp?.challengerCaptainId
+    const ids = new Set<string>()
+    for (const p of participants) {
+      const countsForRoster =
+        p.status === 'confirmed' ||
+        p.status === 'pending' ||
+        p.status === 'creator'
+      if (!countsForRoster) continue
+      if (p.pickTeam === 'A' || (cap && p.id === cap)) ids.add(p.id)
+    }
+    if (
+      rivalChallengeForOpp?.status === 'accepted' &&
+      cap &&
+      !participants.some((p) => p.id === cap)
+    ) {
+      ids.add(cap)
+    }
+    return ids.size
+  }, [
+    opportunity?.type,
+    participants,
+    rivalChallengeForOpp?.challengerCaptainId,
+    rivalChallengeForOpp?.status,
+  ])
+  const rivalRosterCountB = useMemo(() => {
+    if (opportunity?.type !== 'rival') {
+      return participants.filter(
+        (p) =>
+          (p.status === 'confirmed' || p.status === 'pending') &&
+          p.pickTeam === 'B'
+      ).length
+    }
+    const cap = rivalChallengeForOpp?.acceptedCaptainId
+    const ids = new Set<string>()
+    for (const p of participants) {
+      const countsForRoster =
+        p.status === 'confirmed' ||
+        p.status === 'pending' ||
+        p.status === 'creator'
+      if (!countsForRoster) continue
+      if (p.pickTeam === 'B' || (cap && p.id === cap)) ids.add(p.id)
+    }
+    if (
+      rivalChallengeForOpp?.status === 'accepted' &&
+      cap &&
+      !participants.some((p) => p.id === cap)
+    ) {
+      ids.add(cap)
+    }
+    return ids.size
+  }, [
+    opportunity?.type,
+    participants,
+    rivalChallengeForOpp?.acceptedCaptainId,
+    rivalChallengeForOpp?.status,
+  ])
+
+  const currentUserOnlyRivalChallenger =
+    !!rivalChallengeForOpp &&
+    !!currentUser &&
+    userIsConfirmedMemberOfTeam(rivalChallengerTeamEntity, currentUser.id) &&
+    !userIsConfirmedMemberOfTeam(rivalAcceptedTeamEntity, currentUser.id)
+  const currentUserOnlyRivalAccepted =
+    !!rivalChallengeForOpp &&
+    !!currentUser &&
+    userIsConfirmedMemberOfTeam(rivalAcceptedTeamEntity, currentUser.id) &&
+    !userIsConfirmedMemberOfTeam(rivalChallengerTeamEntity, currentUser.id)
+
+  const canJoinRival = Boolean(
+    opportunity &&
+      currentUser &&
+      opportunity.type === 'rival' &&
+      rivalChallengeForOpp?.status === 'accepted' &&
+      opportunity.creatorId !== currentUser.id &&
+      !participatingOpportunityIds.includes(opportunity.id) &&
+      (opportunity.status === 'pending' || opportunity.status === 'confirmed') &&
+      (currentUserOnlyRivalChallenger || currentUserOnlyRivalAccepted) &&
+      (currentUserOnlyRivalChallenger
+        ? rivalRosterCountA < 9
+        : rivalRosterCountB < 9)
+  )
 
   const canViewParticipantLeaveReasons = Boolean(
     opportunity &&
@@ -362,6 +470,153 @@ export function MatchDetailsScreen() {
     },
     [isPlayersSearchMode, opportunity?.creatorId, participantsShownToViewer]
   )
+
+  const missingRivalCaptainIdsForRoster = useMemo(() => {
+    if (
+      opportunity?.type !== 'rival' ||
+      rivalChallengeForOpp?.status !== 'accepted'
+    ) {
+      return [] as string[]
+    }
+    const rosterIds = new Set(participantsShownInRoster.map((p) => p.id))
+    const out: string[] = []
+    const capCh = rivalChallengeForOpp.challengerCaptainId
+    const capAc = rivalChallengeForOpp.acceptedCaptainId
+    if (capCh && !rosterIds.has(capCh)) out.push(capCh)
+    if (capAc && !rosterIds.has(capAc)) out.push(capAc)
+    return out
+  }, [opportunity?.type, rivalChallengeForOpp, participantsShownInRoster])
+
+  const rivalCaptainProfilesForRosterQuery = useQuery({
+    queryKey: queryKeys.matchOpportunity.rivalCaptainProfilesForRoster(
+      opportunity?.id,
+      missingRivalCaptainIdsForRoster
+    ),
+    enabled: Boolean(
+      opportunity?.type === 'rival' &&
+        rivalChallengeForOpp?.status === 'accepted' &&
+        missingRivalCaptainIdsForRoster.length > 0 &&
+        sessionQueryEnabled(currentUser?.id) &&
+        isSupabaseConfigured()
+    ),
+    staleTime: QUERY_STALE_TIME_STATIC_MS,
+    queryFn: async (): Promise<Record<string, { name: string; photo: string }>> => {
+      const sb = getBrowserSupabase()
+      if (!sb || missingRivalCaptainIdsForRoster.length === 0) return {}
+      const { data, error } = await sb
+        .from('profiles')
+        .select('id, name, photo_url')
+        .in('id', missingRivalCaptainIdsForRoster)
+      if (error) throw new Error(error.message)
+      const m: Record<string, { name: string; photo: string }> = {}
+      for (const r of data ?? []) {
+        const id = r.id as string
+        m[id] = {
+          name: ((r.name as string | null) ?? '').trim() || 'Jugador',
+          photo:
+            ((r.photo_url as string | null) ?? '').trim() || '/sportmatch-logo.png',
+        }
+      }
+      return m
+    },
+  })
+
+  const rivalRosterByTeam = useMemo(() => {
+    const empty = {
+      teamA: [] as OpportunityParticipantRow[],
+      teamB: [] as OpportunityParticipantRow[],
+      unassigned: [] as OpportunityParticipantRow[],
+    }
+    if (opportunity?.type !== 'rival' || rivalChallengeForOpp?.status !== 'accepted') {
+      return empty
+    }
+    const capCh = rivalChallengeForOpp.challengerCaptainId
+    const capAc = rivalChallengeForOpp.acceptedCaptainId
+    const profilesMap = rivalCaptainProfilesForRosterQuery.data ?? {}
+
+    const rosterBucket = (p: OpportunityParticipantRow): 'A' | 'B' | 'U' => {
+      if (p.id === capCh) return 'A'
+      if (capAc && p.id === capAc) return 'B'
+      if (p.pickTeam === 'A') return 'A'
+      if (p.pickTeam === 'B') return 'B'
+      return 'U'
+    }
+
+    const seen = new Set<string>()
+    const teamA: OpportunityParticipantRow[] = []
+    const teamB: OpportunityParticipantRow[] = []
+    const unassigned: OpportunityParticipantRow[] = []
+
+    const pushUnique = (
+      arr: OpportunityParticipantRow[],
+      row: OpportunityParticipantRow
+    ) => {
+      if (seen.has(row.id)) return
+      seen.add(row.id)
+      arr.push(row)
+    }
+
+    for (const p of participantsShownInRoster) {
+      const b = rosterBucket(p)
+      if (b === 'A') pushUnique(teamA, p)
+      else if (b === 'B') pushUnique(teamB, p)
+      else pushUnique(unassigned, p)
+    }
+
+    const syntheticRow = (
+      capId: string | undefined,
+      teamEntity: (typeof rivalChallengerTeamEntity) | (typeof rivalAcceptedTeamEntity)
+    ): OpportunityParticipantRow | null => {
+      if (!capId || seen.has(capId)) return null
+      const mem = teamEntity?.members?.find((m) => m.id === capId)
+      const prof = profilesMap[capId]
+      const name =
+        (prof?.name ?? '').trim() ||
+        (mem?.name ?? '').trim() ||
+        'Capitán'
+      const photo =
+        (prof?.photo ?? '').trim() ||
+        (mem?.photo ?? '').trim() ||
+        '/sportmatch-logo.png'
+      seen.add(capId)
+      return {
+        id: capId,
+        name,
+        photo,
+        status: 'confirmed',
+      }
+    }
+
+    const synA = syntheticRow(capCh, rivalChallengerTeamEntity)
+    if (synA) teamA.push(synA)
+    const synB = syntheticRow(capAc, rivalAcceptedTeamEntity)
+    if (synB) teamB.push(synB)
+
+    const captainFirst = (
+      rows: OpportunityParticipantRow[],
+      capId: string | undefined
+    ) => {
+      if (!capId) return rows
+      return [...rows].sort((a, b) => {
+        const da = a.id === capId ? 0 : 1
+        const db = b.id === capId ? 0 : 1
+        return da - db
+      })
+    }
+
+    return {
+      teamA: captainFirst(teamA, capCh),
+      teamB: captainFirst(teamB, capAc),
+      unassigned,
+    }
+  }, [
+    opportunity?.type,
+    rivalChallengeForOpp,
+    participantsShownInRoster,
+    rivalCaptainProfilesForRosterQuery.data,
+    rivalChallengerTeamEntity,
+    rivalAcceptedTeamEntity,
+  ])
 
   const occupiedSlots = useMemo(
     () =>
@@ -723,13 +978,24 @@ export function MatchDetailsScreen() {
 
   const isCreator = currentUser.id === opportunity.creatorId
   const isParticipant = participatingOpportunityIds.includes(opportunity.id)
+  const canOrganizerRescheduleMatch =
+    isCreator &&
+    opportunity.status !== 'completed' &&
+    opportunity.status !== 'cancelled'
+
+  const scrollToOrganizerReschedule = useCallback(() => {
+    document
+      .getElementById('organizer-reschedule-section')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [])
   /** Jugador inscrito (no organizador) puede salir con motivo vía RPC (misma ventana que el panel inferior). */
   const teamPickMayLeaveSelf = (p: OpportunityParticipantRow) => {
-    const isTeamPickOpp =
+    const mayLeaveThisMatchType =
       opportunity.type === 'team_pick_public' ||
-      opportunity.type === 'team_pick_private'
+      opportunity.type === 'team_pick_private' ||
+      opportunity.type === 'rival'
     return (
-      isTeamPickOpp &&
+      mayLeaveThisMatchType &&
       currentUser.id === p.id &&
       !isCreator &&
       (p.status === 'confirmed' || p.status === 'pending') &&
@@ -913,6 +1179,13 @@ export function MatchDetailsScreen() {
           </DropdownMenu>
         </div>
       ) : null
+    const captainBadge =
+      opportunity.type === 'rival' &&
+      rivalChallengeForOpp?.status === 'accepted' &&
+      (p.id === rivalChallengeForOpp.challengerCaptainId ||
+        (!!rivalChallengeForOpp.acceptedCaptainId &&
+          p.id === rivalChallengeForOpp.acceptedCaptainId))
+
     return (
       <ParticipantListItem
         key={p.id}
@@ -921,6 +1194,7 @@ export function MatchDetailsScreen() {
         avatarDisplayUrl={avatarDisplayUrl}
         onPrefetchProfile={prefetchParticipantProfile}
         onOpenProfile={openParticipantProfile}
+        captainBadge={captainBadge}
         subline={subline}
         footer={actions}
       />
@@ -1058,6 +1332,49 @@ export function MatchDetailsScreen() {
             <p className="text-sm text-muted-foreground">{opportunity.description}</p>
           )}
 
+          {opportunity.type === 'rival' &&
+            rivalChallengeForOpp?.status === 'accepted' && (
+              <div className="flex flex-col items-stretch gap-3 rounded-xl border border-border/80 bg-secondary/25 px-3 py-4">
+                <div className="flex items-center justify-center gap-6">
+                  <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5 text-center">
+                    <Image
+                      src={
+                        (rivalChallengerTeamEntity?.logo ?? '').trim() ||
+                        '/sportmatch-logo.png'
+                      }
+                      alt=""
+                      width={72}
+                      height={72}
+                      className="h-[72px] w-[72px] rounded-full border-2 border-primary/35 object-cover bg-card"
+                      sizes="72px"
+                    />
+                    <span className="font-brand-heading text-xs leading-tight text-foreground line-clamp-2">
+                      {rivalChallengeForOpp.challengerTeamName}
+                    </span>
+                  </div>
+                  <span className="shrink-0 text-base font-brand-heading text-muted-foreground">
+                    vs
+                  </span>
+                  <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5 text-center">
+                    <Image
+                      src={
+                        (rivalAcceptedTeamEntity?.logo ?? '').trim() ||
+                        '/sportmatch-logo.png'
+                      }
+                      alt=""
+                      width={72}
+                      height={72}
+                      className="h-[72px] w-[72px] rounded-full border-2 border-accent/40 object-cover bg-card"
+                      sizes="72px"
+                    />
+                    <span className="font-brand-heading text-xs leading-tight text-foreground line-clamp-2">
+                      {rivalChallengeForOpp.acceptedTeamName ?? 'Equipo rival'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
           {opportunity.type === 'team_pick_private' &&
             (isCreator || isParticipant) &&
             opportunity.joinCode && (
@@ -1094,9 +1411,33 @@ export function MatchDetailsScreen() {
             </div>
             <div className="flex items-center gap-2">
               <Users className="w-4 h-4 shrink-0 text-primary" />
-              {opportunity.playersJoined ?? 0}
-              {opportunity.playersNeeded ? `/${opportunity.playersNeeded}` : ''}{' '}
-              jugadores
+              {opportunity.type === 'rival' &&
+              rivalChallengeForOpp?.status === 'accepted' ? (
+                <span className="leading-snug">
+                  {(() => {
+                    const total = rivalRosterCountA + rivalRosterCountB
+                    const label =
+                      total === 1
+                        ? '1 jugador inscrito'
+                        : `${total} jugadores inscritos`
+                    return (
+                      <>
+                        <span className="text-foreground">{label} en total</span>
+                        <span className="text-muted-foreground">
+                          {' '}
+                          (ambos equipos). Cupo máximo 18 en cancha: 9 por bando.
+                        </span>
+                      </>
+                    )
+                  })()}
+                </span>
+              ) : (
+                <>
+                  {opportunity.playersJoined ?? 0}
+                  {opportunity.playersNeeded ? `/${opportunity.playersNeeded}` : ''}{' '}
+                  jugadores
+                </>
+              )}
             </div>
             {opportunity.type === 'players' && needed > 0 && (
               <div className="text-xs text-muted-foreground pl-6 space-y-1">
@@ -1139,6 +1480,32 @@ export function MatchDetailsScreen() {
                 </div>
               )}
           </div>
+
+          {canOrganizerRescheduleMatch ? (
+            <div className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-3 space-y-2">
+              <p className="font-brand-heading text-xs text-foreground">
+                Organizador: lugar, fecha u hora
+              </p>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Puedes actualizar el nombre del centro, la dirección o comuna y la
+                fecha/hora hasta <span className="font-brand-heading">2 horas antes</span>{' '}
+                del encuentro (mismas reglas que el formulario más abajo). Si el cambio
+                afecta hora o el nombre del centro, quienes estaban confirmados vuelven
+                a pendiente para reconfirmar. Si había reserva de cancha vinculada en la
+                app, al guardar se desvincula.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full sm:w-auto gap-1.5 border-primary/45"
+                onClick={() => scrollToOrganizerReschedule()}
+              >
+                <Pencil className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                Editar centro, fecha y hora
+              </Button>
+            </div>
+          ) : null}
 
           <MatchCourtPricingBlock opportunity={opportunity} />
 
@@ -1292,19 +1659,30 @@ export function MatchDetailsScreen() {
             </div>
           ) : null}
 
-          {(opportunity.type === 'open' ||
-            opportunity.type === 'team_pick_public') &&
-            (isCreator || isParticipant) &&
+          {(isCreator || isParticipant) &&
             (opportunity.status === 'pending' ||
-              opportunity.status === 'confirmed') && (
+              opportunity.status === 'confirmed') &&
+            (opportunity.type === 'open' ||
+              opportunity.type === 'team_pick_public' ||
+              opportunity.type === 'team_pick_private' ||
+              opportunity.type === 'players' ||
+              opportunity.type === 'rival') && (
               <div className="rounded-xl border border-border bg-secondary/30 p-3 space-y-2">
                 <p className="font-brand-heading text-xs text-foreground">
-                  Invitar jugadores
+                  Invitar al equipo / WhatsApp
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {opportunity.type === 'team_pick_public'
-                    ? 'Cualquier participante puede compartir el enlace público. Los cupos y la lista se ven en la misma página que las revueltas abiertas.'
-                    : 'Cualquier participante puede invitar con el botón (compartir en apps o copiar enlace). Los cupos se ven en la página pública.'}
+                  «WhatsApp» abre el mensaje listo (fecha, lugar, enlace para entrar a la
+                  app
+                  {opportunity.type === 'open' ||
+                  opportunity.type === 'team_pick_public'
+                    ? ' y enlace a la ficha pública'
+                    : ''}
+                  {opportunity.type === 'team_pick_private'
+                    ? ' y el código privado de 4 dígitos'
+                    : ''}
+                  ). Elige un grupo o jugador en WhatsApp. «Compartir o copiar» usa el menú
+                  del teléfono o copia el texto completo.
                 </p>
                 <RevueltaInviteActions opportunity={opportunity} />
               </div>
@@ -1482,6 +1860,71 @@ export function MatchDetailsScreen() {
                     </p>
                     <div className="space-y-2">
                       {teamPickListSplit.cancelledOnly.map((p) =>
+                        renderTeamPickParticipantRow(p)
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : opportunity.type === 'rival' &&
+              rivalChallengeForOpp?.status === 'accepted' ? (
+              <div className="space-y-4">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="min-w-0 rounded-xl border border-border bg-secondary/15 p-3 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
+                      <span className="font-brand-heading text-sm text-foreground truncate">
+                        {rivalChallengeForOpp.challengerTeamName}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
+                        {rivalRosterByTeam.teamA.length}/9
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {rivalRosterByTeam.teamA.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          Nadie en este equipo aún.
+                        </p>
+                      ) : (
+                        rivalRosterByTeam.teamA.map((p) =>
+                          renderTeamPickParticipantRow(p)
+                        )
+                      )}
+                    </div>
+                  </div>
+                  <div className="min-w-0 rounded-xl border border-border bg-secondary/15 p-3 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
+                      <span className="font-brand-heading text-sm text-foreground truncate">
+                        {rivalChallengeForOpp.acceptedTeamName ?? 'Equipo rival'}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
+                        {rivalRosterByTeam.teamB.length}/9
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      {rivalRosterByTeam.teamB.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          Nadie en este equipo aún.
+                        </p>
+                      ) : (
+                        rivalRosterByTeam.teamB.map((p) =>
+                          renderTeamPickParticipantRow(p)
+                        )
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {rivalRosterByTeam.unassigned.length > 0 ? (
+                  <div className="space-y-2 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
+                    <p className="font-brand-heading text-xs text-amber-800 dark:text-amber-200">
+                      Sin equipo asignado en nómina
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Aparecen aquí inscripciones sin bando (por ejemplo antes de actualizar la
+                      app). Pueden unirse de nuevo desde «Unirme a la nómina» para quedar en su
+                      equipo.
+                    </p>
+                    <div className="space-y-2">
+                      {rivalRosterByTeam.unassigned.map((p) =>
                         renderTeamPickParticipantRow(p)
                       )}
                     </div>
@@ -1766,6 +2209,16 @@ export function MatchDetailsScreen() {
             onClick={() => setJoinTeamPickOpen(true)}
           >
             Unirme (selección de equipos)
+          </Button>
+        )}
+
+        {canJoinRival && (
+          <Button
+            type="button"
+            className="font-brand w-full bg-primary text-primary-foreground hover:bg-primary/90"
+            onClick={() => void joinMatchOpportunity(opportunity.id)}
+          >
+            Unirme a la nómina (equipo vs equipo)
           </Button>
         )}
 
@@ -2242,6 +2695,7 @@ export function MatchDetailsScreen() {
       <MatchCompletionPanel
         opportunity={opportunity}
         rivalChallenge={rivalChallengeForOpp}
+        teams={teams}
         currentUserId={currentUser.id}
         isConfirmedParticipant={isParticipant}
         myRating={myRating}
@@ -2250,6 +2704,8 @@ export function MatchDetailsScreen() {
         finalizeMatchOpportunity={finalizeMatchOpportunity}
         submitRivalCaptainVote={submitRivalCaptainVote}
         finalizeRivalOrganizerOverride={finalizeRivalOrganizerOverride}
+        respondRivalMatchProposal={respondRivalMatchProposal}
+        submitRivalTeamMatchReview={submitRivalTeamMatchReview}
         suspendMatchOpportunity={suspendMatchOpportunity}
         leaveMatchOpportunityWithReason={leaveMatchOpportunityWithReason}
         rescheduleMatchOpportunityWithReason={
@@ -2293,6 +2749,7 @@ const ParticipantListItem = memo(function ParticipantListItem({
   avatarDisplayUrl,
   onPrefetchProfile,
   onOpenProfile,
+  captainBadge,
   subline,
   footer,
 }: {
@@ -2301,13 +2758,14 @@ const ParticipantListItem = memo(function ParticipantListItem({
   avatarDisplayUrl: (photo?: string, userId?: string) => string
   onPrefetchProfile?: (userId: string) => void
   onOpenProfile: (userId: string) => void
+  captainBadge?: boolean
   subline?: string | null
   footer?: ReactNode
 }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <button
             type="button"
             onMouseEnter={() => {
@@ -2335,6 +2793,14 @@ const ParticipantListItem = memo(function ParticipantListItem({
                 : ''}
             </span>
           </button>
+          {captainBadge ? (
+            <Badge
+              variant="outline"
+              className="shrink-0 text-[10px] font-brand-heading border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-100"
+            >
+              Capitán
+            </Badge>
+          ) : null}
         </div>
         <div className="shrink-0 text-right max-w-[min(200px,45%)]">
           <Badge variant="secondary" className="capitalize text-xs">

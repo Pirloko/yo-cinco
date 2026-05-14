@@ -95,6 +95,17 @@ export const queryKeys = {
         opportunityId,
         userId,
       ] as const,
+    /** Perfiles de capitanes rival ausentes en `match_opportunity_participants` (detalle nómina). */
+    rivalCaptainProfilesForRoster: (
+      opportunityId: string | null | undefined,
+      captainUserIds: readonly string[]
+    ) =>
+      [
+        ...queryKeyRoot.matchOpportunity,
+        'rivalCaptainProfilesForRoster',
+        opportunityId,
+        [...captainUserIds].slice().sort().join('|'),
+      ] as const,
   },
   profile: {
     all: queryKeyRoot.profile,

@@ -144,6 +144,9 @@ export type MatchOpportunityRow = {
   rival_captain_vote_challenger?: RivalResult | null
   rival_captain_vote_accepted?: RivalResult | null
   rival_outcome_disputed?: boolean | null
+  rival_organizer_proposed_result?: RivalResult | null
+  rival_proposal_disputed?: boolean | null
+  rival_closure_skip_player_stats?: boolean | null
   match_stats_applied_at?: string | null
   sports_venue_id?: string | null
   venue_reservation_id?: string | null
@@ -217,6 +220,9 @@ export function mapMatchOpportunityFromDb(
     rivalCaptainVoteChallenger: row.rival_captain_vote_challenger ?? undefined,
     rivalCaptainVoteAccepted: row.rival_captain_vote_accepted ?? undefined,
     rivalOutcomeDisputed: row.rival_outcome_disputed ?? undefined,
+    rivalOrganizerProposedResult: row.rival_organizer_proposed_result ?? undefined,
+    rivalProposalDisputed: row.rival_proposal_disputed ?? undefined,
+    rivalClosureSkipPlayerStats: row.rival_closure_skip_player_stats ?? undefined,
     matchStatsAppliedAt: row.match_stats_applied_at
       ? new Date(row.match_stats_applied_at)
       : undefined,
