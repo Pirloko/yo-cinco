@@ -167,10 +167,6 @@ type Props = {
       | { kind: 'revuelta'; revueltaResult: RevueltaResult }
       | { kind: 'rival'; rivalResult: RivalResult }
   ) => Promise<boolean>
-  submitRivalCaptainVote: (
-    opportunityId: string,
-    vote: RivalResult
-  ) => Promise<void>
   finalizeRivalOrganizerOverride: (
     opportunityId: string,
     result: RivalResult
@@ -223,7 +219,6 @@ export function MatchCompletionPanel({
   loadingRating,
   onReloadMyRating,
   finalizeMatchOpportunity,
-  submitRivalCaptainVote,
   finalizeRivalOrganizerOverride,
   respondRivalMatchProposal,
   submitRivalTeamMatchReview,
@@ -256,30 +251,10 @@ export function MatchCompletionPanel({
     return d
   }, [opportunity.dateTime])
 
-  const isChallengerCaptain =
-    !!rivalChallenge &&
-    rivalChallenge.challengerCaptainId === currentUserId
-  const isAcceptedCaptain =
-    !!rivalChallenge &&
-    rivalChallenge.acceptedCaptainId === currentUserId
-
-  const needsMyCaptainVote =
-    (isChallengerCaptain && !opportunity.rivalCaptainVoteChallenger) ||
-    (isAcceptedCaptain && !opportunity.rivalCaptainVoteAccepted)
-
   const captainConfirmsProposalId =
     rivalChallenge && teams.length > 0
       ? getRivalCaptainConfirmsProposalId(opportunity, rivalChallenge, teams)
       : undefined
-
-  const showCaptainVote =
-    opportunity.type === 'rival' &&
-    rivalChallenge?.status === 'accepted' &&
-    !completed &&
-    !opportunity.rivalOutcomeDisputed &&
-    !opportunity.rivalOrganizerProposedResult &&
-    needsMyCaptainVote &&
-    !isCreator
 
   const showCaptainProposalResponse =
     opportunity.type === 'rival' &&
@@ -347,9 +322,7 @@ export function MatchCompletionPanel({
     opportunity.status !== 'cancelled'
 
   const [finalizing, setFinalizing] = useState(false)
-  const [votingCaptain, setVotingCaptain] = useState(false)
   const [overriding, setOverriding] = useState(false)
-  const [captainPick, setCaptainPick] = useState<RivalResult | null>(null)
   const [overridePick, setOverridePick] = useState<RivalResult | null>(null)
   const [finalizeDialogOpen, setFinalizeDialogOpen] = useState(false)
   const [revueltaPick, setRevueltaPick] = useState<RevueltaResult | null>(null)
@@ -662,17 +635,6 @@ export function MatchCompletionPanel({
     if (ok) setFinalizeDialogOpen(false)
   }
 
-  const handleCaptainVote = async () => {
-    if (!captainPick) return
-    setVotingCaptain(true)
-    try {
-      await submitRivalCaptainVote(opportunity.id, captainPick)
-      setCaptainPick(null)
-    } finally {
-      setVotingCaptain(false)
-    }
-  }
-
   const handleOverride = async () => {
     if (!overridePick) return
     setOverriding(true)
@@ -742,7 +704,6 @@ export function MatchCompletionPanel({
   const hasPreMatchContent =
     needsResolveAfterMidnight ||
     showOrganizerFinalizeCasual ||
-    showCaptainVote ||
     showCaptainProposalResponse ||
     showRivalDisputeModeration ||
     showOrganizerAwaitingCaptain ||
@@ -765,59 +726,6 @@ export function MatchCompletionPanel({
             Para que no aparezca como disponible, confirma si se jugó o suspéndelo
             con un motivo.
           </p>
-        </div>
-      )}
-
-      {showCaptainVote && (
-        <div className="space-y-2 rounded-xl border border-border bg-card/50 p-3">
-          <p className="font-brand-heading text-sm text-foreground">
-            Tu voto como capitán
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Ambos capitanes deben coincidir. Si no, el organizador podrá decidir
-            tras 72 h desde la hora del partido.
-          </p>
-          <div className="flex flex-col gap-2">
-            {(
-              [
-                ['creator_team', 'Ganó el equipo del organizador'],
-                ['rival_team', 'Ganó el equipo rival'],
-                ['draw', 'Empate'],
-              ] as const
-            ).map(([val, label]) => (
-              <label
-                key={val}
-                className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-sm ${
-                  captainPick === val
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border bg-secondary/50'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="captain-rival-result"
-                  className="accent-primary"
-                  checked={captainPick === val}
-                  onChange={() => setCaptainPick(val)}
-                />
-                {label}
-              </label>
-            ))}
-          </div>
-          <Button
-            className="w-full"
-            disabled={votingCaptain || !captainPick}
-            onClick={() => void handleCaptainVote()}
-          >
-            {votingCaptain ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Enviando voto…
-              </>
-            ) : (
-              'Registrar mi voto'
-            )}
-          </Button>
         </div>
       )}
 

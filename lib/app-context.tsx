@@ -1466,43 +1466,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (profile) setCurrentUser(profile)
   })
 
-  const submitRivalCaptainVote = useStableCallback(async (
-    opportunityId: string,
-    vote: RivalResult
-  ) => {
-    if (!currentUser || !isSupabaseConfigured()) return
-    const ro = isUserReadOnly(currentUser)
-    if (ro.readonly) {
-      toastReadOnly(ro.reason)
-      return
-    }
-    const supabase = getBrowserSupabase()
-    if (!supabase) return
-    const { error } = await supabase.rpc('submit_rival_captain_vote', {
-      p_opportunity_id: opportunityId,
-      p_vote: vote,
-    })
-    if (error) {
-      const msg = error.message
-      if (msg.includes('not_captain')) {
-        toast.error('Solo los capitanes pueden votar el resultado.')
-      } else if (msg.includes('proposal_pending_use_respond')) {
-        toast.error(
-          'Hay una propuesta del organizador: confirma o discrepa desde el panel del partido.'
-        )
-      } else if (msg.includes('challenge_not_accepted')) {
-        toast.error('El desafío debe estar aceptado para votar.')
-      } else {
-        toast.error(msg)
-      }
-      return
-    }
-    const matches = await fetchLatestMatchOpportunities(supabase)
-    applyPlayerMatchBundleWithMatchesList(currentUser.id, matches)
-    await refreshCurrentUserProfile()
-    toast.success('Voto registrado.')
-  })
-
   const finalizeRivalOrganizerOverride = useStableCallback(async (
     opportunityId: string,
     result: RivalResult
@@ -3107,7 +3070,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       respondToRevueltaExternalRequest,
       randomizeRevueltaTeams,
       finalizeMatchOpportunity,
-      submitRivalCaptainVote,
       respondRivalMatchProposal,
       submitRivalTeamMatchReview,
       finalizeRivalOrganizerOverride,

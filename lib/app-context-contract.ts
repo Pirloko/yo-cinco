@@ -150,10 +150,6 @@ export interface AppContextType {
       | { kind: 'revuelta'; revueltaResult: RevueltaResult }
       | { kind: 'rival'; rivalResult: RivalResult }
   ) => Promise<boolean>
-  submitRivalCaptainVote: (
-    opportunityId: string,
-    vote: RivalResult
-  ) => Promise<void>
   respondRivalMatchProposal: (
     opportunityId: string,
     confirm: boolean,

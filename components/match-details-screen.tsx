@@ -143,7 +143,6 @@ export function MatchDetailsScreen() {
     rescheduleMatchOpportunityWithReason,
     submitMatchRating,
     rivalChallenges,
-    submitRivalCaptainVote,
     finalizeRivalOrganizerOverride,
     respondRivalMatchProposal,
     submitRivalTeamMatchReview,
@@ -2707,7 +2706,6 @@ export function MatchDetailsScreen() {
         loadingRating={loadingRating}
         onReloadMyRating={reloadMyRating}
         finalizeMatchOpportunity={finalizeMatchOpportunity}
-        submitRivalCaptainVote={submitRivalCaptainVote}
         finalizeRivalOrganizerOverride={finalizeRivalOrganizerOverride}
         respondRivalMatchProposal={respondRivalMatchProposal}
         submitRivalTeamMatchReview={submitRivalTeamMatchReview}

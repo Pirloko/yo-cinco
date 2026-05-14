@@ -91,7 +91,6 @@ export function ChatScreen() {
     submitMatchRating,
     randomizeRevueltaTeams,
     rivalChallenges,
-    submitRivalCaptainVote,
     finalizeRivalOrganizerOverride,
     respondRivalMatchProposal,
     submitRivalTeamMatchReview,
@@ -710,7 +709,6 @@ export function ChatScreen() {
             })
           }}
           finalizeMatchOpportunity={finalizeMatchOpportunity}
-          submitRivalCaptainVote={submitRivalCaptainVote}
           finalizeRivalOrganizerOverride={finalizeRivalOrganizerOverride}
           respondRivalMatchProposal={respondRivalMatchProposal}
           submitRivalTeamMatchReview={submitRivalTeamMatchReview}
