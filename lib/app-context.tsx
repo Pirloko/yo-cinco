@@ -43,6 +43,10 @@ import {
   type TeamPickPrivateResolveResult,
 } from '@/lib/supabase/team-pick-queries'
 import { getBrowserSupabase, isSupabaseConfigured } from '@/lib/supabase/client'
+import {
+  stripAuthParamsFromUrl,
+  urlHasPendingAuthCallback,
+} from '@/lib/auth-oauth-callback'
 import { getPublicSiteOrigin } from '@/lib/site-url'
 import {
   DEFAULT_AVATAR,
@@ -116,7 +120,11 @@ import {
   loadPlayerTeamBundle,
   loadPlayerTeamsAndInvites,
 } from '@/lib/services/team.service'
-import { loadOtherPlayersForUser, loadProfileForUser } from '@/lib/services/user.service'
+import {
+  loadOtherPlayersForUser,
+  loadProfileForUser,
+  loadProfileForUserWithRetry,
+} from '@/lib/services/user.service'
 import { loadVenueForOwner } from '@/lib/services/venue.service'
 import {
   resetPresenceDebounceState,
@@ -2677,9 +2685,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const supabase = getBrowserSupabase()
       if (!supabase) return
       await trySelfHealDuplicateProfile(supabase)
-      const profile = await loadProfileForUser(supabase, authUser.id, email)
+      const profile = await loadProfileForUserWithRetry(supabase, authUser.id, email)
       if (!profile) return
       setCurrentUser(profile)
+      stripAuthParamsFromUrl()
       void updateLastSeen(supabase, authUser.id)
 
       if (profile.accountType === 'venue') {
@@ -2743,6 +2752,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Nunca uses callback `async` aquí: Supabase emite INITIAL_SESSION dentro de un lock;
     // await + peticiones del cliente reintentan ese lock → deadlock y spinner infinito.
+    const hydrateFromSession = (authUser: SupabaseAuthUser) => {
+      const safety = window.setTimeout(() => {
+        if (mounted) finishAuthLoading()
+      }, 20000)
+      void loadAppStateForAuthUser(authUser).finally(() => {
+        window.clearTimeout(safety)
+        if (mounted) finishAuthLoading()
+      })
+    }
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
@@ -2754,14 +2773,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       if (event === 'INITIAL_SESSION') {
-        if (session?.user && getAuthUserEmail(session.user)) {
-          const safety = window.setTimeout(() => {
-            if (mounted) finishAuthLoading()
-          }, 15000)
-          void loadAppStateForAuthUser(session.user).finally(() => {
-            window.clearTimeout(safety)
-            if (mounted) finishAuthLoading()
-          })
+        const email = session?.user ? getAuthUserEmail(session.user) : undefined
+        if (session?.user && email) {
+          hydrateFromSession(session.user)
+        } else if (urlHasPendingAuthCallback()) {
+          // Retorno de Google: PKCE aún no intercambió el `code` — no limpiar sesión ni
+          // mostrar landing; SIGNED_IN o getSession() completará el flujo.
+          window.setTimeout(() => {
+            if (!mounted || currentUserRef.current) return
+            stripAuthParamsFromUrl()
+            clearSessionState()
+            finishAuthLoading()
+          }, 25000)
         } else {
           clearSessionState()
           finishAuthLoading()
@@ -2775,10 +2798,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         event === 'USER_UPDATED'
       ) {
         if (session?.user && getAuthUserEmail(session.user)) {
-          void loadAppStateForAuthUser(session.user)
+          if (event === 'SIGNED_IN') {
+            hydrateFromSession(session.user)
+          } else {
+            void loadAppStateForAuthUser(session.user)
+          }
         }
       }
     })
+
+    // Respaldo si el intercambio del `code` ocurre después de INITIAL_SESSION.
+    if (urlHasPendingAuthCallback()) {
+      void supabase.auth.getSession().then(({ data: { session } }) => {
+        if (!mounted || !session?.user) return
+        const email = getAuthUserEmail(session.user)
+        if (!email || currentUserRef.current) return
+        hydrateFromSession(session.user)
+      })
+    }
 
     return () => {
       mounted = false

@@ -48,9 +48,15 @@ Sustituye la URL por la de tu repositorio.
 ### Dominio y Supabase
 
 - En Supabase → **Authentication** → **URL configuration**:
-  - **Site URL**: la URL de producción (no dejes solo `http://localhost:3000` o tras OAuth te devolverá a localhost).
-  - **Redirect URLs**: incluye `https://tu-dominio/**`, `https://tu-dominio`, y para desarrollo `http://localhost:3000/**` (Google OAuth exige que el `redirect_to` coincida con una entrada permitida).
-- Si el login con Google te manda a `localhost` estando en producción, suele ser **Site URL** en localhost o falta la URL de producción en **Redirect URLs**; revisa también que `NEXT_PUBLIC_SITE_URL` en Netlify sea la URL real.
+  - **Site URL**: la URL canónica exacta (ej. `https://www.sportmatch.cl`). Debe ser la misma que uses en el navegador y en `NEXT_PUBLIC_SITE_URL`.
+  - **Redirect URLs** (todas las variantes que uses; `www` y sin `www` son dominios distintos):
+    - `https://www.sportmatch.cl`
+    - `https://www.sportmatch.cl/**`
+    - `https://sportmatch.cl` y `https://sportmatch.cl/**` (si aún entran sin `www`; ideal redirigir apex → `www` en el hosting)
+    - `http://localhost:3000/**` (desarrollo)
+    - Deep links móvil si aplica (`sportmatch://auth/callback`, etc.)
+  - En Netlify/Vercel define `NEXT_PUBLIC_SITE_URL=https://www.sportmatch.cl` (sin barra final).
+- Si el login con Google funciona al **segundo** intento: suele ser retorno OAuth con `code` en la URL antes de que la app lea la sesión, o **Redirect URL** solo con `sportmatch.cl` mientras entras por `www.sportmatch.cl`.
 
 ## Scripts
 
