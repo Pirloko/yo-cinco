@@ -46,6 +46,8 @@ interface MatchCardProps {
   showHomeFeedUrgency?: boolean
   /** Revuelta privada y el usuario no es del equipo: CTA solicitar. */
   isPrivateRevueltaExternal?: boolean
+  /** Oculta el CTA de unirse (p. ej. duelo rival ajeno: solo «Ver detalle»). */
+  suppressJoinAction?: boolean
 }
 
 export function MatchCard({
@@ -59,6 +61,7 @@ export function MatchCard({
   currentUserId,
   showHomeFeedUrgency = false,
   isPrivateRevueltaExternal = false,
+  suppressJoinAction = false,
 }: MatchCardProps) {
   const { avatarDisplayUrl } = useAppAuth()
   const getTypeIcon = () => {
@@ -198,6 +201,12 @@ export function MatchCard({
             Para unirte necesitas el código de 4 dígitos (no se muestra en el listado).
           </p>
         ) : null}
+        {match.type === 'rival' && suppressJoinAction && !isOwn && !isJoined ? (
+          <p className="mt-2 text-[10px] text-muted-foreground leading-snug">
+            Duelo entre equipos: puedes ver el detalle; solo integrantes de cada equipo
+            pueden inscribirse.
+          </p>
+        ) : null}
       </div>
 
       {urgencyMsg ? (
@@ -207,14 +216,16 @@ export function MatchCard({
             <p className="text-sm font-medium text-amber-950 dark:text-amber-100">
               {urgencyMsg}
             </p>
-            <button
-              type="button"
-              onClick={handleAction}
-              disabled={actionDisabled}
-              className="text-xs font-semibold text-amber-800 underline underline-offset-2 hover:text-amber-950 dark:text-amber-300 dark:hover:text-amber-200 disabled:opacity-50"
-            >
-              Unirte ahora
-            </button>
+            {!suppressJoinAction ? (
+              <button
+                type="button"
+                onClick={handleAction}
+                disabled={actionDisabled}
+                className="text-xs font-semibold text-amber-800 underline underline-offset-2 hover:text-amber-950 dark:text-amber-300 dark:hover:text-amber-200 disabled:opacity-50"
+              >
+                Unirte ahora
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -391,28 +402,30 @@ export function MatchCard({
             >
               Ver detalle
             </Button>
-            <Button
-              onClick={handleAction}
-              disabled={actionDisabled}
-              className={`font-brand ${
-                (isJoined && !isOwn)
-                  ? 'bg-secondary text-muted-foreground hover:bg-secondary'
-                  : match.type === 'rival'
-                    ? 'bg-red-500 hover:bg-red-600 text-primary-foreground'
-                    : match.type === 'players'
-                      ? 'bg-primary hover:bg-primary/90 text-primary-foreground'
-                      : 'bg-accent hover:bg-accent/90 text-accent-foreground'
-              }`}
-            >
-              {joining ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Uniendo…
-                </>
-              ) : (
-                actionLabel
-              )}
-            </Button>
+            {!suppressJoinAction ? (
+              <Button
+                onClick={handleAction}
+                disabled={actionDisabled}
+                className={`font-brand ${
+                  isJoined && !isOwn
+                    ? 'bg-secondary text-muted-foreground hover:bg-secondary'
+                    : match.type === 'rival'
+                      ? 'bg-red-500 hover:bg-red-600 text-primary-foreground'
+                      : match.type === 'players'
+                        ? 'bg-primary hover:bg-primary/90 text-primary-foreground'
+                        : 'bg-accent hover:bg-accent/90 text-accent-foreground'
+                }`}
+              >
+                {joining ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Uniendo…
+                  </>
+                ) : (
+                  actionLabel
+                )}
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>

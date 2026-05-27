@@ -112,6 +112,8 @@ export async function applyMatchOpportunityParticipantsRealtime(
     const encounterLineupRole = parseEncounterLineupRole(
       row.encounter_lineup_role
     )
+    const lineupSlot =
+      typeof row.lineup_slot === 'string' ? row.lineup_slot : null
 
     if (cid && userId === cid) {
       const idx = findCreatorIndex()
@@ -121,6 +123,7 @@ export async function applyMatchOpportunityParticipantsRealtime(
         isGoalkeeper: isGk,
         pickTeam: pickTeam ?? next[idx].pickTeam,
         encounterLineupRole: encounterLineupRole ?? next[idx].encounterLineupRole,
+        lineupSlot: lineupSlot ?? next[idx].lineupSlot,
       }
       continue
     }
@@ -134,6 +137,7 @@ export async function applyMatchOpportunityParticipantsRealtime(
           isGoalkeeper: isGk,
           pickTeam: pickTeam ?? cur.pickTeam,
           encounterLineupRole: encounterLineupRole ?? cur.encounterLineupRole,
+          lineupSlot: lineupSlot ?? cur.lineupSlot,
         }
       } else {
         next[existingIdx] = {
@@ -142,6 +146,7 @@ export async function applyMatchOpportunityParticipantsRealtime(
           isGoalkeeper: isGk,
           pickTeam: pickTeam ?? cur.pickTeam,
           encounterLineupRole: encounterLineupRole ?? cur.encounterLineupRole,
+          lineupSlot: lineupSlot ?? cur.lineupSlot,
           cancelledReason: null,
         }
       }
@@ -162,6 +167,7 @@ export async function applyMatchOpportunityParticipantsRealtime(
         isGoalkeeper: isGk,
         pickTeam,
         encounterLineupRole,
+        lineupSlot,
         cancelledReason: null,
       })
       continue

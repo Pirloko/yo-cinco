@@ -125,6 +125,7 @@ import {
   loadProfileForUser,
   loadProfileForUserWithRetry,
 } from '@/lib/services/user.service'
+import { leaveRivalMatchOpportunityRpc } from '@/lib/supabase/rival-lineup-actions'
 import { loadVenueForOwner } from '@/lib/services/venue.service'
 import {
   resetPresenceDebounceState,
@@ -1169,6 +1170,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast.success('Reserva creada en estado pendiente de pago.')
     void updateLastSeen(supabase, currentUser.id, { force: true })
     return { ok: true as const }
+  })
+
+  const refreshPlayerMatchBundle = useStableCallback(async () => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
+    const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
+    applyPlayerMatchBundle(currentUser.id, matchBundle)
+  })
+
+  const leaveRivalMatchOpportunity = useStableCallback(async (opportunityId: string) => {
+    if (!currentUser || !isSupabaseConfigured()) return
+    const ro = isUserReadOnly(currentUser)
+    if (ro.readonly) {
+      toastReadOnly(ro.reason)
+      return
+    }
+    const supabase = getBrowserSupabase()
+    if (!supabase) return
+    const result = await leaveRivalMatchOpportunityRpc(supabase, opportunityId)
+    if (!result.ok) {
+      toast.error(result.error)
+      return
+    }
+    const matchBundle = await loadPlayerMatchBundle(supabase, currentUser.id)
+    applyPlayerMatchBundle(currentUser.id, matchBundle)
+    toast.success('Saliste del encuentro')
   })
 
   const joinMatchOpportunity = useStableCallback(async (
@@ -3099,6 +3127,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addMatchOpportunity,
       reserveVenueOnly,
       joinMatchOpportunity,
+      refreshPlayerMatchBundle,
+      leaveRivalMatchOpportunity,
       joinTeamPickMatchOpportunity,
       resolveTeamPickPrivateJoinCode,
       setTeamPickParticipantLineup,

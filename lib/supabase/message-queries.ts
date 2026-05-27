@@ -131,6 +131,8 @@ export type OpportunityParticipantRow = {
   pickTeam?: PickTeamSide
   /** Modo selección de equipos: rol solo para este encuentro. */
   encounterLineupRole?: EncounterLineupRole
+  /** Duelo rival: cupo visual en cancha (gk, def_0, bench_0, …). */
+  lineupSlot?: string | null
   /** Motivo al pasar a cancelado (p. ej. salida voluntaria con RPC). */
   cancelledReason?: string | null
 }
@@ -162,7 +164,7 @@ export async function fetchParticipantsForOpportunity(
   const { data: parts } = await supabase
     .from('match_opportunity_participants')
     .select(
-      'user_id, status, is_goalkeeper, pick_team, encounter_lineup_role, cancelled_reason'
+      'user_id, status, is_goalkeeper, pick_team, encounter_lineup_role, lineup_slot, cancelled_reason'
     )
     .eq('opportunity_id', opportunityId)
 
@@ -201,6 +203,7 @@ export async function fetchParticipantsForOpportunity(
       encounterLineupRole:
         (creatorPart?.encounter_lineup_role as EncounterLineupRole | undefined) ??
         undefined,
+      lineupSlot: (creatorPart?.lineup_slot as string | null | undefined) ?? null,
       cancelledReason:
         (creatorPart?.cancelled_reason as string | null | undefined) ?? null,
     })
@@ -220,6 +223,7 @@ export async function fetchParticipantsForOpportunity(
       pickTeam: (p.pick_team as PickTeamSide | undefined) ?? undefined,
       encounterLineupRole:
         (p.encounter_lineup_role as EncounterLineupRole | undefined) ?? undefined,
+      lineupSlot: (p.lineup_slot as string | null | undefined) ?? null,
       cancelledReason: (p.cancelled_reason as string | null | undefined) ?? null,
     })
   }

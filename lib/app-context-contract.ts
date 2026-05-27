@@ -104,6 +104,9 @@ export interface AppContextType {
     opportunityId: string,
     options?: { isGoalkeeper?: boolean }
   ) => Promise<void>
+  /** Recarga partidos, participaciones y desafíos rivales en memoria. */
+  refreshPlayerMatchBundle: () => Promise<void>
+  leaveRivalMatchOpportunity: (opportunityId: string) => Promise<void>
   joinTeamPickMatchOpportunity: (
     opportunityId: string,
     payload: {

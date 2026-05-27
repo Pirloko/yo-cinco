@@ -157,6 +157,8 @@ type Props = {
   teams: Team[]
   currentUserId: string
   isConfirmedParticipant: boolean
+  /** Duelo rival: oculta «Salir del partido» (salida en plantilla o flujo aparte). */
+  hideParticipantLeave?: boolean
   myRating: MatchOpportunityRatingRow | null
   loadingRating: boolean
   onReloadMyRating: () => void
@@ -215,6 +217,7 @@ export function MatchCompletionPanel({
   teams,
   currentUserId,
   isConfirmedParticipant,
+  hideParticipantLeave = false,
   myRating,
   loadingRating,
   onReloadMyRating,
@@ -458,6 +461,7 @@ export function MatchCompletionPanel({
   }
 
   const canLeaveAsParticipant =
+    !hideParticipantLeave &&
     !isCreator &&
     isConfirmedParticipant &&
     !completed &&

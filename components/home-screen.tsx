@@ -37,6 +37,11 @@ import {
 } from '@/lib/team-membership'
 import type { TeamPickPrivateResolveSuccess } from '@/lib/supabase/team-pick-queries'
 import { minimalMatchOpportunityForTeamPickPreview } from '@/lib/team-pick-ui'
+import {
+  findRivalChallengeForOpportunity,
+  isRivalDuelSpectator,
+  userIsMemberOfRivalDuelTeam,
+} from '@/lib/rival-match-access'
 
 type FilterType = 'all' | Exclude<MatchType, 'rival'> | 'team_pick'
 
@@ -54,6 +59,7 @@ export function HomeScreen() {
     resolveTeamPickPrivateJoinCode,
     participatingOpportunityIds,
     requestJoinPrivateRevuelta,
+    rivalChallenges,
   } = useAppMatch()
   const { getUserTeams, acceptRivalOpportunityWithTeam } = useAppTeam()
   const [joiningId, setJoiningId] = useState<string | null>(null)
@@ -132,6 +138,43 @@ export function HomeScreen() {
     }
 
     if (type === 'rival') {
+      const rivalMatch = sortedFeedMatches.find((x) => x.id === opportunityId)
+      if (!rivalMatch) return
+      const challenge = findRivalChallengeForOpportunity(
+        rivalChallenges,
+        opportunityId
+      )
+      const uid = currentUser?.id ?? ''
+      const isOwnRival = currentUser?.id === rivalMatch.creatorId
+
+      if (challenge?.status === 'accepted') {
+        if (
+          isRivalDuelSpectator(
+            rivalMatch,
+            challenge,
+            getUserTeams(),
+            uid,
+            {
+              isCreator: Boolean(isOwnRival),
+              isParticipant: participatingOpportunityIds.includes(opportunityId),
+            }
+          )
+        ) {
+          setSelectedMatchOpportunityId(opportunityId)
+          setCurrentScreen('matchDetails')
+          return
+        }
+        if (userIsMemberOfRivalDuelTeam(challenge, getUserTeams(), uid)) {
+          setJoiningId(opportunityId)
+          try {
+            await joinMatchOpportunity(opportunityId)
+          } finally {
+            setJoiningId(null)
+          }
+          return
+        }
+      }
+
       if (staffTeamsForRival.length === 0) {
         setCurrentScreen('teams')
         return
@@ -355,6 +398,16 @@ export function HomeScreen() {
                 match.type === 'open' &&
                 !!match.privateRevueltaTeamId &&
                 !userIsConfirmedMemberOfTeam(privTeam, currentUser?.id ?? '')
+              const rivalChallenge = findRivalChallengeForOpportunity(
+                rivalChallenges,
+                match.id
+              )
+              const isRivalSpectator =
+                !!currentUser &&
+                isRivalDuelSpectator(match, rivalChallenge, getUserTeams(), currentUser.id, {
+                  isCreator: currentUser.id === match.creatorId,
+                  isParticipant: participatingOpportunityIds.includes(match.id),
+                })
               return (
               <MatchCard
                 key={match.id}
@@ -369,6 +422,7 @@ export function HomeScreen() {
                 currentUserId={currentUser?.id}
                 showHomeFeedUrgency
                 isPrivateRevueltaExternal={isPrivExt}
+                suppressJoinAction={isRivalSpectator}
                 onJoin={() =>
                   handleJoin(
                     match.id,

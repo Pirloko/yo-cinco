@@ -51,7 +51,15 @@ import {
   type MatchOpportunityRatingRow,
 } from '@/lib/supabase/rating-queries'
 import { fetchMatchDetailRatingsBlock } from '@/lib/services/match-detail.service'
+import { fetchMatchOpportunitiesByIds } from '@/lib/supabase/queries'
+import { fetchRivalChallengeByOpportunityId } from '@/lib/supabase/rival-challenge-queries'
+import {
+  isRivalDuelSpectator,
+  isScheduledRivalDuel,
+  userIsMemberOfRivalDuelTeam,
+} from '@/lib/rival-match-access'
 import { MatchCompletionPanel } from '@/components/match-completion-panel'
+import { RivalMatchDetailView } from '@/components/rival-match-detail-view'
 import { JoinRevueltaDialog } from '@/components/join-revuelta-dialog'
 import { JoinPlayersSearchDialog } from '@/components/join-players-search-dialog'
 import { JoinTeamPickDialog } from '@/components/join-team-pick-dialog'
@@ -71,6 +79,7 @@ import {
   MessageCircle,
   Shield,
   TicketCheck,
+  Loader2,
 } from 'lucide-react'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import type { EncounterLineupRole, MatchType, PickTeamSide } from '@/lib/types'
@@ -148,12 +157,14 @@ export function MatchDetailsScreen() {
     submitRivalTeamMatchReview,
     requestJoinPrivateRevuelta,
     respondToRevueltaExternalRequest,
+    refreshPlayerMatchBundle,
+    leaveRivalMatchOpportunity,
   } = useAppMatch()
   const { teams } = useAppTeam()
 
   const queryClient = useQueryClient()
 
-  const opportunity = useMemo(
+  const opportunityFromList = useMemo(
     () =>
       selectedMatchOpportunityId
         ? matchOpportunities.find((m) => m.id === selectedMatchOpportunityId)
@@ -161,13 +172,54 @@ export function MatchDetailsScreen() {
     [matchOpportunities, selectedMatchOpportunityId]
   )
 
-  const rivalChallengeForOpp = useMemo(
+  const opportunityFallbackQuery = useQuery({
+    queryKey: queryKeys.matchOpportunity.detailFallback(
+      selectedMatchOpportunityId,
+      currentUser?.id
+    ),
+    enabled: Boolean(
+      selectedMatchOpportunityId &&
+        !opportunityFromList &&
+        sessionQueryEnabled(currentUser?.id)
+    ),
+    queryFn: async () => {
+      if (!selectedMatchOpportunityId) return null
+      const sb = getBrowserSupabase()
+      if (!sb) return null
+      const rows = await fetchMatchOpportunitiesByIds(sb, [selectedMatchOpportunityId])
+      return rows[0] ?? null
+    },
+  })
+
+  const opportunity = opportunityFromList ?? opportunityFallbackQuery.data ?? undefined
+
+  const rivalChallengeFromList = useMemo(
     () =>
       opportunity
         ? rivalChallenges.find((c) => c.opportunityId === opportunity.id) ?? null
         : null,
     [rivalChallenges, opportunity?.id]
   )
+
+  /** Siempre refrescar desde BD en detalle (el listado en memoria puede estar incompleto o desactualizado). */
+  const rivalChallengeDetailQuery = useQuery({
+    queryKey: queryKeys.matchOpportunity.rivalChallenge(
+      selectedMatchOpportunityId,
+      currentUser?.id
+    ),
+    enabled: Boolean(
+      selectedMatchOpportunityId && sessionQueryEnabled(currentUser?.id)
+    ),
+    queryFn: async () => {
+      if (!selectedMatchOpportunityId) return null
+      const sb = getBrowserSupabase()
+      if (!sb) return null
+      return fetchRivalChallengeByOpportunityId(sb, selectedMatchOpportunityId)
+    },
+  })
+
+  const rivalChallengeForOpp =
+    rivalChallengeDetailQuery.data ?? rivalChallengeFromList ?? null
 
   const participantsQuery = useQuery({
     queryKey: queryKeys.matchOpportunity.participants(selectedMatchOpportunityId),
@@ -964,7 +1016,28 @@ export function MatchDetailsScreen() {
     ]
   )
 
-  if (!currentUser || !opportunity) {
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <div className="text-center">
+          <p className="text-muted-foreground mb-4">Inicia sesión para ver el partido.</p>
+          <Button onClick={goBack}>Volver a partidos</Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!opportunity) {
+    if (
+      selectedMatchOpportunityId &&
+      (opportunityFallbackQuery.isLoading || opportunityFallbackQuery.isFetching)
+    ) {
+      return (
+        <div className="min-h-screen bg-background flex items-center justify-center p-6">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" aria-hidden />
+        </div>
+      )
+    }
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
         <div className="text-center">
@@ -977,6 +1050,28 @@ export function MatchDetailsScreen() {
 
   const isCreator = currentUser.id === opportunity.creatorId
   const isParticipant = participatingOpportunityIds.includes(opportunity.id)
+  const isRivalDuelSpectatorView = isRivalDuelSpectator(
+    opportunity,
+    rivalChallengeForOpp,
+    teams,
+    currentUser.id,
+    { isCreator, isParticipant }
+  )
+  const showRivalAcceptedLayout = isScheduledRivalDuel(
+    opportunity,
+    rivalChallengeForOpp
+  )
+  const isRivalJoinedTeamMemberView = Boolean(
+    showRivalAcceptedLayout &&
+      rivalChallengeForOpp &&
+      !isRivalDuelSpectatorView &&
+      isParticipant &&
+      userIsMemberOfRivalDuelTeam(rivalChallengeForOpp, teams, currentUser.id)
+  )
+  const loadingRivalChallengeForDetail =
+    Boolean(selectedMatchOpportunityId) &&
+    !rivalChallengeForOpp &&
+    (rivalChallengeDetailQuery.isLoading || rivalChallengeDetailQuery.isFetching)
   const canOrganizerRescheduleMatch =
     isCreator &&
     opportunity.status !== 'completed' &&
@@ -1266,6 +1361,13 @@ export function MatchDetailsScreen() {
     })
   }, [queryClient, opportunity, currentUser.id])
 
+  const reloadParticipants = useCallback(() => {
+    if (!opportunity) return
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.matchOpportunity.participants(opportunity.id),
+    })
+  }, [queryClient, opportunity])
+
   return (
     <div className="min-h-screen bg-background pb-20">
       <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur-sm">
@@ -1309,6 +1411,252 @@ export function MatchDetailsScreen() {
       </header>
 
       <div className="p-4 space-y-4">
+        {!loadingRivalChallengeForDetail &&
+        !showRivalAcceptedLayout &&
+        opportunity.type === 'rival' &&
+        rivalChallengeForOpp?.status === 'pending' ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-sm space-y-1">
+            <p className="font-brand-heading text-foreground">
+              Desafío pendiente de aceptación
+            </p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              La plantilla en cancha (formación 1-2-2-1) se habilita cuando el capitán del
+              equipo rival confirma el desafío. Mientras tanto puedes ver quién se suma en
+              la lista de abajo.
+            </p>
+          </div>
+        ) : null}
+
+        {loadingRivalChallengeForDetail ? (
+          <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-card py-16">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden />
+            <p className="text-sm text-muted-foreground">Cargando duelo rival…</p>
+          </div>
+        ) : showRivalAcceptedLayout && rivalChallengeForOpp ? (
+          <>
+            <RivalMatchDetailView
+              opportunity={opportunity}
+              rivalChallenge={rivalChallengeForOpp}
+              teams={teams}
+              currentUser={currentUser}
+              participants={participants}
+              isParticipant={isParticipant}
+              participatingOpportunityIds={participatingOpportunityIds}
+              avatarDisplayUrl={avatarDisplayUrl}
+              onParticipantsChanged={reloadParticipants}
+              refreshPlayerMatchBundle={refreshPlayerMatchBundle}
+              leaveRivalMatchOpportunity={leaveRivalMatchOpportunity}
+              showParticipantLeave={!isRivalJoinedTeamMemberView}
+            />
+            {!isRivalJoinedTeamMemberView && !isRivalDuelSpectatorView ? (
+            <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
+              {canOrganizerRescheduleMatch ? (
+                <div className="rounded-xl border border-primary/30 bg-primary/5 px-3 py-3 space-y-2">
+                  <p className="font-brand-heading text-xs text-foreground">
+                    Organizador: lugar, fecha u hora
+                  </p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Puedes actualizar el nombre del centro, la dirección o comuna y la
+                    fecha/hora hasta{' '}
+                    <span className="font-brand-heading">2 horas antes</span> del encuentro
+                    (mismas reglas que el formulario más abajo). Si el cambio afecta hora o
+                    el nombre del centro, quienes estaban confirmados vuelven a pendiente
+                    para reconfirmar. Si había reserva de cancha vinculada en la app, al
+                    guardar se desvincula.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full sm:w-auto gap-1.5 border-primary/45"
+                    onClick={() => scrollToOrganizerReschedule()}
+                  >
+                    <Pencil className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                    Editar centro, fecha y hora
+                  </Button>
+                </div>
+              ) : null}
+
+              <MatchCourtPricingBlock opportunity={opportunity} />
+
+              {reservationState ? (
+                <div
+                  className={cn(
+                    'rounded-xl border p-3 space-y-3',
+                    reservationState.status === 'confirmed' &&
+                      'border-primary/50 bg-primary/10 shadow-sm',
+                    reservationState.status === 'pending' &&
+                      'border-border bg-secondary/30',
+                    reservationState.status === 'cancelled' &&
+                      'border-destructive/35 bg-destructive/[0.07]'
+                  )}
+                >
+                  {reservationState.status === 'confirmed' ? (
+                    <>
+                      <div className="flex gap-3 items-start">
+                        <div
+                          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/20 text-primary ring-1 ring-inset ring-primary/25"
+                          aria-hidden
+                        >
+                          <TicketCheck className="h-6 w-6" strokeWidth={2} />
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <p className="font-brand-heading text-sm leading-tight text-foreground">
+                            Cancha confirmada
+                          </p>
+                          <p className="text-xs text-muted-foreground leading-snug">
+                            La reserva está confirmada en la app: la cancha queda lista para
+                            jugarse en la fecha y hora del partido (revisa el costo arriba si
+                            aplica).
+                          </p>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground border-t border-primary/15 pt-2.5">
+                        <span className="font-brand-heading text-foreground/80">
+                          Fuente de confirmación:{' '}
+                        </span>
+                        <span className="font-brand-heading text-foreground">
+                          {reservationState.confirmationSource === 'booker_self'
+                            ? 'Organizador (autoconfirmada)'
+                            : reservationState.confirmationSource === 'venue_owner'
+                              ? 'Centro deportivo'
+                              : reservationState.confirmationSource === 'admin'
+                                ? 'Administrador'
+                                : 'No registrada'}
+                        </span>
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-brand-heading text-xs text-foreground">
+                        Estado de reserva de cancha:{' '}
+                        {reservationState.status === 'pending'
+                          ? 'Pendiente'
+                          : 'Cancelada'}
+                      </p>
+                      {canSelfConfirmReservation ? (
+                        <>
+                          <p className="text-xs text-muted-foreground">
+                            Paso a paso: 1) contacta al centro, 2) valida horario y pago, 3)
+                            al cerrar con el centro, marca esta reserva como confirmada.
+                            Queda registrada como autoconfirmada por el organizador.
+                          </p>
+                          {contactWaHref ? (
+                            <Button
+                              asChild
+                              variant="outline"
+                              size="sm"
+                              className="border-green-500/40 text-green-400 hover:bg-green-500/10"
+                            >
+                              <a href={contactWaHref} target="_blank" rel="noreferrer">
+                                <MessageCircle className="w-4 h-4 mr-1.5" />
+                                Contactar por WhatsApp al centro
+                              </a>
+                            </Button>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              Este centro aún no tiene WhatsApp/teléfono cargado.
+                            </p>
+                          )}
+                          <Button
+                            size="sm"
+                            onClick={() => void handleSelfConfirmReservation()}
+                            disabled={selfConfirmReservationMutation.isPending}
+                            className="font-brand bg-primary text-primary-foreground hover:bg-primary/90"
+                          >
+                            {selfConfirmReservationMutation.isPending
+                              ? 'Confirmando...'
+                              : 'Ya coordiné con el centro, confirmar reserva'}
+                          </Button>
+                        </>
+                      ) : reservationState.status === 'pending' ? (
+                        <p className="text-xs text-muted-foreground">
+                          Cuando el organizador confirme la reserva en la app, aquí verás el
+                          aviso de cancha lista con el ícono de ticket.
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Esta reserva figura como cancelada. Coordina con el organizador o el
+                          centro si el partido sigue en pie.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              ) : (opportunity.status === 'pending' ||
+                  opportunity.status === 'confirmed') &&
+                (isCreator || isParticipant) ? (
+                <div className="rounded-xl border border-dashed border-border bg-muted/30 p-3 space-y-2">
+                  <p className="font-brand-heading text-xs text-foreground">
+                    Reserva de cancha en la app
+                  </p>
+                  {isCreator ? (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Este partido no tiene una reserva de cancha vinculada. El botón «Ya
+                        coordiné con el centro, confirmar reserva» solo aparece cuando hay una
+                        reserva activa asociada (por ejemplo tras reservar desde Crear). Puedes
+                        seguir coordinando con el centro por WhatsApp.
+                      </p>
+                      {contactWaHref ? (
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          className="border-green-500/40 text-green-400 hover:bg-green-500/10"
+                        >
+                          <a href={contactWaHref} target="_blank" rel="noreferrer">
+                            <MessageCircle className="w-4 h-4 mr-1.5" />
+                            Contactar al centro por WhatsApp
+                          </a>
+                        </Button>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Este centro no figura con teléfono en la app. Usa «Ver ficha del
+                          centro» o el contacto que publique el club.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Este partido aún no tiene una reserva de cancha vinculada en la app, así
+                      que aquí no se muestra si la cancha está confirmada. Cuando el organizador
+                      enlace una reserva desde Crear, verás el estado en este mismo lugar.
+                      Mientras tanto, pregunta en el chat del grupo o al organizador.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+
+              {(isCreator || isParticipant) &&
+                !isRivalDuelSpectatorView &&
+                (opportunity.status === 'pending' ||
+                  opportunity.status === 'confirmed') && (
+                  <div className="rounded-xl border border-border bg-secondary/30 p-3 space-y-2">
+                    <p className="font-brand-heading text-xs text-foreground">
+                      Invitar al equipo
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      «Compartir o copiar» comparte o copia un mensaje con fecha, lugar y
+                      enlace directo para abrir SPORTMATCH.
+                    </p>
+                    <RevueltaInviteActions opportunity={opportunity} />
+                  </div>
+                )}
+
+              {opportunity.status === 'cancelled' && opportunity.suspendedReason && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+                  <p className="font-brand-heading mb-1 text-xs uppercase tracking-wide text-red-300">
+                    Partido suspendido
+                  </p>
+                  <p className="text-sm text-red-100">{opportunity.suspendedReason}</p>
+                </div>
+              )}
+            </div>
+            ) : null}
+          </>
+        ) : (
+          <>
         <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -2093,6 +2441,8 @@ export function MatchDetailsScreen() {
             </div>
           ) : null}
         </div>
+          </>
+        )}
 
         {isOrganizerOfPrivateRevuelta &&
           (opportunity.status === 'pending' ||
@@ -2216,7 +2566,7 @@ export function MatchDetailsScreen() {
           </Button>
         )}
 
-        {canJoinRival && (
+        {canJoinRival && !showRivalAcceptedLayout && (
           <Button
             type="button"
             className="font-brand w-full bg-primary text-primary-foreground hover:bg-primary/90"
@@ -2226,34 +2576,47 @@ export function MatchDetailsScreen() {
           </Button>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {isRivalJoinedTeamMemberView ? (
           <Button
             onClick={openChat}
             className="font-brand w-full"
             disabled={!canOpenMatchChat}
-            title={
-              canOpenMatchChat
-                ? undefined
-                : 'Solo el organizador y los jugadores inscritos en este partido pueden usar el chat.'
-            }
           >
             <MessageCircle className="w-4 h-4 mr-2" />
             Abrir chat
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => setCurrentScreen('matches')}
-            className="w-full"
-          >
-            Ver en Partidos
-          </Button>
-        </div>
-        {!canOpenMatchChat && (
-          <p className="text-xs text-center text-muted-foreground">
-            El chat solo está disponible para el organizador y los jugadores
-            inscritos en este partido.
-          </p>
-        )}
+        ) : !isRivalDuelSpectatorView ? (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <Button
+                onClick={openChat}
+                className="font-brand w-full"
+                disabled={!canOpenMatchChat}
+                title={
+                  canOpenMatchChat
+                    ? undefined
+                    : 'Solo el organizador y los jugadores inscritos en este partido pueden usar el chat.'
+                }
+              >
+                <MessageCircle className="w-4 h-4 mr-2" />
+                Abrir chat
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setCurrentScreen('matches')}
+                className="w-full"
+              >
+                Ver en Partidos
+              </Button>
+            </div>
+            {!canOpenMatchChat && (
+              <p className="text-xs text-center text-muted-foreground">
+                El chat solo está disponible para el organizador y los jugadores
+                inscritos en este partido.
+              </p>
+            )}
+          </>
+        ) : null}
 
         {(opportunity.status === 'completed' ||
           (ratingSummary?.count ?? 0) > 0) && (
@@ -2702,6 +3065,7 @@ export function MatchDetailsScreen() {
         teams={teams}
         currentUserId={currentUser.id}
         isConfirmedParticipant={isParticipant}
+        hideParticipantLeave={isRivalJoinedTeamMemberView}
         myRating={myRating}
         loadingRating={loadingRating}
         onReloadMyRating={reloadMyRating}

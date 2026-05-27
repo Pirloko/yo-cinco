@@ -49,6 +49,8 @@ export type MatchContextValue = Pick<
   | 'addMatchOpportunity'
   | 'reserveVenueOnly'
   | 'joinMatchOpportunity'
+  | 'refreshPlayerMatchBundle'
+  | 'leaveRivalMatchOpportunity'
   | 'joinTeamPickMatchOpportunity'
   | 'resolveTeamPickPrivateJoinCode'
   | 'setTeamPickParticipantLineup'

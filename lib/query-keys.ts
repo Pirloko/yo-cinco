@@ -95,6 +95,36 @@ export const queryKeys = {
         opportunityId,
         userId,
       ] as const,
+    detailFallback: (
+      opportunityId: string | null | undefined,
+      userId: string | null | undefined
+    ) =>
+      [
+        ...queryKeyRoot.matchOpportunity,
+        'detailFallback',
+        opportunityId,
+        userId,
+      ] as const,
+    rivalChallenge: (
+      opportunityId: string | null | undefined,
+      userId: string | null | undefined
+    ) =>
+      [
+        ...queryKeyRoot.matchOpportunity,
+        'rivalChallenge',
+        opportunityId,
+        userId,
+      ] as const,
+    rivalEncounterDisplay: (
+      opportunityId: string | null | undefined,
+      userId: string | null | undefined
+    ) =>
+      [
+        ...queryKeyRoot.matchOpportunity,
+        'rivalEncounterDisplay',
+        opportunityId,
+        userId,
+      ] as const,
     /** Perfiles de capitanes rival ausentes en `match_opportunity_participants` (detalle nómina). */
     rivalCaptainProfilesForRoster: (
       opportunityId: string | null | undefined,

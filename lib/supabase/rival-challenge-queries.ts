@@ -34,6 +34,23 @@ export async function fetchRivalChallengesForUser(
 }
 
 /** Refresco parcial (Realtime): solo filas indicadas. */
+export async function fetchRivalChallengeByOpportunityId(
+  supabase: SupabaseClient,
+  opportunityId: string
+): Promise<RivalChallenge | null> {
+  const { data: row, error } = await supabase
+    .from('rival_challenges')
+    .select(
+      'id, opportunity_id, challenger_team_id, challenger_captain_id, challenged_team_id, challenged_captain_id, accepted_team_id, accepted_captain_id, mode, status, created_at, responded_at'
+    )
+    .eq('opportunity_id', opportunityId)
+    .maybeSingle()
+
+  if (error || !row) return null
+  const hydrated = await hydrateRivalChallenges(supabase, [row as RivalChallengeRow])
+  return hydrated[0] ?? null
+}
+
 export async function fetchRivalChallengesByIds(
   supabase: SupabaseClient,
   ids: string[]
