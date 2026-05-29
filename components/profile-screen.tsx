@@ -747,24 +747,32 @@ export function ProfileScreen() {
               errorMessage={pushNotifications.errorMessage}
               subscribeAndSync={pushNotifications.subscribeAndSync}
             />
-            <div className="flex gap-3 rounded-xl border border-border/60 bg-secondary/30 p-4">
+            <a
+              href="/privacidad"
+              className="flex gap-3 rounded-xl border border-border/60 bg-secondary/30 p-4 hover:bg-secondary/50 transition-colors"
+            >
               <Shield className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium text-foreground text-sm">Privacidad</p>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-foreground text-sm">Política de privacidad</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Tus datos se usan solo para conectar partidos dentro de la app.
+                  Cómo tratamos tus datos en la app web y móvil. Documento público.
                 </p>
               </div>
-            </div>
-            <div className="flex gap-3 rounded-xl border border-border/60 bg-secondary/30 p-4">
+              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+            </a>
+            <a
+              href="/terminos"
+              className="flex gap-3 rounded-xl border border-border/60 bg-secondary/30 p-4 hover:bg-secondary/50 transition-colors"
+            >
               <Info className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium text-foreground text-sm">Acerca de</p>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-foreground text-sm">Términos de uso</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  SPORTMATCH — encuentra rivales, jugadores y revueltas en tu ciudad.
+                  Condiciones del servicio SportMatch. Documento público.
                 </p>
               </div>
-            </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+            </a>
           </div>
           <Button
             type="button"

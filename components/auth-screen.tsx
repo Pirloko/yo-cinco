@@ -14,6 +14,41 @@ import { BrandMark } from '@/components/brand-mark'
 import { JOIN_REGISTER_STORAGE_KEY } from '@/lib/team-invite-url'
 import { tryNavigateCreateAfterPlayerReady } from '@/lib/create-prefill'
 
+const legalLinkClass =
+  'text-primary underline underline-offset-2 hover:text-primary/90'
+
+function AuthLegalFooter({ isRegister }: { isRegister: boolean }) {
+  return (
+    <p className="text-center text-xs leading-relaxed text-muted-foreground px-1">
+      {isRegister ? (
+        <>
+          Al crear cuenta, aceptas los{' '}
+          <a href="/terminos" className={legalLinkClass}>
+            Términos de uso
+          </a>{' '}
+          y la{' '}
+          <a href="/privacidad" className={legalLinkClass}>
+            Política de privacidad
+          </a>
+          .
+        </>
+      ) : (
+        <>
+          <a href="/privacidad" className={legalLinkClass}>
+            Política de privacidad
+          </a>
+          <span className="mx-1.5 text-border" aria-hidden>
+            ·
+          </span>
+          <a href="/terminos" className={legalLinkClass}>
+            Términos de uso
+          </a>
+        </>
+      )}
+    </p>
+  )
+}
+
 function GoogleGlyph({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" aria-hidden>
@@ -243,6 +278,8 @@ export function AuthScreen() {
                 : '¿Ya tienes cuenta? Inicia sesión'}
             </button>
           </div>
+
+          <AuthLegalFooter isRegister={!isLogin} />
         </div>
       </main>
     </div>
