@@ -20,6 +20,8 @@ type Props = {
   ) => Promise<void>
   /** Vista compacta para el panel del chat */
   compact?: boolean
+  /** En detalle: la cancha va aparte; aquí solo controles de sorteo / mensajes. */
+  pitchShownElsewhere?: boolean
 }
 
 export function RevueltaTeamsPanel({
@@ -28,6 +30,7 @@ export function RevueltaTeamsPanel({
   isOrganizer,
   randomizeRevueltaTeams,
   compact = false,
+  pitchShownElsewhere = false,
 }: Props) {
   const { avatarDisplayUrl } = useAppAuth()
   const [colorA, setColorA] = useState<string>(JERSEY_COLOR_PRESETS[0].hex)
@@ -143,7 +146,7 @@ export function RevueltaTeamsPanel({
         Equipos sorteados
       </h3>
 
-      {lineup ? (
+      {lineup && !pitchShownElsewhere ? (
         <div
           className={
             compact ? 'grid grid-cols-1 gap-2' : 'grid grid-cols-1 sm:grid-cols-2 gap-3'
@@ -152,6 +155,10 @@ export function RevueltaTeamsPanel({
           {renderTeam('Equipo A', lineup.teamA.userIds, lineup.teamA.colorHex)}
           {renderTeam('Equipo B', lineup.teamB.userIds, lineup.teamB.colorHex)}
         </div>
+      ) : lineup && pitchShownElsewhere ? (
+        <p className="text-xs text-muted-foreground">
+          Los equipos y colores de camiseta se muestran en la cancha de arriba.
+        </p>
       ) : (
         <p className="text-xs text-muted-foreground">
           {full && hasTwoGoalkeepers

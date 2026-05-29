@@ -85,6 +85,11 @@ function benchCells(): RivalLineupSlotCell[] {
   }))
 }
 
+/** Posiciones 1-2-2-1 en cancha vertical (reutilizable en revuelta sorteada). */
+export function rivalFieldSlotCells(side: PickTeamSide): RivalLineupSlotCell[] {
+  return fieldCells(side)
+}
+
 function fieldCells(side: PickTeamSide): RivalLineupSlotCell[] {
   const positions = side === 'A' ? FIELD_POSITIONS_A : FIELD_POSITIONS_B
   return positions.map(({ slotId, x, y }) => ({

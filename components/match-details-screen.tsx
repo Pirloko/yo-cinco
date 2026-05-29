@@ -66,6 +66,7 @@ import { JoinTeamPickDialog } from '@/components/join-team-pick-dialog'
 import { TeamPickLineupEditDialog } from '@/components/team-pick-lineup-edit-dialog'
 import { RevueltaInviteActions } from '@/components/revuelta-invite-actions'
 import { RevueltaTeamsPanel } from '@/components/revuelta-teams-panel'
+import { RevueltaLineupPitch } from '@/components/revuelta-lineup-pitch'
 import {
   ArrowLeft,
   Calendar,
@@ -2513,12 +2514,22 @@ export function MatchDetailsScreen() {
             </div>
           )}
 
+        {opportunity.type === 'open' && opportunity.revueltaLineup ? (
+          <RevueltaLineupPitch
+            lineup={opportunity.revueltaLineup}
+            participants={participants}
+            currentUserId={currentUser.id}
+            avatarDisplayUrl={avatarDisplayUrl}
+          />
+        ) : null}
+
         {opportunity.type === 'open' && (
           <RevueltaTeamsPanel
             opportunity={opportunity}
             participants={participants}
             isOrganizer={isCreator}
             randomizeRevueltaTeams={randomizeRevueltaTeams}
+            pitchShownElsewhere={!!opportunity.revueltaLineup}
           />
         )}
 
