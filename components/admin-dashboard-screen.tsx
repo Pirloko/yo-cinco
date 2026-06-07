@@ -271,6 +271,7 @@ export function AdminDashboardScreen() {
     mapsUrl: '',
   })
   const [adminTab, setAdminTab] = useState('resumen')
+  const [createMatchDialogOpen, setCreateMatchDialogOpen] = useState(false)
   const [adminNewPassword, setAdminNewPassword] = useState('')
   const [adminConfirmPassword, setAdminConfirmPassword] = useState('')
   const [adminPwSaving, setAdminPwSaving] = useState(false)
@@ -1145,7 +1146,10 @@ export function AdminDashboardScreen() {
               type="button"
               variant="default"
               size="sm"
-              onClick={() => setAdminTab('partidos')}
+              onClick={() => {
+                setAdminTab('partidos')
+                setCreateMatchDialogOpen(true)
+              }}
               className="font-brand shrink-0"
             >
               <CalendarDays className="mr-1.5 h-4 w-4" />
@@ -1425,7 +1429,10 @@ export function AdminDashboardScreen() {
           </TabsContent>
 
           <TabsContent value="partidos" className="mt-0">
-            <AdminMatchCenterPanel />
+            <AdminMatchCenterPanel
+              createDialogOpen={createMatchDialogOpen}
+              onCreateDialogOpenChange={setCreateMatchDialogOpen}
+            />
           </TabsContent>
 
           <TabsContent value="reservas" className="mt-0">

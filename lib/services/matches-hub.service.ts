@@ -83,9 +83,11 @@ function parseHubRpcPayload(
     if (!oid) continue
     ratingRows.push({
       opportunity_id: oid,
-      organizer_rating: (r.organizer_rating as number | null) ?? null,
+      venue_rating: (r.venue_rating as number | null) ?? null,
       match_rating: Number(r.match_rating),
       level_rating: Number(r.level_rating),
+      mvp_user_id: (r.mvp_user_id as string | null) ?? null,
+      organizer_rating: (r.organizer_rating as number | null) ?? null,
     })
   }
   const ratingByOpp = mapRatingPartialRowsToSummariesMap(finishedIds, ratingRows)

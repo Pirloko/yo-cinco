@@ -1,12 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { tallyMvpVotes, type MvpVoteTally } from '@/lib/match-review-eligibility'
 
 export type MatchOpportunityRatingRow = {
   id: string
   opportunity_id: string
   rater_id: string
-  organizer_rating: number | null
+  /** Legacy; reseñas nuevas usan venue_rating. */
+  organizer_rating?: number | null
+  venue_rating: number | null
   match_rating: number
   level_rating: number
+  mvp_user_id: string | null
   comment: string | null
   created_at: string
 }
@@ -14,11 +18,18 @@ export type MatchOpportunityRatingRow = {
 export type RatingSummary = {
   opportunityId: string
   count: number
-  avgOrganizer: number | null
+  avgVenue: number | null
   avgMatch: number | null
   avgLevel: number | null
   avgOverall: number | null
+  mvpTally: MvpVoteTally[]
 }
+
+const RATING_SELECT =
+  'id, opportunity_id, rater_id, venue_rating, match_rating, level_rating, mvp_user_id, comment, created_at'
+
+const RATING_PARTIAL_SELECT =
+  'opportunity_id, venue_rating, match_rating, level_rating, mvp_user_id'
 
 export async function fetchMyRatingForOpportunity(
   supabase: SupabaseClient,
@@ -27,9 +38,7 @@ export async function fetchMyRatingForOpportunity(
 ): Promise<MatchOpportunityRatingRow | null> {
   const { data, error } = await supabase
     .from('match_opportunity_ratings')
-    .select(
-      'id, opportunity_id, rater_id, organizer_rating, match_rating, level_rating, comment, created_at'
-    )
+    .select(RATING_SELECT)
     .eq('opportunity_id', opportunityId)
     .eq('rater_id', userId)
     .maybeSingle()
@@ -54,6 +63,18 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10
 }
 
+function ratingDimensions(row: MatchOpportunityRatingRow): number[] {
+  const venue = row.venue_rating
+  if (venue != null) {
+    return [venue, row.match_rating, row.level_rating]
+  }
+  const legacyOrg = row.organizer_rating
+  if (legacyOrg != null) {
+    return [legacyOrg, row.match_rating, row.level_rating]
+  }
+  return [row.match_rating, row.level_rating]
+}
+
 function buildSummary(
   opportunityId: string,
   rows: MatchOpportunityRatingRow[]
@@ -63,23 +84,20 @@ function buildSummary(
     return {
       opportunityId,
       count: 0,
-      avgOrganizer: null,
+      avgVenue: null,
       avgMatch: null,
       avgLevel: null,
       avgOverall: null,
+      mvpTally: [],
     }
   }
 
-  const organizerVals = rows
-    .map((r) => r.organizer_rating)
+  const venueVals = rows
+    .map((r) => r.venue_rating ?? r.organizer_rating)
     .filter((v): v is number => typeof v === 'number')
   const matchVals = rows.map((r) => r.match_rating)
   const levelVals = rows.map((r) => r.level_rating)
-  const overallVals = rows.flatMap((r) =>
-    r.organizer_rating == null
-      ? [r.match_rating, r.level_rating]
-      : [r.organizer_rating, r.match_rating, r.level_rating]
-  )
+  const overallVals = rows.flatMap((r) => ratingDimensions(r))
 
   const avg = (vals: number[]) =>
     vals.length ? round1(vals.reduce((a, b) => a + b, 0) / vals.length) : null
@@ -87,10 +105,11 @@ function buildSummary(
   return {
     opportunityId,
     count,
-    avgOrganizer: avg(organizerVals),
+    avgVenue: avg(venueVals),
     avgMatch: avg(matchVals),
     avgLevel: avg(levelVals),
     avgOverall: avg(overallVals),
+    mvpTally: tallyMvpVotes(rows.map((r) => r.mvp_user_id)),
   }
 }
 
@@ -100,7 +119,7 @@ export async function fetchRatingSummaryForOpportunity(
 ): Promise<RatingSummary> {
   const { data, error } = await supabase
     .from('match_opportunity_ratings')
-    .select('opportunity_id, organizer_rating, match_rating, level_rating')
+    .select(RATING_PARTIAL_SELECT)
     .eq('opportunity_id', opportunityId)
 
   const rows =
@@ -109,18 +128,27 @@ export async function fetchRatingSummaryForOpportunity(
       : (data as Array<
           Pick<
             MatchOpportunityRatingRow,
-            'opportunity_id' | 'organizer_rating' | 'match_rating' | 'level_rating'
+            | 'opportunity_id'
+            | 'venue_rating'
+            | 'match_rating'
+            | 'level_rating'
+            | 'mvp_user_id'
           >
         >)
-  // buildSummary solo usa organizer/match/level ratings.
   return buildSummary(opportunityId, rows as unknown as MatchOpportunityRatingRow[])
 }
 
 /** Filas parciales para agregar resúmenes (RPC bundle / tests). */
 export type RatingPartialRow = Pick<
   MatchOpportunityRatingRow,
-  'opportunity_id' | 'organizer_rating' | 'match_rating' | 'level_rating'
->
+  | 'opportunity_id'
+  | 'venue_rating'
+  | 'match_rating'
+  | 'level_rating'
+  | 'mvp_user_id'
+> & {
+  organizer_rating?: number | null
+}
 
 export function mapRatingPartialRowsToSummariesMap(
   opportunityIds: string[],
@@ -148,7 +176,7 @@ export async function fetchRatingSummariesForOpportunities(
 
   const { data, error } = await supabase
     .from('match_opportunity_ratings')
-    .select('opportunity_id, organizer_rating, match_rating, level_rating')
+    .select(RATING_PARTIAL_SELECT)
     .in('opportunity_id', opportunityIds)
 
   const rows =
@@ -157,7 +185,11 @@ export async function fetchRatingSummariesForOpportunities(
       : (data as Array<
           Pick<
             MatchOpportunityRatingRow,
-            'opportunity_id' | 'organizer_rating' | 'match_rating' | 'level_rating'
+            | 'opportunity_id'
+            | 'venue_rating'
+            | 'match_rating'
+            | 'level_rating'
+            | 'mvp_user_id'
           >
         >)
   return mapRatingPartialRowsToSummariesMap(opportunityIds, rows)

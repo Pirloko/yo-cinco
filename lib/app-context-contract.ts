@@ -189,9 +189,10 @@ export interface AppContextType {
   submitMatchRating: (
     opportunityId: string,
     payload: {
-      organizerRating: number | null
+      venueRating: number
       matchRating: number
       levelRating: number
+      mvpUserId: string
       comment?: string
     }
   ) => Promise<void>

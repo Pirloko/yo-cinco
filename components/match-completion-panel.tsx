@@ -29,6 +29,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { MatchOpportunityRatingRow } from '@/lib/supabase/rating-queries'
+import type { OpportunityParticipantRow } from '@/lib/supabase/message-queries'
+import {
+  matchReviewEligibleParticipants,
+  userCanSubmitMatchReview,
+} from '@/lib/match-review-eligibility'
 import { Trophy, ClipboardCheck, Star, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -83,30 +88,6 @@ function getRivalCaptainConfirmsProposalId(
   return rivalChallenge.acceptedCaptainId
 }
 
-function rivalOpponentTeamForUser(
-  rivalChallenge: RivalChallenge,
-  teams: Team[],
-  userId: string
-): { id: string; name: string } | null {
-  const chTeam = teams.find((t) => t.id === rivalChallenge.challengerTeamId)
-  const accTeam = teams.find((t) => t.id === rivalChallenge.acceptedTeamId)
-  const inCh = userIsConfirmedMemberOfTeam(chTeam, userId)
-  const inAcc = userIsConfirmedMemberOfTeam(accTeam, userId)
-  if (inCh && !inAcc && rivalChallenge.acceptedTeamId) {
-    return {
-      id: rivalChallenge.acceptedTeamId,
-      name: rivalChallenge.acceptedTeamName ?? 'Equipo rival',
-    }
-  }
-  if (inAcc && !inCh) {
-    return {
-      id: rivalChallenge.challengerTeamId,
-      name: rivalChallenge.challengerTeamName ?? 'Equipo retador',
-    }
-  }
-  return null
-}
-
 function StarRow({
   label,
   value,
@@ -159,6 +140,8 @@ type Props = {
   isConfirmedParticipant: boolean
   /** Duelo rival: oculta «Salir del partido» (salida en plantilla o flujo aparte). */
   hideParticipantLeave?: boolean
+  /** Lista de participantes (para MVP y elegibilidad de reseña). */
+  participants?: OpportunityParticipantRow[]
   myRating: MatchOpportunityRatingRow | null
   loadingRating: boolean
   onReloadMyRating: () => void
@@ -177,12 +160,6 @@ type Props = {
     opportunityId: string,
     confirm: boolean,
     disputeDetails?: string
-  ) => Promise<void>
-  submitRivalTeamMatchReview: (
-    opportunityId: string,
-    targetTeamId: string,
-    stars: number,
-    comment?: string
   ) => Promise<void>
   suspendMatchOpportunity: (
     opportunityId: string,
@@ -203,9 +180,10 @@ type Props = {
   submitMatchRating: (
     opportunityId: string,
     payload: {
-      organizerRating: number | null
+      venueRating: number
       matchRating: number
       levelRating: number
+      mvpUserId: string
       comment?: string
     }
   ) => Promise<void>
@@ -218,13 +196,13 @@ export function MatchCompletionPanel({
   currentUserId,
   isConfirmedParticipant,
   hideParticipantLeave = false,
+  participants = [],
   myRating,
   loadingRating,
   onReloadMyRating,
   finalizeMatchOpportunity,
   finalizeRivalOrganizerOverride,
   respondRivalMatchProposal,
-  submitRivalTeamMatchReview,
   suspendMatchOpportunity,
   leaveMatchOpportunityWithReason,
   rescheduleMatchOpportunityWithReason,
@@ -241,10 +219,25 @@ export function MatchCompletionPanel({
     return opportunity.dateTime.getTime() < midnight.getTime()
   })()
   const finalizedAt = opportunity.finalizedAt
+  const reviewEligibleParticipants = useMemo(
+    () => matchReviewEligibleParticipants(participants),
+    [participants]
+  )
+  const canSubmitReview = useMemo(() => {
+    if (participants.length > 0) {
+      return userCanSubmitMatchReview(currentUserId, participants)
+    }
+    return isCreator || isConfirmedParticipant
+  }, [
+    participants,
+    currentUserId,
+    isCreator,
+    isConfirmedParticipant,
+  ])
   const canRate =
     completed &&
     !!finalizedAt &&
-    (isCreator || isConfirmedParticipant) &&
+    canSubmitReview &&
     !myRating &&
     !loadingRating
 
@@ -358,17 +351,13 @@ export function MatchCompletionPanel({
     () => opportunity.sportsVenueId ?? null
   )
 
-  const [orgStars, setOrgStars] = useState(0)
+  const [venueStars, setVenueStars] = useState(0)
   const [matchStars, setMatchStars] = useState(0)
   const [levelStars, setLevelStars] = useState(0)
+  const [mvpUserId, setMvpUserId] = useState('')
   const [comment, setComment] = useState('')
   const [disputeText, setDisputeText] = useState('')
   const [proposalResponding, setProposalResponding] = useState(false)
-  const [rivalTeamReviewStars, setRivalTeamReviewStars] = useState(0)
-  const [rivalTeamReviewComment, setRivalTeamReviewComment] = useState('')
-  const [rivalTeamReviewSaved, setRivalTeamReviewSaved] = useState(false)
-  const [rivalTeamReviewLoading, setRivalTeamReviewLoading] = useState(false)
-  const [rivalTeamReviewSaving, setRivalTeamReviewSaving] = useState(false)
 
   useEffect(() => {
     setRescheduleVenue(opportunity.venue)
@@ -651,59 +640,26 @@ export function MatchCompletionPanel({
   }
 
   const handleSubmitRating = async () => {
-    if (!matchStars || !levelStars) return
-    if (!isCreator && !orgStars) return
+    if (!venueStars || !matchStars || !levelStars || !mvpUserId) return
     setSubmitting(true)
     try {
       await submitMatchRating(opportunity.id, {
-        organizerRating: isCreator ? null : orgStars,
+        venueRating: venueStars,
         matchRating: matchStars,
         levelRating: levelStars,
+        mvpUserId,
         comment: comment.trim() || undefined,
       })
       onReloadMyRating()
       setComment('')
+      setMvpUserId('')
+      setVenueStars(0)
+      setMatchStars(0)
+      setLevelStars(0)
     } finally {
       setSubmitting(false)
     }
   }
-
-  const rivalOpponentTeam = useMemo(() => {
-    if (!rivalChallenge || teams.length === 0) return null
-    return rivalOpponentTeamForUser(rivalChallenge, teams, currentUserId)
-  }, [rivalChallenge, teams, currentUserId])
-
-  useEffect(() => {
-    if (
-      !completed ||
-      opportunity.type !== 'rival' ||
-      !rivalOpponentTeam ||
-      !isSupabaseConfigured()
-    ) {
-      return
-    }
-    const sb = getBrowserSupabase()
-    if (!sb) return
-    void (async () => {
-      setRivalTeamReviewLoading(true)
-      try {
-        const { data, error } = await sb
-          .from('rival_team_match_reviews')
-          .select('stars, comment')
-          .eq('opportunity_id', opportunity.id)
-          .eq('author_user_id', currentUserId)
-          .eq('target_team_id', rivalOpponentTeam.id)
-          .maybeSingle()
-        if (!error && data) {
-          setRivalTeamReviewStars((data.stars as number) ?? 0)
-          setRivalTeamReviewComment(((data.comment as string) ?? '').trim())
-          setRivalTeamReviewSaved(true)
-        }
-      } finally {
-        setRivalTeamReviewLoading(false)
-      }
-    })()
-  }, [completed, opportunity.id, opportunity.type, rivalOpponentTeam, currentUserId])
 
   const hasPreMatchContent =
     needsResolveAfterMidnight ||
@@ -908,7 +864,7 @@ export function MatchCompletionPanel({
           <p className="text-xs text-muted-foreground">
             {opportunity.type === 'rival'
               ? 'Registrarás el resultado propuesto; el capitán rival deberá confirmarlo o podrá discrepar (moderación).'
-              : 'Al cerrar, se registrará el resultado. Cada jugador podrá calificar cuando entre al detalle del partido (sin plazo de caducidad).'}
+              : 'Al cerrar, se registrará el resultado. Cada participante podrá dejar su reseña cuando entre al detalle del partido (sin plazo de caducidad).'}
           </p>
           {rivalOrganizerFinalizeBlocked ? (
             <p className="text-xs text-amber-800 dark:text-amber-200/90">
@@ -948,7 +904,7 @@ export function MatchCompletionPanel({
                       : 'Confirmar cierre'}
                 </DialogTitle>
                 <DialogDescription>
-                  Los jugadores podrán dejar su calificación desde el detalle del
+                  Los participantes podrán dejar su reseña desde el detalle del
                   partido cuando les acomode (una sola vez cada uno).
                   {opportunity.type === 'players'
                     ? ' Se registrará como partido jugado (sin marcador por equipos).'
@@ -1704,12 +1660,12 @@ export function MatchCompletionPanel({
       )}
 
       {loadingRating && (
-        <p className="text-xs text-muted-foreground">Cargando tu calificación…</p>
+        <p className="text-xs text-muted-foreground">Cargando tu reseña…</p>
       )}
 
       {myRating && (
         <p className="text-sm text-primary">
-          Ya enviaste tu calificación para este partido. ¡Gracias!
+          Ya enviaste tu reseña para este partido. ¡Gracias!
         </p>
       )}
 
@@ -1717,36 +1673,62 @@ export function MatchCompletionPanel({
         <div className="space-y-4 pt-1">
           <div className="rounded-xl border border-primary/40 bg-primary/10 px-3 py-2.5 space-y-1">
             <p className="font-brand-heading text-sm text-foreground">
-              Falta tu calificación
+              Falta tu reseña
             </p>
             <p className="text-xs text-muted-foreground leading-snug">
-              Toma unos segundos: ayuda a la comunidad. Puedes enviarla cuando
-              quieras; no caduca.
+              Valora el recinto, el ambiente, el nivel y elige al MVP. Puedes
+              enviarla cuando quieras; no caduca.
             </p>
           </div>
           <p className="font-brand-heading text-sm text-foreground">
-            Tu calificación (una sola vez)
+            Tu reseña (una sola vez)
           </p>
-          {!isCreator && (
-            <StarRow
-              label="Gestión del organizador"
-              value={orgStars}
-              onChange={setOrgStars}
-              disabled={submitting}
-            />
-          )}
           <StarRow
-            label="El partido en conjunto (ambiente, fluidez)"
+            label="Recinto deportivo"
+            value={venueStars}
+            onChange={setVenueStars}
+            disabled={submitting}
+          />
+          <StarRow
+            label="Ambiente del partido"
             value={matchStars}
             onChange={setMatchStars}
             disabled={submitting}
           />
           <StarRow
-            label="Nivel del partido vs lo anunciado"
+            label="Nivel del partido"
             value={levelStars}
             onChange={setLevelStars}
             disabled={submitting}
           />
+          <div className="space-y-2">
+            <Label className="font-brand-heading text-sm text-foreground">
+              MVP del partido
+            </Label>
+            {reviewEligibleParticipants.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Cargando participantes…
+              </p>
+            ) : (
+              <Select
+                value={mvpUserId || undefined}
+                onValueChange={setMvpUserId}
+                disabled={submitting}
+              >
+                <SelectTrigger className="w-full h-10 bg-card border-border text-sm">
+                  <SelectValue placeholder="Elige al mejor jugador" />
+                </SelectTrigger>
+                <SelectContent>
+                  {reviewEligibleParticipants.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                      {p.id === currentUserId ? ' (tú)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
           <div className="space-y-2">
             <Label className="text-sm">Comentario (opcional)</Label>
             <Textarea
@@ -1762,9 +1744,10 @@ export function MatchCompletionPanel({
             className="w-full"
             disabled={
               submitting ||
+              !venueStars ||
               !matchStars ||
               !levelStars ||
-              (!isCreator && !orgStars)
+              !mvpUserId
             }
             onClick={() => void handleSubmitRating()}
           >
@@ -1774,79 +1757,11 @@ export function MatchCompletionPanel({
                 Enviando…
               </>
             ) : (
-              'Enviar calificación'
+              'Enviar reseña'
             )}
           </Button>
         </div>
       )}
-
-      {completed &&
-        opportunity.type === 'rival' &&
-        rivalOpponentTeam &&
-        isConfirmedParticipant && (
-          <div className="space-y-3 rounded-xl border border-border bg-card/40 p-3">
-            <p className="font-brand-heading text-sm text-foreground">
-              Reseña al equipo contrario
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Opcional: valoración de{' '}
-              <span className="font-brand-heading text-foreground">
-                {rivalOpponentTeam.name}
-              </span>{' '}
-              como rival.
-            </p>
-            {rivalTeamReviewLoading ? (
-              <p className="text-xs text-muted-foreground">Cargando tu reseña…</p>
-            ) : null}
-            <StarRow
-              label="Estrellas (1 a 5)"
-              value={rivalTeamReviewStars}
-              onChange={setRivalTeamReviewStars}
-              disabled={rivalTeamReviewSaving}
-            />
-            <div className="space-y-2">
-              <Label className="text-xs">Comentario (opcional)</Label>
-              <Textarea
-                value={rivalTeamReviewComment}
-                onChange={(e) => setRivalTeamReviewComment(e.target.value)}
-                placeholder="Ej.: buen juego, respetuosos en cancha…"
-                className="min-h-[72px] resize-none text-sm"
-                disabled={rivalTeamReviewSaving}
-                maxLength={1000}
-              />
-            </div>
-            <Button
-              type="button"
-              className="w-full"
-              disabled={rivalTeamReviewSaving || rivalTeamReviewStars < 1}
-              onClick={() => {
-                void (async () => {
-                  setRivalTeamReviewSaving(true)
-                  try {
-                    await submitRivalTeamMatchReview(
-                      opportunity.id,
-                      rivalOpponentTeam.id,
-                      rivalTeamReviewStars,
-                      rivalTeamReviewComment.trim() || undefined
-                    )
-                    setRivalTeamReviewSaved(true)
-                  } finally {
-                    setRivalTeamReviewSaving(false)
-                  }
-                })()
-              }}
-            >
-              {rivalTeamReviewSaving ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Guardando…
-                </>
-              ) : (
-                'Guardar reseña al equipo'
-              )}
-            </Button>
-          </div>
-        )}
 
     </div>
   )

@@ -93,7 +93,6 @@ export function ChatScreen() {
     rivalChallenges,
     finalizeRivalOrganizerOverride,
     respondRivalMatchProposal,
-    submitRivalTeamMatchReview,
   } = useAppMatch()
 
   const opportunity = useMemo(
@@ -711,12 +710,12 @@ export function ChatScreen() {
           finalizeMatchOpportunity={finalizeMatchOpportunity}
           finalizeRivalOrganizerOverride={finalizeRivalOrganizerOverride}
           respondRivalMatchProposal={respondRivalMatchProposal}
-          submitRivalTeamMatchReview={submitRivalTeamMatchReview}
           suspendMatchOpportunity={suspendMatchOpportunity}
           leaveMatchOpportunityWithReason={leaveMatchOpportunityWithReason}
           rescheduleMatchOpportunityWithReason={
             rescheduleMatchOpportunityWithReason
           }
+          participants={participants}
           submitMatchRating={submitMatchRating}
         />
       )}
@@ -754,7 +753,7 @@ export function ChatScreen() {
             ) : opportunity.status === 'completed' ? (
               <span>
                 Partido finalizado: el chat del grupo es solo lectura. Puedes
-                leer el historial arriba y dejar tu calificación desde el detalle
+                leer el historial arriba y dejar tu reseña desde el detalle
                 del partido cuando quieras.
               </span>
             ) : (

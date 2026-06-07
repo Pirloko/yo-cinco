@@ -1980,9 +1980,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const submitMatchRating = useStableCallback(async (
     opportunityId: string,
     payload: {
-      organizerRating: number | null
+      venueRating: number
       matchRating: number
       levelRating: number
+      mvpUserId: string
       comment?: string
     }
   ) => {
@@ -1999,9 +2000,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .insert({
         opportunity_id: opportunityId,
         rater_id: currentUser.id,
-        organizer_rating: payload.organizerRating,
+        venue_rating: payload.venueRating,
         match_rating: payload.matchRating,
         level_rating: payload.levelRating,
+        mvp_user_id: payload.mvpUserId,
         comment: payload.comment?.trim() || null,
       })
 
@@ -2009,7 +2011,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toast.error(error.message)
       return
     }
-    toast.success('¡Gracias por tu calificación!')
+    toast.success('¡Gracias por tu reseña!')
   })
 
   const getFilteredMatches = useStableCallback((gender: Gender) => {

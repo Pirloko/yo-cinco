@@ -48,16 +48,20 @@ function parseDetailRatingsRpc(
       const r = raw as Record<string, unknown>
       return {
         opportunity_id: (r.opportunity_id as string) ?? opportunityId,
-        organizer_rating: (r.organizer_rating as number | null) ?? null,
+        venue_rating: (r.venue_rating as number | null) ?? null,
         match_rating: Number(r.match_rating),
         level_rating: Number(r.level_rating),
+        mvp_user_id: (r.mvp_user_id as string | null) ?? null,
+        organizer_rating: (r.organizer_rating as number | null) ?? null,
       }
     })
     .filter(Boolean) as Array<{
     opportunity_id: string
-    organizer_rating: number | null
+    venue_rating: number | null
     match_rating: number
     level_rating: number
+    mvp_user_id: string | null
+    organizer_rating?: number | null
   }>
 
   const summaryMap = mapRatingPartialRowsToSummariesMap([opportunityId], rows)
@@ -85,9 +89,10 @@ function parseDetailRatingsRpc(
         id: r.id as string,
         opportunity_id: r.opportunity_id as string,
         rater_id: r.rater_id as string,
-        organizer_rating: (r.organizer_rating as number | null) ?? null,
+        venue_rating: (r.venue_rating as number | null) ?? null,
         match_rating: Number(r.match_rating),
         level_rating: Number(r.level_rating),
+        mvp_user_id: (r.mvp_user_id as string | null) ?? null,
         comment: (r.comment as string | null) ?? null,
         created_at: r.created_at as string,
       }

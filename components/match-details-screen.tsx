@@ -155,7 +155,6 @@ export function MatchDetailsScreen() {
     rivalChallenges,
     finalizeRivalOrganizerOverride,
     respondRivalMatchProposal,
-    submitRivalTeamMatchReview,
     requestJoinPrivateRevuelta,
     respondToRevueltaExternalRequest,
     refreshPlayerMatchBundle,
@@ -2632,7 +2631,7 @@ export function MatchDetailsScreen() {
         {(opportunity.status === 'completed' ||
           (ratingSummary?.count ?? 0) > 0) && (
           <div className="bg-card rounded-2xl border border-border p-4 space-y-3">
-            <h3 className="font-brand-heading text-foreground">Calificaciones del partido</h3>
+            <h3 className="font-brand-heading text-foreground">Reseñas del partido</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <StatBox
                 label="Reseñas"
@@ -2647,13 +2646,23 @@ export function MatchDetailsScreen() {
                 }
               />
               <StatBox
-                label="Partido"
+                label="Recinto"
+                value={
+                  ratingSummary?.avgVenue != null
+                    ? `⭐ ${ratingSummary.avgVenue}`
+                    : '—'
+                }
+              />
+              <StatBox
+                label="Ambiente"
                 value={
                   ratingSummary?.avgMatch != null
                     ? `⭐ ${ratingSummary.avgMatch}`
                     : '—'
                 }
               />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-2 gap-2">
               <StatBox
                 label="Nivel"
                 value={
@@ -2662,12 +2671,17 @@ export function MatchDetailsScreen() {
                     : '—'
                 }
               />
-            </div>
-            <div className="text-xs text-muted-foreground">
-              Gestión organizador:{' '}
-              {ratingSummary?.avgOrganizer != null
-                ? `⭐ ${ratingSummary.avgOrganizer}`
-                : 'Sin datos aún'}
+              <StatBox
+                label="MVP"
+                value={(() => {
+                  const top = ratingSummary?.mvpTally?.[0]
+                  if (!top) return '—'
+                  const name =
+                    participants.find((p) => p.id === top.userId)?.name ??
+                    'Jugador'
+                  return `${name} (${top.votes})`
+                })()}
+              />
             </div>
 
             {recentComments.length > 0 ? (
@@ -3083,12 +3097,12 @@ export function MatchDetailsScreen() {
         finalizeMatchOpportunity={finalizeMatchOpportunity}
         finalizeRivalOrganizerOverride={finalizeRivalOrganizerOverride}
         respondRivalMatchProposal={respondRivalMatchProposal}
-        submitRivalTeamMatchReview={submitRivalTeamMatchReview}
         suspendMatchOpportunity={suspendMatchOpportunity}
         leaveMatchOpportunityWithReason={leaveMatchOpportunityWithReason}
         rescheduleMatchOpportunityWithReason={
           rescheduleMatchOpportunityWithReason
         }
+        participants={participants}
         submitMatchRating={submitMatchRating}
       />
 
