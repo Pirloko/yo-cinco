@@ -8,7 +8,6 @@ import { AuthScreen } from '@/components/auth-screen'
 import { OnboardingScreen } from '@/components/onboarding-screen'
 import { HomeScreen } from '@/components/home-screen'
 import { CreateScreen } from '@/components/create-screen'
-import { ExploreScreen } from '@/components/explore-screen'
 import { MatchesScreen } from '@/components/matches-screen'
 import { ChatScreen } from '@/components/chat-screen'
 import { MatchDetailsScreen } from '@/components/match-details-screen'
@@ -65,13 +64,6 @@ function AppContent() {
           <PublicPlayerProfileSheet />
         </>
       )
-    case 'home':
-      return (
-        <>
-          <HomeScreen />
-          <PublicPlayerProfileSheet />
-        </>
-      )
     case 'create':
       return (
         <>
@@ -80,9 +72,10 @@ function AppContent() {
         </>
       )
     case 'explore':
+    case 'home':
       return (
         <>
-          <ExploreScreen />
+          <HomeScreen />
           <PublicPlayerProfileSheet />
         </>
       )

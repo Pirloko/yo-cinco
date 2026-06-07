@@ -36,7 +36,6 @@ export type AppScreen =
 
 export const PLAYER_NAV_SCREENS = new Set<AppScreen>([
   'home',
-  'explore',
   'matches',
   'create',
   'teams',

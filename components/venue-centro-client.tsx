@@ -47,7 +47,6 @@ import {
   MapPin,
   Phone,
   PlusCircle,
-  Search,
   User,
   Users,
 } from 'lucide-react'
@@ -425,7 +424,7 @@ export function VenueCentroClient({
             <DialogDescription>
               {authGateReason === 'create'
                 ? 'Para crear un partido en este centro e intentar reservar la cancha necesitas una cuenta.'
-                : 'Para usar Inicio, Explorar, Partidos y el resto de la app necesitas iniciar sesión o registrarte.'}
+                : 'Para usar Inicio, Partidos y el resto de la app necesitas iniciar sesión o registrarte.'}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="flex-col gap-2 sm:flex-col">
@@ -477,7 +476,6 @@ function PublicAppBottomNav({
     isCreate?: boolean
   }> = [
     { id: 'home', href: '/?screen=home', icon: Home, label: 'Inicio' },
-    { id: 'explore', href: '/?screen=explore', icon: Search, label: 'Explorar' },
     { id: 'matches', href: '/?screen=matches', icon: LayoutList, label: 'Partidos' },
     {
       id: 'create',

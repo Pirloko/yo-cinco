@@ -5,9 +5,9 @@ import { toast } from 'sonner'
 
 import { useAppAuth, useAppUI } from '@/lib/app-context'
 import { persistPlayerLastNav } from '@/lib/player-nav-storage'
-import { Home, Search, LayoutList, PlusCircle, Users, User } from 'lucide-react'
+import { Home, LayoutList, PlusCircle, Users, User } from 'lucide-react'
 
-type NavItem = 'home' | 'explore' | 'matches' | 'create' | 'teams' | 'profile'
+type NavItem = 'home' | 'matches' | 'create' | 'teams' | 'profile'
 
 export function BottomNav() {
   const pathname = usePathname()
@@ -23,7 +23,6 @@ export function BottomNav() {
 
   const navItems: { id: NavItem; icon: React.ReactNode; label: string }[] = [
     { id: 'home', icon: <Home className="w-5 h-5 sm:w-6 sm:h-6" />, label: 'Inicio' },
-    { id: 'explore', icon: <Search className="w-5 h-5 sm:w-6 sm:h-6" />, label: 'Explorar' },
     {
       id: 'matches',
       icon: <LayoutList className="w-5 h-5 sm:w-6 sm:h-6" />,

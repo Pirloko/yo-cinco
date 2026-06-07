@@ -3,7 +3,6 @@ export const PLAYER_LAST_NAV_STORAGE_KEY = 'pichanga-last-nav-screen'
 
 export type PlayerNavId =
   | 'home'
-  | 'explore'
   | 'matches'
   | 'create'
   | 'teams'
@@ -11,7 +10,6 @@ export type PlayerNavId =
 
 const IDS = new Set<PlayerNavId>([
   'home',
-  'explore',
   'matches',
   'create',
   'teams',
