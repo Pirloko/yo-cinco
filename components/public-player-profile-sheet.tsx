@@ -166,7 +166,7 @@ export function PublicPlayerProfileSheet() {
                 <Trophy className="h-4 w-4 text-primary" aria-hidden />
                 Estadísticas del jugador
               </p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div className="rounded-xl border border-border/60 bg-secondary/20 p-3 text-center">
                   <p className="text-[11px] text-muted-foreground">Victorias</p>
                   <p className="text-xl font-bold tabular-nums">
@@ -183,6 +183,13 @@ export function PublicPlayerProfileSheet() {
                   <p className="text-[11px] text-muted-foreground">Derrotas</p>
                   <p className="text-xl font-bold tabular-nums">
                     {profile.statsPlayerLosses}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-primary/25 bg-primary/5 p-3 text-center">
+                  <Star className="w-4 h-4 text-primary mx-auto mb-0.5" aria-hidden />
+                  <p className="text-[11px] text-muted-foreground">MVP</p>
+                  <p className="text-xl font-bold tabular-nums">
+                    {profile.statsMvpWins}
                   </p>
                 </div>
               </div>

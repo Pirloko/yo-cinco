@@ -132,12 +132,13 @@ export function ProfileScreen() {
 
   const playerStats = useMemo(() => {
     if (!currentUser) {
-      return { v: 0, e: 0, d: 0, equipos: 0 }
+      return { v: 0, e: 0, d: 0, mvp: 0, equipos: 0 }
     }
     return {
       v: currentUser.statsPlayerWins ?? 0,
       e: currentUser.statsPlayerDraws ?? 0,
       d: currentUser.statsPlayerLosses ?? 0,
+      mvp: currentUser.statsMvpWins ?? 0,
       equipos: getUserTeams().length,
     }
   }, [currentUser, getUserTeams])
@@ -178,6 +179,12 @@ export function ProfileScreen() {
       value: playerStats.d,
       hint: 'Como jugador (D)',
       icon: TrendingDown,
+    },
+    {
+      label: 'MVP',
+      value: playerStats.mvp,
+      hint: 'Partidos como MVP',
+      icon: Star,
     },
     {
       label: 'Equipos',
@@ -586,7 +593,7 @@ export function ProfileScreen() {
             )}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-8 pt-6 border-t border-border">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-8 pt-6 border-t border-border">
             {statItems.map(({ label, value, hint, icon: Icon }) => (
               <div
                 key={label}

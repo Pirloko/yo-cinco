@@ -32,6 +32,7 @@ import type { MatchOpportunityRatingRow } from '@/lib/supabase/rating-queries'
 import type { OpportunityParticipantRow } from '@/lib/supabase/message-queries'
 import {
   matchReviewEligibleParticipants,
+  filterMvpVoteCandidates,
   userCanSubmitMatchReview,
 } from '@/lib/match-review-eligibility'
 import { Trophy, ClipboardCheck, Star, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
@@ -222,6 +223,10 @@ export function MatchCompletionPanel({
   const reviewEligibleParticipants = useMemo(
     () => matchReviewEligibleParticipants(participants),
     [participants]
+  )
+  const mvpVoteCandidates = useMemo(
+    () => filterMvpVoteCandidates(participants, currentUserId),
+    [participants, currentUserId]
   )
   const canSubmitReview = useMemo(() => {
     if (participants.length > 0) {
@@ -641,6 +646,7 @@ export function MatchCompletionPanel({
 
   const handleSubmitRating = async () => {
     if (!venueStars || !matchStars || !levelStars || !mvpUserId) return
+    if (mvpUserId === currentUserId) return
     setSubmitting(true)
     try {
       await submitMatchRating(opportunity.id, {
@@ -1709,6 +1715,10 @@ export function MatchCompletionPanel({
               <p className="text-xs text-muted-foreground">
                 Cargando participantes…
               </p>
+            ) : mvpVoteCandidates.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Necesitas al menos otro participante confirmado para elegir MVP.
+              </p>
             ) : (
               <Select
                 value={mvpUserId || undefined}
@@ -1719,10 +1729,9 @@ export function MatchCompletionPanel({
                   <SelectValue placeholder="Elige al mejor jugador" />
                 </SelectTrigger>
                 <SelectContent>
-                  {reviewEligibleParticipants.map((p) => (
+                  {mvpVoteCandidates.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.name}
-                      {p.id === currentUserId ? ' (tú)' : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1747,7 +1756,8 @@ export function MatchCompletionPanel({
               !venueStars ||
               !matchStars ||
               !levelStars ||
-              !mvpUserId
+              !mvpUserId ||
+              mvpVoteCandidates.length === 0
             }
             onClick={() => void handleSubmitRating()}
           >

@@ -1995,6 +1995,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     const sbRating = getBrowserSupabase()
     if (!sbRating) return
+    if (payload.mvpUserId === currentUser.id) {
+      toast.error('No puedes elegirte a ti mismo como MVP')
+      return
+    }
     const { error } = await sbRating
       .from('match_opportunity_ratings')
       .insert({
@@ -2008,7 +2012,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
 
     if (error) {
-      toast.error(error.message)
+      const msg = error.message
+      if (msg.includes('elegirte a ti mismo')) {
+        toast.error('No puedes elegirte a ti mismo como MVP')
+      } else {
+        toast.error(msg)
+      }
       return
     }
     toast.success('¡Gracias por tu reseña!')

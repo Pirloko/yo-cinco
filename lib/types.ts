@@ -93,6 +93,8 @@ export interface User {
   statsOrganizedCompleted?: number
   /** Victorias del equipo del organizador al organizar. */
   statsOrganizerWins?: number
+  /** Partidos donde fue MVP ganador (más votos en reseñas). */
+  statsMvpWins?: number
   /** Moderación/sanciones (solo lectura; nunca exponer WhatsApp en perfiles públicos). */
   modYellowCards?: number
   modRedCards?: number
@@ -123,6 +125,7 @@ export type PublicPlayerProfile = {
   statsPlayerLosses: number
   statsOrganizedCompleted: number
   statsOrganizerWins: number
+  statsMvpWins: number
   modYellowCards: number
   modRedCards: number
   modSuspendedUntil: Date | null

@@ -4,7 +4,7 @@ Documento de referencia para integrar reseñas en la **app móvil React Native (
 
 **Backend compartido:** Supabase (PostgreSQL + RLS + PostgREST + Realtime).
 
-**Migración clave (formato actual):** `supabase/migrations/20260607120000_unified_match_participant_review.sql`
+**Migraciones clave:** `20260607120000_unified_match_participant_review.sql`, `20260608120000_player_mvp_stats_and_no_self_vote.sql`
 
 ---
 
@@ -26,7 +26,7 @@ Un solo formulario por participante, con **4 campos obligatorios** + comentario 
 1. **Recinto deportivo** → `venue_rating` (1–5 estrellas)
 2. **Ambiente del partido** → `match_rating` (1–5)
 3. **Nivel del partido** → `level_rating` (1–5)
-4. **MVP del partido** → `mvp_user_id` (UUID de otro participante elegible)
+4. **MVP del partido** → `mvp_user_id` (UUID de **otro** participante elegible; **no auto-voto**)
 5. **Comentario** → `comment` (opcional, máx. 2000 caracteres)
 
 **Reglas de negocio:**
@@ -36,7 +36,8 @@ Un solo formulario por participante, con **4 campos obligatorios** + comentario 
 - **Una sola reseña por usuario y partido** (constraint `UNIQUE (opportunity_id, rater_id)`).
 - Solo **INSERT**; no hay UPDATE en políticas RLS (no se puede editar la reseña enviada).
 - Quién puede reseñar: **organizador** (`match_opportunities.creator_id`) **o** participante con `status = confirmed`.
-- El MVP elegido debe ser también organizador o participante confirmado del mismo partido (puede ser uno mismo).
+- El MVP elegido debe ser organizador o participante confirmado del mismo partido, **distinto del reseñador** (`mvp_user_id ≠ rater_id`).
+- **Contador en perfil:** `stats_mvp_wins` vía RPC `fetch_public_player_profile` o función `player_mvp_wins_count` (+1 por partido donde fue MVP ganador con más votos).
 
 ---
 
@@ -143,8 +144,8 @@ $$;
 
 **En el cliente (TypeScript / React Native):** misma lógica en `lib/match-review-eligibility.ts`:
 
-- Elegibles para reseñar **y** para aparecer en selector MVP: usuarios con status `'creator'` o `'confirmed'` en la lista de participantes del partido.
-- Pendientes, invitados o cancelados **no** pueden reseñar ni ser MVP.
+- Elegibles para reseñar: usuarios con status `'creator'` o `'confirmed'`.
+- Candidatos MVP en el selector: mismos elegibles **excepto** `rater_id` (`filterMvpVoteCandidates` en cliente).
 
 ---
 
@@ -160,6 +161,7 @@ Trigger: `trg_match_rating_rules` → función `enforce_match_rating_rules()` (v
 | Partido finalizado | `Solo se puede calificar un partido finalizado` |
 | `rater_id` elegible | `Solo participantes confirmados u organizador pueden dejar reseña` |
 | Campos completos | `Completa recinto, ambiente, nivel y MVP` |
+| No auto-MVP | `No puedes elegirte a ti mismo como MVP` |
 | MVP elegible | `El MVP debe ser un participante del partido` |
 
 **Importante:** No hay ventana temporal. La migración `20260431180200_ratings_remove_48h_window.sql` eliminó el límite de 48 h; la unificación mantiene reseña sin caducidad.
@@ -527,6 +529,7 @@ Tabla y RPC `submit_rival_team_match_review` para valorar al **equipo contrario*
 | `20260431180200_ratings_remove_48h_window.sql` | Elimina caducidad 48 h |
 | `20260431130000_matches_hub_and_detail_ratings_bundle_rpc.sql` | RPCs bundle (actualizados después) |
 | `20260607120000_unified_match_participant_review.sql` | **Formato actual:** `venue_rating`, `mvp_user_id`, reglas unificadas, RPCs actualizados |
+| `20260608120000_player_mvp_stats_and_no_self_vote.sql` | No auto-MVP, `player_mvp_wins_count`, `stats_mvp_wins` en perfil público |
 
 **Orden de despliegue móvil:** el backend debe tener aplicada **como mínimo** la migración `20260607120000` antes de enviar reseñas con el nuevo payload.
 
@@ -574,7 +577,8 @@ El archivo completo está en:
 - [ ] Pantalla detalle partido: cargar `match_detail_ratings_bundle` o consultas REST equivalentes
 - [ ] Cargar participantes del partido para picker MVP
 - [ ] Mostrar formulario solo si `completed` + elegible + `my_rating === null`
-- [ ] Validar 1–5 estrellas y MVP seleccionado antes de POST
+- [ ] Selector MVP sin el usuario actual (`filterMvpVoteCandidates`)
+- [ ] Validar anti auto-MVP en cliente antes de POST
 - [ ] Insert en `match_opportunity_ratings` con snake_case columns
 - [ ] Manejar error unique (ya reseñó)
 - [ ] Mostrar resumen: promedios + MVP + comentarios
@@ -588,7 +592,8 @@ El archivo completo está en:
 
 | Archivo | Responsabilidad |
 |---------|-----------------|
-| `lib/match-review-eligibility.ts` | Elegibilidad y conteo MVP |
+| `lib/match-review-eligibility.ts` | Elegibilidad, `filterMvpVoteCandidates`, conteo MVP |
+| `lib/supabase/mvp-queries.ts` | RPC `player_mvp_wins_count` (perfil propio) |
 | `lib/supabase/rating-queries.ts` | Tipos, fetch, agregados |
 | `lib/services/match-detail.service.ts` | Parse RPC detalle |
 | `lib/services/matches-hub.service.ts` | Parse RPC hub |
@@ -598,4 +603,4 @@ El archivo completo está en:
 
 ---
 
-*Última actualización: junio 2026 — reseña unificada post-partido (recinto, ambiente, nivel, MVP).*
+*Última actualización: junio 2026 — reseña unificada, no auto-MVP, contador MVP en perfil.*

@@ -20,7 +20,7 @@ async function fetchPublicPlayerProfileServerUncached(
 
 const fetchPublicPlayerProfileServerCached = unstable_cache(
   async (userId: string) => fetchPublicPlayerProfileServerUncached(userId),
-  ['public-player-profile-v1'],
+  ['public-player-profile-v2'],
   { revalidate: CACHE_REVALIDATE_SECONDS.publicDynamic }
 )
 

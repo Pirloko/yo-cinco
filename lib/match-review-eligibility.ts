@@ -16,6 +16,16 @@ export function userCanSubmitMatchReview(
   return matchReviewEligibleParticipants(participants).some((p) => p.id === userId)
 }
 
+/** Candidatos MVP en el selector (excluye al reseñador; no auto-voto). */
+export function filterMvpVoteCandidates(
+  participants: OpportunityParticipantRow[],
+  raterUserId: string
+): OpportunityParticipantRow[] {
+  return matchReviewEligibleParticipants(participants).filter(
+    (p) => p.id !== raterUserId
+  )
+}
+
 export type MvpVoteTally = { userId: string; votes: number }
 
 export function tallyMvpVotes(

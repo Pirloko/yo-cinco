@@ -14,6 +14,7 @@ import {
   MATCH_OPPORTUNITIES_CLIENT_VIEW,
   PROFILE_SELECT_WITH_GEO,
 } from '@/lib/supabase/geo-queries'
+import { fetchPlayerMvpWinsCount } from '@/lib/supabase/mvp-queries'
 
 const SPORTMATCH_ORGANIZER_NAME = 'Sportmatch'
 const SPORTMATCH_ORGANIZER_PHOTO = '/logohome.webp'
@@ -38,7 +39,11 @@ export async function fetchProfileForUser(
 
   if (error || !data) return null
   // Tipado de embeds de Supabase puede degradar (geo_city como array). Cast explícito para mantener mapper.
-  return profileRowToUser(data as unknown as ProfileRow, email)
+  const user = profileRowToUser(data as unknown as ProfileRow, email)
+  if (user && user.accountType !== 'venue' && user.accountType !== 'admin') {
+    user.statsMvpWins = await fetchPlayerMvpWinsCount(supabase, userId)
+  }
+  return user
 }
 
 /** Solo `stats_organized_completed` (badge nivel organizador en detalle de partido). */
@@ -80,6 +85,7 @@ export async function fetchPublicPlayerProfile(
     statsPlayerLosses: (r.stats_player_losses as number) ?? 0,
     statsOrganizedCompleted: (r.stats_organized_completed as number) ?? 0,
     statsOrganizerWins: (r.stats_organizer_wins as number) ?? 0,
+    statsMvpWins: (r.stats_mvp_wins as number) ?? 0,
     modYellowCards: (r.mod_yellow_cards as number) ?? 0,
     modRedCards: (r.mod_red_cards as number) ?? 0,
     modSuspendedUntil:
