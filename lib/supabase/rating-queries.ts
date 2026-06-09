@@ -1,5 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { tallyMvpVotes, type MvpVoteTally } from '@/lib/match-review-eligibility'
+import {
+  isMatchReviewWindowOpen,
+  tallyMvpVotes,
+  type MvpVoteTally,
+} from '@/lib/match-review-eligibility'
 
 export type MatchOpportunityRatingRow = {
   id: string
@@ -49,13 +53,18 @@ export async function fetchMyRatingForOpportunity(
 
 /**
  * ¿Se pueden enviar mensajes en el chat del partido?
- * - Partidos no finalizados: sí.
  * - Cancelados: no.
- * - Finalizados: solo lectura (el hilo queda como historial; las calificaciones no caducan).
+ * - Finalizados: sí durante 24 h desde `finalized_at`; después solo lectura.
+ * - Pendientes/confirmados: sí.
  */
-export function isMatchChatMessagingOpen(opp: { status: string }): boolean {
+export function isMatchChatMessagingOpen(opp: {
+  status: string
+  finalizedAt?: Date | null
+}): boolean {
   if (opp.status === 'cancelled') return false
-  if (opp.status === 'completed') return false
+  if (opp.status === 'completed') {
+    return isMatchReviewWindowOpen(opp.finalizedAt)
+  }
   return true
 }
 

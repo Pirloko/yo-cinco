@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-/** Partidos donde el jugador fue MVP ganador (más votos en reseñas del partido). */
+/** Partidos donde el jugador fue MVP (empates en votos cuentan para todos los empatados). */
 export async function fetchPlayerMvpWinsCount(
   supabase: SupabaseClient,
   userId: string

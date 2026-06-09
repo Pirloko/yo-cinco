@@ -565,7 +565,7 @@ export function MatchesScreen() {
     )
   }, [matchOpportunities, currentUser, participatingOpportunityIds])
 
-  /** Chats donde aún se puede escribir (partidos no finalizados ni cancelados). */
+  /** Chats donde aún se puede escribir (activos o finalizados dentro de 24 h). */
   const activeChatOpportunities = useMemo(
     () => chatOpportunities.filter((m) => isMatchChatMessagingOpen(m)),
     [chatOpportunities]
@@ -1020,7 +1020,7 @@ export function MatchesScreen() {
                 }
                 description={
                   chatOpportunities.length > 0
-                    ? 'Los partidos finalizados pasan a Finalizados: ahí puedes abrir el chat en solo lectura y calificar desde el detalle cuando quieras.'
+                    ? 'Los partidos finalizados siguen en Chats durante 24 h; después pasan a solo lectura en Finalizados.'
                     : 'Cuando entres a un partido (como organizador o jugador), aparecerá aquí el chat para coordinar con el grupo.'
                 }
               />

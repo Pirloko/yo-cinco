@@ -1,5 +1,5 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
-import type { EncounterLineupRole, PickTeamSide } from '@/lib/types'
+import type { EncounterLineupRole, PickTeamSide, Position } from '@/lib/types'
 import { DEFAULT_AVATAR } from '@/lib/supabase/mappers'
 
 export async function fetchParticipatingOpportunityIds(
@@ -122,6 +122,8 @@ export type OpportunityParticipantRow = {
   id: string
   name: string
   photo: string
+  /** Posición habitual del perfil (fallback en selector MVP). */
+  position?: Position
   /** `profiles.whatsapp_phone` si la política permite leerlo al viewer. */
   whatsappPhone?: string | null
   status: 'creator' | 'confirmed' | 'pending' | 'invited' | 'cancelled'
@@ -176,7 +178,7 @@ export async function fetchParticipantsForOpportunity(
 
   const { data: profs } = await supabase
     .from('profiles')
-    .select('id, name, photo_url, whatsapp_phone, account_type')
+    .select('id, name, photo_url, whatsapp_phone, account_type, position')
     .in('id', [...userIds])
 
   const byId = new Map((profs ?? []).map((r) => [r.id as string, r] as const))
@@ -196,6 +198,7 @@ export async function fetchParticipantsForOpportunity(
       id: creatorId,
       name: (c?.name as string) || 'Organizador',
       photo: (c?.photo_url as string) || DEFAULT_AVATAR,
+      position: (c?.position as Position | undefined) ?? undefined,
       whatsappPhone: (c?.whatsapp_phone as string | null | undefined) ?? null,
       status: 'creator',
       isGoalkeeper: creatorPart ? creatorPart.is_goalkeeper === true : false,
@@ -217,6 +220,7 @@ export async function fetchParticipantsForOpportunity(
       id: uid,
       name: (u?.name as string) || 'Jugador',
       photo: (u?.photo_url as string) || DEFAULT_AVATAR,
+      position: (u?.position as Position | undefined) ?? undefined,
       whatsappPhone: (u?.whatsapp_phone as string | null | undefined) ?? null,
       status: (p.status as OpportunityParticipantRow['status']) || 'pending',
       isGoalkeeper: p.is_goalkeeper === true,

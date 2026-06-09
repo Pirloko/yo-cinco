@@ -34,6 +34,10 @@ import {
   matchReviewEligibleParticipants,
   filterMvpVoteCandidates,
   userCanSubmitMatchReview,
+  isMatchReviewWindowOpen,
+  getMatchReviewDeadline,
+  formatMvpParticipantOption,
+  sortMvpVoteCandidates,
 } from '@/lib/match-review-eligibility'
 import { Trophy, ClipboardCheck, Star, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
@@ -225,23 +229,36 @@ export function MatchCompletionPanel({
     [participants]
   )
   const mvpVoteCandidates = useMemo(
-    () => filterMvpVoteCandidates(participants, currentUserId),
+    () => sortMvpVoteCandidates(filterMvpVoteCandidates(participants, currentUserId)),
     [participants, currentUserId]
   )
+  const reviewWindowOpen = isMatchReviewWindowOpen(finalizedAt)
+  const reviewDeadline = finalizedAt ? getMatchReviewDeadline(finalizedAt) : null
   const canSubmitReview = useMemo(() => {
     if (participants.length > 0) {
-      return userCanSubmitMatchReview(currentUserId, participants)
+      return userCanSubmitMatchReview(currentUserId, participants, finalizedAt)
     }
+    if (finalizedAt && !reviewWindowOpen) return false
     return isCreator || isConfirmedParticipant
   }, [
     participants,
     currentUserId,
+    finalizedAt,
+    reviewWindowOpen,
     isCreator,
     isConfirmedParticipant,
   ])
   const canRate =
     completed &&
     !!finalizedAt &&
+    reviewWindowOpen &&
+    canSubmitReview &&
+    !myRating &&
+    !loadingRating
+  const reviewWindowExpired =
+    completed &&
+    !!finalizedAt &&
+    !reviewWindowOpen &&
     canSubmitReview &&
     !myRating &&
     !loadingRating
@@ -1682,8 +1699,16 @@ export function MatchCompletionPanel({
               Falta tu reseña
             </p>
             <p className="text-xs text-muted-foreground leading-snug">
-              Valora el recinto, el ambiente, el nivel y elige al MVP. Puedes
-              enviarla cuando quieras; no caduca.
+              Valora el recinto, el ambiente, el nivel y elige al MVP. Tienes{' '}
+              <span className="text-foreground font-medium">24 horas</span> desde
+              que se cerró el partido
+              {reviewDeadline
+                ? ` (hasta ${formatDistanceToNow(reviewDeadline, {
+                    addSuffix: true,
+                    locale: es,
+                  })})`
+                : ''}
+              .
             </p>
           </div>
           <p className="font-brand-heading text-sm text-foreground">
@@ -1731,7 +1756,7 @@ export function MatchCompletionPanel({
                 <SelectContent>
                   {mvpVoteCandidates.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
-                      {p.name}
+                      {formatMvpParticipantOption(p)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1770,6 +1795,18 @@ export function MatchCompletionPanel({
               'Enviar reseña'
             )}
           </Button>
+        </div>
+      )}
+
+      {reviewWindowExpired && (
+        <div className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2.5 space-y-1">
+          <p className="font-brand-heading text-sm text-foreground">
+            Plazo de reseña cerrado
+          </p>
+          <p className="text-xs text-muted-foreground leading-snug">
+            Pasaron 24 horas desde que se finalizó el partido. Ya no puedes enviar
+            tu reseña ni votar MVP.
+          </p>
         </div>
       )}
 

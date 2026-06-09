@@ -30,6 +30,10 @@ import {
   isMatchChatMessagingOpen,
   type MatchOpportunityRatingRow,
 } from '@/lib/supabase/rating-queries'
+import {
+  getMatchReviewDeadline,
+  isMatchReviewWindowOpen,
+} from '@/lib/match-review-eligibility'
 import { MatchCompletionPanel } from '@/components/match-completion-panel'
 import { RevueltaInviteActions } from '@/components/revuelta-invite-actions'
 import {
@@ -41,7 +45,8 @@ import {
 } from '@/lib/team-pick-ui'
 import { RevueltaTeamsPanel } from '@/components/revuelta-teams-panel'
 import { ArrowLeft, Send, Calendar, MapPin, Info } from 'lucide-react'
-import { format } from 'date-fns'
+import { format, formatDistanceToNow } from 'date-fns'
+import { es } from 'date-fns/locale'
 import { formatMatchInTimezone } from '@/lib/match-datetime-format'
 import { prefetchPublicPlayerProfile } from '@/lib/public-player-prefetch'
 import { sessionQueryEnabled } from '@/lib/query-session-enabled'
@@ -122,6 +127,19 @@ export function ChatScreen() {
   const chatMessagingOpen = useMemo(
     () => (opportunity ? isMatchChatMessagingOpen(opportunity) : false),
     [opportunity]
+  )
+  const chatPostFinalizeOpen = useMemo(
+    () =>
+      opportunity?.status === 'completed' &&
+      isMatchReviewWindowOpen(opportunity.finalizedAt),
+    [opportunity]
+  )
+  const chatReviewDeadline = useMemo(
+    () =>
+      opportunity?.finalizedAt
+        ? getMatchReviewDeadline(opportunity.finalizedAt)
+        : null,
+    [opportunity?.finalizedAt]
   )
 
   const queryClient = useQueryClient()
@@ -746,15 +764,27 @@ export function ChatScreen() {
       </div>
 
       <div className="sticky bottom-0 bg-background border-t border-border p-4 space-y-3">
+        {chatMessagingOpen && chatPostFinalizeOpen && (
+          <div className="rounded-xl border border-primary/40 bg-primary/10 px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
+            Partido finalizado. Puedes chatear y dejar tu reseña durante{' '}
+            <span className="text-foreground font-medium">24 horas</span>
+            {chatReviewDeadline
+              ? ` (cierra ${formatDistanceToNow(chatReviewDeadline, {
+                  addSuffix: true,
+                  locale: es,
+                })})`
+              : ''}
+            .
+          </div>
+        )}
         {!chatMessagingOpen && opportunity && (
           <div className="rounded-xl border border-border bg-secondary/50 px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
             {opportunity.status === 'cancelled' ? (
               <span>Este partido fue cancelado; el chat no admite nuevos mensajes.</span>
             ) : opportunity.status === 'completed' ? (
               <span>
-                Partido finalizado: el chat del grupo es solo lectura. Puedes
-                leer el historial arriba y dejar tu reseña desde el detalle
-                del partido cuando quieras.
+                Pasaron 24 horas desde que se cerró el partido. El chat es solo
+                lectura; puedes revisar el historial arriba.
               </span>
             ) : (
               <span>No se pueden enviar mensajes en este chat.</span>

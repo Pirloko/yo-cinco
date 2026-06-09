@@ -50,6 +50,7 @@ import {
   type RatingSummary,
   type MatchOpportunityRatingRow,
 } from '@/lib/supabase/rating-queries'
+import { resolveMvpWinnersFromTally } from '@/lib/match-review-eligibility'
 import { fetchMatchDetailRatingsBlock } from '@/lib/services/match-detail.service'
 import { fetchMatchOpportunitiesByIds } from '@/lib/supabase/queries'
 import { fetchRivalChallengeByOpportunityId } from '@/lib/supabase/rival-challenge-queries'
@@ -2674,12 +2675,18 @@ export function MatchDetailsScreen() {
               <StatBox
                 label="MVP"
                 value={(() => {
-                  const top = ratingSummary?.mvpTally?.[0]
-                  if (!top) return '—'
-                  const name =
-                    participants.find((p) => p.id === top.userId)?.name ??
-                    'Jugador'
-                  return `${name} (${top.votes})`
+                  const winners = resolveMvpWinnersFromTally(
+                    ratingSummary?.mvpTally ?? []
+                  )
+                  if (winners.length === 0) return '—'
+                  return winners
+                    .map((w) => {
+                      const name =
+                        participants.find((p) => p.id === w.userId)?.name ??
+                        'Jugador'
+                      return `${name} (${w.votes})`
+                    })
+                    .join(' · ')
                 })()}
               />
             </div>
