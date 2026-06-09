@@ -76,7 +76,6 @@ import {
   Target,
   Users,
   Shuffle,
-  CalendarCheck2,
   MapPin,
   Calendar,
   Clock,
@@ -969,17 +968,6 @@ export function CreateScreen() {
                       setMatchType(null)
                     }}
                     color="gold"
-                  />
-                  <TypeCard
-                    icon={<CalendarCheck2 className="w-8 h-8" />}
-                    title="Solo reservar cancha"
-                    description="Reserva rápida sin crear partido"
-                    selected={matchType === 'reserve'}
-                    onClick={() => {
-                      setStep1TeamPickSubstep('menu')
-                      setMatchType('reserve')
-                    }}
-                    color="green"
                   />
                 </div>
               </>
